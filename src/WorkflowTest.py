@@ -3,7 +3,7 @@ from pathlib import Path
 import pandas as pd
 import plotly.express as px
 from streamlit_plotly_events import plotly_events
-from pyopenms import IdXMLFile
+from pyopenms import IdXMLFile, PeptideIdentificationList
 from scipy.stats import ttest_ind
 import numpy as np
 
@@ -360,6 +360,9 @@ class WorkflowTest(WorkflowManager):
                             "psmFDR": 0.5,
                             "proteinFDR": 0.5,
                             "threads": 12,
+                            # Disable FAIMS/IM handling to avoid segfault in OpenMS 3.5.0
+                            "PeptideQuantification:extract:IM_window": "0.0",
+                            "PeptideQuantification:faims:merge_features": "false",
                         }
                     )
 
@@ -408,8 +411,10 @@ class WorkflowTest(WorkflowManager):
             selected_file = st.selectbox("📁 Select Identification result file", comet_files)
 
             def idxml_to_df(idxml_file):
-                proteins, peptides = [], []
+                proteins = []
+                peptides = PeptideIdentificationList()
                 IdXMLFile().load(str(idxml_file), proteins, peptides)
+                peptides = [peptides.at(i) for i in range(peptides.size())]
 
                 records = []
                 for pep in peptides:
