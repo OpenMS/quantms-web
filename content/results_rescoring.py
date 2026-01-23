@@ -33,7 +33,7 @@ if not perc_files:
     st.warning("No rescoring output files found.")
     st.stop()
 
-selected_perc = st.selectbox("Select rescoring result file", perc_files)
+selected_perc = st.selectbox("Select rescoring result file", perc_files, format_func=lambda x: x.name)
 
 df_p = idxml_to_df(selected_perc)
 

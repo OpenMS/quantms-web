@@ -33,7 +33,7 @@ if not comet_files:
     st.warning("No identification output files found.")
     st.stop()
 
-selected_file = st.selectbox("Select identification result file", comet_files)
+selected_file = st.selectbox("Select identification result file", comet_files, format_func=lambda x: x.name)
 
 df = idxml_to_df(selected_file)
 

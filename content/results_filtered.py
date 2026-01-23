@@ -35,7 +35,7 @@ if not filter_files:
     st.warning("No filtering output files found.")
     st.stop()
 
-selected_filter = st.selectbox("Select filtering result file", filter_files)
+selected_filter = st.selectbox("Select filtering result file", filter_files, format_func=lambda x: x.name)
 
 df_f = idxml_to_df(selected_filter)
 
