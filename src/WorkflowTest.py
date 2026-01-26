@@ -348,7 +348,6 @@ class WorkflowTest(WorkflowManager):
             ):
                 self.logger.log("Workflow stopped due to error")
                 return False
-        self.logger.log("✅ Peptide search complete")
 
         # Get fragment tolerance from CometAdapter parameters for visualization
         comet_params = self.parameter_manager.get_topp_parameters("CometAdapter")
@@ -356,7 +355,6 @@ class WorkflowTest(WorkflowManager):
         frag_tol_is_ppm = comet_params.get("fragment_error_units", "Da") != "Da"
 
         # Build visualization cache for Comet results
-        self.logger.log("📦 Building visualization cache for Comet results...")
         results_dir_path = Path(self.workflow_dir, "results")
         cache_dir = results_dir_path / "insight_cache"
         cache_dir.mkdir(parents=True, exist_ok=True)
@@ -446,7 +444,7 @@ class WorkflowTest(WorkflowManager):
                 },
             )
 
-        self.logger.log("✅ Comet cache built")
+        self.logger.log("✅ Peptide search complete")
 
         # if not Path(comet_results).exists():
         #     st.error(f"CometAdapter failed for {stem}")
@@ -465,10 +463,8 @@ class WorkflowTest(WorkflowManager):
             ):
                 self.logger.log("Workflow stopped due to error")
                 return False
-        self.logger.log("✅ Rescoring complete")
 
         # Build visualization cache for Percolator results
-        self.logger.log("📦 Building visualization cache for Percolator results...")
         for idxml_file in percolator_results:
             idxml_path = Path(idxml_file)
             cache_id_prefix = idxml_path.stem
@@ -542,7 +538,7 @@ class WorkflowTest(WorkflowManager):
                 },
             )
 
-        self.logger.log("✅ Percolator cache built")
+        self.logger.log("✅ Rescoring complete")
 
         # if not Path(percolator_results[i]).exists():
         #     st.error(f"PercolatorAdapter failed for {stem}")
@@ -560,10 +556,8 @@ class WorkflowTest(WorkflowManager):
             ):
                 self.logger.log("Workflow stopped due to error")
                 return False
-        self.logger.log("✅ Filtering complete")
 
         # Build visualization cache for Filter results
-        self.logger.log("📦 Building visualization cache for Filter results...")
         for idxml_file in filter_results:
             idxml_path = Path(idxml_file)
             cache_id_prefix = idxml_path.stem
@@ -637,7 +631,7 @@ class WorkflowTest(WorkflowManager):
                 },
             )
 
-        self.logger.log("✅ Filter cache built")
+        self.logger.log("✅ Filtering complete")
 
         # if not Path(filter_results[i]).exists():
         #     st.error(f"IDFilter failed for {stem}")
