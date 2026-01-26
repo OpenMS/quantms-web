@@ -231,15 +231,6 @@ class WorkflowTest(WorkflowManager):
             if orphaned_keys:
                 self.parameter_manager.save_parameters()
 
-            # Build consolidated group map for downstream use
-            group_map = {
-                Path(mz).name: self.params.get(f"mzML-group-{Path(mz).name}", "")
-                for mz in mzml_files
-            }
-
-            # Store in session_state for results section compatibility
-            st.session_state["mzML_groups"] = group_map
-
     def execution(self) -> bool:
         """
         Refactored TOPP workflow execution:
