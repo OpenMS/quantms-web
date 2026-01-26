@@ -73,9 +73,14 @@ fig_volcano.add_vline(x=fc_thresh, line_dash="dash")
 fig_volcano.add_vline(x=-fc_thresh, line_dash="dash")
 fig_volcano.add_hline(y=-np.log10(p_thresh), line_dash="dash")
 
+# Make x-axis symmetric around zero
+max_abs_fc = volcano_df["log2FC"].abs().max()
+x_range = [-max_abs_fc * 1.1, max_abs_fc * 1.1]  # 10% padding
+
 fig_volcano.update_layout(
     xaxis_title="log2 Fold Change",
     yaxis_title="-log10(p-value)",
+    xaxis_range=x_range,
     height=600,
 )
 
