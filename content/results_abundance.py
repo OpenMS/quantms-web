@@ -1,6 +1,7 @@
 """Abundance (ProteomicsLFQ) Results Page."""
 import streamlit as st
 import pandas as pd
+import numpy as np
 from pathlib import Path
 from src.common.common import page_setup
 from src.common.results_helpers import get_workflow_dir, get_abundance_data
@@ -67,8 +68,28 @@ try:
             group1, group2 = sorted(groups)[:2]
             st.info(f"Statistical comparison: **{group2} vs {group1}**")
 
+        # Get sample columns (between stats and PeptideSequence)
+        sample_cols = [c for c in pivot_df.columns if c not in ["ProteinName", "log2FC", "p-value", "PeptideSequence"]]
+
+        # Create bar chart column with log2-transformed values
+        pivot_df["Intensity"] = pivot_df[sample_cols].apply(
+            lambda row: [np.log2(v + 1) for v in row], axis=1
+        )
+
+        # Reorder columns: place Intensity after p-value
+        display_cols = ["ProteinName", "log2FC", "p-value", "Intensity"] + sample_cols + ["PeptideSequence"]
+        display_df = pivot_df[display_cols]
+
         st.dataframe(
-            pivot_df.sort_values("p-value"),
+            display_df.sort_values("p-value"),
+            column_config={
+                "Intensity": st.column_config.BarChartColumn(
+                    "Intensity",
+                    help="Sample intensities (log2 scale)",
+                    width="small",
+                    y_min=0,
+                ),
+            },
             use_container_width=True,
         )
 
