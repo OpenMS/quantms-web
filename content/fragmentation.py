@@ -601,7 +601,7 @@ with col1:
     sequence_input = st.text_area(
         "Peptide Sequence:",
         value="PEPTIDE",
-        height=100,
+        height=200,
         help="""Enter the peptide sequence using single-letter amino acid codes:
         
 • Standard amino acids: A, C, D, E, F, G, H, I, K, L, M, N, P, Q, R, S, T, V, W, Y
