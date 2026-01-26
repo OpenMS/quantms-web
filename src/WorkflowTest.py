@@ -8,6 +8,8 @@ from scipy.stats import ttest_ind
 import numpy as np
 
 from src.workflow.WorkflowManager import WorkflowManager
+from src.common.results_helpers import parse_idxml, build_spectra_cache
+from openms_insight import Table, Heatmap, LinePlot, SequenceView
 
 
 class WorkflowTest(WorkflowManager):
@@ -91,7 +93,8 @@ class WorkflowTest(WorkflowManager):
             """
             st.info(comet_info)
 
-            comet_include = [":enzyme", "missed_cleavages", "fixed_modifications", "variable_modifications"]
+            comet_include = [":enzyme", "missed_cleavages", "fixed_modifications", "variable_modifications",
+                             "fragment_mass_tolerance", "fragment_error_units"]
             if not self.params.get("generate-decoys", True):
                 # Only show decoy_string when not generating decoys
                 comet_include.append("PeptideIndexing:decoy_string")
@@ -347,6 +350,104 @@ class WorkflowTest(WorkflowManager):
                 return False
         self.logger.log("✅ Peptide search complete")
 
+        # Get fragment tolerance from CometAdapter parameters for visualization
+        comet_params = self.parameter_manager.get_topp_parameters("CometAdapter")
+        frag_tol = comet_params.get("fragment_mass_tolerance", 0.02)
+        frag_tol_is_ppm = comet_params.get("fragment_error_units", "Da") != "Da"
+
+        # Build visualization cache for Comet results
+        self.logger.log("📦 Building visualization cache for Comet results...")
+        results_dir_path = Path(self.workflow_dir, "results")
+        cache_dir = results_dir_path / "insight_cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
+        # Get mzML directory
+        mzml_dir = Path(in_mzML[0]).parent
+
+        # Build spectra cache (once, shared by all stages)
+        spectra_df = None
+        filename_to_index = {}
+
+        for idxml_file in comet_results:
+            idxml_path = Path(idxml_file)
+            cache_id_prefix = idxml_path.stem
+
+            # Parse idXML to DataFrame
+            id_df, spectra_data = parse_idxml(idxml_path)
+
+            # Build spectra cache (only once)
+            if spectra_df is None:
+                filename_to_index = {Path(f).name: i for i, f in enumerate(spectra_data)}
+                spectra_df, filename_to_index = build_spectra_cache(mzml_dir, filename_to_index)
+
+            # Initialize Table component (caches itself)
+            Table(
+                cache_id=f"table_{cache_id_prefix}",
+                data=id_df.lazy(),
+                cache_path=str(cache_dir),
+                interactivity={"file": "file_index", "spectrum": "scan_id", "identification": "id_idx"},
+                column_definitions=[
+                    {"field": "sequence", "title": "Sequence"},
+                    {"field": "charge", "title": "Z", "sorter": "number"},
+                    {"field": "mz", "title": "m/z", "sorter": "number"},
+                    {"field": "rt", "title": "RT", "sorter": "number"},
+                    {"field": "score", "title": "Score", "sorter": "number"},
+                    {"field": "protein_accession", "title": "Proteins"},
+                ],
+                initial_sort=[{"column": "score", "dir": "desc"}],
+                index_field="id_idx",
+            )
+
+            # Initialize Heatmap component
+            Heatmap(
+                cache_id=f"heatmap_{cache_id_prefix}",
+                data=id_df.lazy(),
+                cache_path=str(cache_dir),
+                x_column="rt",
+                y_column="mz",
+                intensity_column="score",
+                interactivity={"identification": "id_idx"},
+            )
+
+            # Initialize SequenceView component
+            seq_view = SequenceView(
+                cache_id=f"seqview_{cache_id_prefix}",
+                sequence_data=id_df.lazy().select(["id_idx", "sequence", "charge", "file_index", "scan_id"]).rename({
+                    "id_idx": "sequence_id",
+                    "charge": "precursor_charge",
+                }),
+                peaks_data=spectra_df.lazy(),
+                filters={
+                    "identification": "sequence_id",
+                    "file": "file_index",
+                    "spectrum": "scan_id",
+                },
+                interactivity={"peak": "peak_id"},
+                cache_path=str(cache_dir),
+                deconvolved=False,
+                annotation_config={
+                    "ion_types": ["b", "y"],
+                    "neutral_losses": True,
+                    "tolerance": frag_tol,
+                    "tolerance_ppm": frag_tol_is_ppm,
+                },
+            )
+
+            # Initialize LinePlot from SequenceView
+            LinePlot.from_sequence_view(
+                seq_view,
+                cache_id=f"lineplot_{cache_id_prefix}",
+                cache_path=str(cache_dir),
+                title="Annotated Spectrum",
+                styling={
+                    "unhighlightedColor": "#CCCCCC",
+                    "highlightColor": "#E74C3C",
+                    "selectedColor": "#F3A712",
+                },
+            )
+
+        self.logger.log("✅ Comet cache built")
+
         # if not Path(comet_results).exists():
         #     st.error(f"CometAdapter failed for {stem}")
         #     st.stop()
@@ -366,6 +467,83 @@ class WorkflowTest(WorkflowManager):
                 return False
         self.logger.log("✅ Rescoring complete")
 
+        # Build visualization cache for Percolator results
+        self.logger.log("📦 Building visualization cache for Percolator results...")
+        for idxml_file in percolator_results:
+            idxml_path = Path(idxml_file)
+            cache_id_prefix = idxml_path.stem
+
+            # Parse idXML to DataFrame
+            id_df, spectra_data = parse_idxml(idxml_path)
+
+            # Initialize Table component (caches itself)
+            Table(
+                cache_id=f"table_{cache_id_prefix}",
+                data=id_df.lazy(),
+                cache_path=str(cache_dir),
+                interactivity={"file": "file_index", "spectrum": "scan_id", "identification": "id_idx"},
+                column_definitions=[
+                    {"field": "sequence", "title": "Sequence"},
+                    {"field": "charge", "title": "Z", "sorter": "number"},
+                    {"field": "mz", "title": "m/z", "sorter": "number"},
+                    {"field": "rt", "title": "RT", "sorter": "number"},
+                    {"field": "score", "title": "Score", "sorter": "number"},
+                    {"field": "protein_accession", "title": "Proteins"},
+                ],
+                initial_sort=[{"column": "score", "dir": "desc"}],
+                index_field="id_idx",
+            )
+
+            # Initialize Heatmap component
+            Heatmap(
+                cache_id=f"heatmap_{cache_id_prefix}",
+                data=id_df.lazy(),
+                cache_path=str(cache_dir),
+                x_column="rt",
+                y_column="mz",
+                intensity_column="score",
+                interactivity={"identification": "id_idx"},
+            )
+
+            # Initialize SequenceView component
+            seq_view = SequenceView(
+                cache_id=f"seqview_{cache_id_prefix}",
+                sequence_data=id_df.lazy().select(["id_idx", "sequence", "charge", "file_index", "scan_id"]).rename({
+                    "id_idx": "sequence_id",
+                    "charge": "precursor_charge",
+                }),
+                peaks_data=spectra_df.lazy(),
+                filters={
+                    "identification": "sequence_id",
+                    "file": "file_index",
+                    "spectrum": "scan_id",
+                },
+                interactivity={"peak": "peak_id"},
+                cache_path=str(cache_dir),
+                deconvolved=False,
+                annotation_config={
+                    "ion_types": ["b", "y"],
+                    "neutral_losses": True,
+                    "tolerance": frag_tol,
+                    "tolerance_ppm": frag_tol_is_ppm,
+                },
+            )
+
+            # Initialize LinePlot from SequenceView
+            LinePlot.from_sequence_view(
+                seq_view,
+                cache_id=f"lineplot_{cache_id_prefix}",
+                cache_path=str(cache_dir),
+                title="Annotated Spectrum",
+                styling={
+                    "unhighlightedColor": "#CCCCCC",
+                    "highlightColor": "#E74C3C",
+                    "selectedColor": "#F3A712",
+                },
+            )
+
+        self.logger.log("✅ Percolator cache built")
+
         # if not Path(percolator_results[i]).exists():
         #     st.error(f"PercolatorAdapter failed for {stem}")
         #     st.stop()
@@ -383,6 +561,83 @@ class WorkflowTest(WorkflowManager):
                 self.logger.log("Workflow stopped due to error")
                 return False
         self.logger.log("✅ Filtering complete")
+
+        # Build visualization cache for Filter results
+        self.logger.log("📦 Building visualization cache for Filter results...")
+        for idxml_file in filter_results:
+            idxml_path = Path(idxml_file)
+            cache_id_prefix = idxml_path.stem
+
+            # Parse idXML to DataFrame
+            id_df, spectra_data = parse_idxml(idxml_path)
+
+            # Initialize Table component (caches itself)
+            Table(
+                cache_id=f"table_{cache_id_prefix}",
+                data=id_df.lazy(),
+                cache_path=str(cache_dir),
+                interactivity={"file": "file_index", "spectrum": "scan_id", "identification": "id_idx"},
+                column_definitions=[
+                    {"field": "sequence", "title": "Sequence"},
+                    {"field": "charge", "title": "Z", "sorter": "number"},
+                    {"field": "mz", "title": "m/z", "sorter": "number"},
+                    {"field": "rt", "title": "RT", "sorter": "number"},
+                    {"field": "score", "title": "Score", "sorter": "number"},
+                    {"field": "protein_accession", "title": "Proteins"},
+                ],
+                initial_sort=[{"column": "score", "dir": "desc"}],
+                index_field="id_idx",
+            )
+
+            # Initialize Heatmap component
+            Heatmap(
+                cache_id=f"heatmap_{cache_id_prefix}",
+                data=id_df.lazy(),
+                cache_path=str(cache_dir),
+                x_column="rt",
+                y_column="mz",
+                intensity_column="score",
+                interactivity={"identification": "id_idx"},
+            )
+
+            # Initialize SequenceView component
+            seq_view = SequenceView(
+                cache_id=f"seqview_{cache_id_prefix}",
+                sequence_data=id_df.lazy().select(["id_idx", "sequence", "charge", "file_index", "scan_id"]).rename({
+                    "id_idx": "sequence_id",
+                    "charge": "precursor_charge",
+                }),
+                peaks_data=spectra_df.lazy(),
+                filters={
+                    "identification": "sequence_id",
+                    "file": "file_index",
+                    "spectrum": "scan_id",
+                },
+                interactivity={"peak": "peak_id"},
+                cache_path=str(cache_dir),
+                deconvolved=False,
+                annotation_config={
+                    "ion_types": ["b", "y"],
+                    "neutral_losses": True,
+                    "tolerance": frag_tol,
+                    "tolerance_ppm": frag_tol_is_ppm,
+                },
+            )
+
+            # Initialize LinePlot from SequenceView
+            LinePlot.from_sequence_view(
+                seq_view,
+                cache_id=f"lineplot_{cache_id_prefix}",
+                cache_path=str(cache_dir),
+                title="Annotated Spectrum",
+                styling={
+                    "unhighlightedColor": "#CCCCCC",
+                    "highlightColor": "#E74C3C",
+                    "selectedColor": "#F3A712",
+                },
+            )
+
+        self.logger.log("✅ Filter cache built")
 
         # if not Path(filter_results[i]).exists():
         #     st.error(f"IDFilter failed for {stem}")

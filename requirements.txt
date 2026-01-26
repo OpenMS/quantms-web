@@ -140,3 +140,5 @@ xlsxwriter
 streamlit_plotly_events
 scipy
 scikit-learn
+openms-insight>=0.1.9
+polars>=1.0.0

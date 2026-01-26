@@ -73,15 +73,6 @@ st.markdown(
     """
 ### 4. Explore Results
 View identification results, quantification tables, and statistical visualizations.
-"""
-)
-
-st.markdown("#### Overview")
-
-st.markdown(
-    """
-After running the workflow, you can explore:
-
 - **Database Search**: View Comet PSM identification results
 - **Rescoring**: Examine Percolator statistical validation output
 - **Filtered PSMs**: Inspect FDR-controlled peptide identifications
