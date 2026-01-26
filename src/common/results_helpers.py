@@ -2,8 +2,12 @@
 import re
 import pandas as pd
 import polars as pl
+import numpy as np
+import streamlit as st
 from pathlib import Path
+from scipy.stats import ttest_ind
 from pyopenms import IdXMLFile, PeptideIdentificationList, MSExperiment, MzMLFile
+from src.workflow.ParameterManager import ParameterManager
 
 
 def get_workflow_dir(workspace):
@@ -179,3 +183,139 @@ def build_spectra_cache(mzml_dir: Path, filename_to_index: dict) -> tuple[pl.Dat
                 peak_id += 1
 
     return pl.DataFrame(records), filename_to_index
+
+
+@st.cache_data
+def load_abundance_data(workspace_path: str, csv_mtime: float) -> tuple | None:
+    """Load CSV, compute stats (log2FC, p-value), build pivot_df and expr_df.
+
+    Args:
+        workspace_path: Path to the workspace directory
+        csv_mtime: Modification time of CSV file (used as cache key)
+
+    Returns:
+        Tuple of (pivot_df, expr_df, group_map) or None if data unavailable
+    """
+    workflow_dir = get_workflow_dir(Path(workspace_path))
+    quant_dir = workflow_dir / "results" / "quant_results"
+
+    if not quant_dir.exists():
+        return None
+
+    csv_files = sorted(quant_dir.glob("*.csv"))
+    if not csv_files:
+        return None
+
+    csv_file = csv_files[0]
+
+    try:
+        df = pd.read_csv(csv_file)
+    except Exception:
+        return None
+
+    if df.empty:
+        return None
+
+    # Get group mapping from parameters
+    param_manager = ParameterManager(workflow_dir)
+    params = param_manager.get_parameters_from_json()
+    group_map = {
+        key[11:]: value  # Remove "mzML-group-" prefix
+        for key, value in params.items()
+        if key.startswith("mzML-group-") and value
+    }
+
+    if not group_map:
+        return None
+
+    df["Sample"] = df["Reference"].str.replace(".mzML", "", regex=False)
+    df["Group"] = df["Reference"].map(group_map)
+    df = df.dropna(subset=["Group"])
+
+    groups = sorted(df["Group"].unique())
+
+    if len(groups) < 2:
+        return None
+
+    group1, group2 = groups[:2]
+
+    # Compute statistics per protein
+    stats_rows = []
+    for protein, protein_df in df.groupby("ProteinName"):
+        g1_vals = protein_df[protein_df["Group"] == group1]["Intensity"].values
+        g2_vals = protein_df[protein_df["Group"] == group2]["Intensity"].values
+
+        if len(g1_vals) < 2 or len(g2_vals) < 2:
+            pval = np.nan
+        else:
+            _, pval = ttest_ind(g1_vals, g2_vals, equal_var=False)
+
+        mean_g1 = np.mean(g1_vals) if len(g1_vals) > 0 else np.nan
+        mean_g2 = np.mean(g2_vals) if len(g2_vals) > 0 else np.nan
+
+        log2fc = np.log2(mean_g2 / mean_g1) if mean_g1 > 0 else np.nan
+
+        stats_rows.append({
+            "ProteinName": protein,
+            "log2FC": log2fc,
+            "p-value": pval,
+        })
+
+    stats_df = pd.DataFrame(stats_rows)
+
+    # Order samples by group (group2 first, then group1)
+    sample_group_df = df[["Sample", "Group"]].drop_duplicates()
+    group2_samples = sample_group_df[sample_group_df["Group"] == group2]["Sample"].tolist()
+    group1_samples = sample_group_df[sample_group_df["Group"] == group1]["Sample"].tolist()
+    all_samples = group2_samples + group1_samples
+
+    # Build pivot table
+    pivot_list = []
+    for protein, group_df in df.groupby("ProteinName"):
+        peptides = ";".join(group_df["PeptideSequence"].unique())
+        intensity_dict = group_df.groupby("Sample")["Intensity"].sum().to_dict()
+        intensity_dict_complete = {
+            sample: intensity_dict.get(sample, 0)
+            for sample in all_samples
+        }
+        row = {
+            "ProteinName": protein,
+            **intensity_dict_complete,
+            "PeptideSequence": peptides,
+        }
+        pivot_list.append(row)
+
+    pivot_df = pd.DataFrame(pivot_list)
+    pivot_df = pivot_df.merge(stats_df, on="ProteinName", how="left")
+    pivot_df = pivot_df[["ProteinName", "log2FC", "p-value"] + all_samples + ["PeptideSequence"]]
+
+    # Build expression matrix (log2-transformed)
+    expr_df = pivot_df.set_index("ProteinName")[all_samples]
+    expr_df = expr_df.replace(0, np.nan)
+    expr_df = np.log2(expr_df + 1)
+    expr_df = expr_df.dropna()
+
+    return pivot_df, expr_df, group_map
+
+
+def get_abundance_data(workspace: Path) -> tuple | None:
+    """Wrapper that handles cache key (workspace + CSV mtime).
+
+    Args:
+        workspace: Path to the workspace directory
+
+    Returns:
+        Tuple of (pivot_df, expr_df, group_map) or None if data unavailable
+    """
+    workflow_dir = get_workflow_dir(workspace)
+    quant_dir = workflow_dir / "results" / "quant_results"
+
+    if not quant_dir.exists():
+        return None
+
+    csv_files = sorted(quant_dir.glob("*.csv"))
+    if not csv_files:
+        return None
+
+    csv_mtime = csv_files[0].stat().st_mtime
+    return load_abundance_data(str(workspace), csv_mtime)

@@ -5,6 +5,7 @@ import plotly.express as px
 from scipy.cluster.hierarchy import linkage, leaves_list
 from scipy.spatial.distance import pdist
 from src.common.common import page_setup
+from src.common.results_helpers import get_abundance_data
 
 params = page_setup()
 st.title("Heatmap")
@@ -16,16 +17,17 @@ Proteins and samples are ordered by similarity.
 """
 )
 
-if (
-    "pivot_df" not in st.session_state
-    or "expr_df" not in st.session_state
-    or "group_map" not in st.session_state
-):
-    st.info("Abundance data not loaded. Please visit the Abundance page first.")
+if "workspace" not in st.session_state:
+    st.warning("Please initialize your workspace first.")
+    st.stop()
+
+result = get_abundance_data(st.session_state["workspace"])
+if result is None:
+    st.info("Abundance data not available. Please run the workflow and configure sample groups first.")
     st.page_link("content/results_abundance.py", label="Go to Abundance", icon="📋")
     st.stop()
 
-expr_df = st.session_state["expr_df"]
+pivot_df, expr_df, group_map = result
 
 top_n = st.slider("Number of proteins", 20, 200, 50, key="heatmap_top_n")
 

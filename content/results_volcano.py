@@ -3,6 +3,7 @@ import streamlit as st
 import plotly.express as px
 import numpy as np
 from src.common.common import page_setup
+from src.common.results_helpers import get_abundance_data
 
 params = page_setup()
 st.title("Volcano Plot")
@@ -14,16 +15,17 @@ Points represent proteins colored by significance status.
 """
 )
 
-if (
-    "pivot_df" not in st.session_state
-    or "expr_df" not in st.session_state
-    or "group_map" not in st.session_state
-):
-    st.info("Abundance data not loaded. Please visit the Abundance page first.")
+if "workspace" not in st.session_state:
+    st.warning("Please initialize your workspace first.")
+    st.stop()
+
+result = get_abundance_data(st.session_state["workspace"])
+if result is None:
+    st.info("Abundance data not available. Please run the workflow and configure sample groups first.")
     st.page_link("content/results_abundance.py", label="Go to Abundance", icon="📋")
     st.stop()
 
-pivot_df = st.session_state["pivot_df"]
+pivot_df, expr_df, group_map = result
 
 if pivot_df.empty:
     st.info("No data available for volcano plot.")

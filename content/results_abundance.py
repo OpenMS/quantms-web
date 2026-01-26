@@ -1,12 +1,9 @@
 """Abundance (ProteomicsLFQ) Results Page."""
 import streamlit as st
 import pandas as pd
-import numpy as np
 from pathlib import Path
-from scipy.stats import ttest_ind
 from src.common.common import page_setup
-from src.common.results_helpers import get_workflow_dir
-from src.workflow.ParameterManager import ParameterManager
+from src.common.results_helpers import get_workflow_dir, get_abundance_data
 
 params = page_setup()
 st.title("Abundance Quantification")
@@ -56,101 +53,19 @@ try:
             "Additionally, log2 fold change and p-values are calculated between sample groups."
         )
 
-        param_manager = ParameterManager(workflow_dir)
-        params = param_manager.get_parameters_from_json()
-        group_map = {
-            key[11:]: value  # Remove "mzML-group-" prefix
-            for key, value in params.items()
-            if key.startswith("mzML-group-") and value
-        }
-
-        if not group_map:
-            st.warning("No group information found. Please define sample groups in the Configure page first.")
+        result = get_abundance_data(st.session_state["workspace"])
+        if result is None:
+            st.warning("Could not compute abundance data. Please ensure sample groups are defined in the Configure page.")
             st.page_link("content/workflow_configure.py", label="Go to Configure", icon="⚙️")
             st.stop()
 
-        df["Sample"] = df["Reference"].str.replace(".mzML", "", regex=False)
-        df["Group"] = df["Reference"].map(group_map)
+        pivot_df, expr_df, group_map = result
 
-        df = df.dropna(subset=["Group"])
-
-        groups = sorted(df["Group"].unique())
-
-        if len(groups) < 2:
-            st.warning("At least two groups are required for statistical comparison.")
-            st.stop()
-
-        group1, group2 = groups[:2]
-
-        st.info(f"Statistical comparison: **{group2} vs {group1}**")
-
-        stats_rows = []
-
-        for protein, protein_df in df.groupby("ProteinName"):
-            g1_vals = protein_df[protein_df["Group"] == group1]["Intensity"].values
-            g2_vals = protein_df[protein_df["Group"] == group2]["Intensity"].values
-
-            if len(g1_vals) < 2 or len(g2_vals) < 2:
-                pval = np.nan
-            else:
-                _, pval = ttest_ind(g1_vals, g2_vals, equal_var=False)
-
-            mean_g1 = np.mean(g1_vals) if len(g1_vals) > 0 else np.nan
-            mean_g2 = np.mean(g2_vals) if len(g2_vals) > 0 else np.nan
-
-            log2fc = np.log2(mean_g2 / mean_g1) if mean_g1 > 0 else np.nan
-
-            stats_rows.append(
-                {
-                    "ProteinName": protein,
-                    "log2FC": log2fc,
-                    "p-value": pval,
-                }
-            )
-
-        stats_df = pd.DataFrame(stats_rows)
-
-        # Order samples by group to match comparison label (group2 first, then group1)
-        # Preserve original file order within each group
-        sample_group_df = df[["Sample", "Group"]].drop_duplicates()
-        group2_samples = sample_group_df[sample_group_df["Group"] == group2]["Sample"].tolist()
-        group1_samples = sample_group_df[sample_group_df["Group"] == group1]["Sample"].tolist()
-        all_samples = group2_samples + group1_samples
-        pivot_list = []
-
-        for protein, group_df in df.groupby("ProteinName"):
-            peptides = ";".join(group_df["PeptideSequence"].unique())
-            intensity_dict = group_df.groupby("Sample")["Intensity"].sum().to_dict()
-
-            intensity_dict_complete = {
-                sample: intensity_dict.get(sample, 0)
-                for sample in all_samples
-            }
-
-            row = {
-                "ProteinName": protein,
-                **intensity_dict_complete,
-                "PeptideSequence": peptides,
-            }
-
-            pivot_list.append(row)
-
-        pivot_df = pd.DataFrame(pivot_list)
-
-        pivot_df = pivot_df.merge(stats_df, on="ProteinName", how="left")
-
-        pivot_df = pivot_df[
-            ["ProteinName", "log2FC", "p-value"] + all_samples + ["PeptideSequence"]
-        ]
-
-        expr_df = pivot_df.set_index("ProteinName")[all_samples]
-        expr_df = expr_df.replace(0, np.nan)
-        expr_df = np.log2(expr_df + 1)
-        expr_df = expr_df.dropna()
-
-        st.session_state["pivot_df"] = pivot_df
-        st.session_state["expr_df"] = expr_df
-        st.session_state["group_map"] = group_map
+        # Display group comparison info
+        groups = sorted(set(group_map.values()))
+        if len(groups) >= 2:
+            group1, group2 = sorted(groups)[:2]
+            st.info(f"Statistical comparison: **{group2} vs {group1}**")
 
         st.dataframe(
             pivot_df.sort_values("p-value"),

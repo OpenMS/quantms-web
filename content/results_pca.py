@@ -5,6 +5,7 @@ import plotly.express as px
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from src.common.common import page_setup
+from src.common.results_helpers import get_abundance_data
 
 params = page_setup()
 st.title("PCA Analysis")
@@ -16,18 +17,17 @@ Samples are colored by group assignment to visualize clustering.
 """
 )
 
-if (
-    "pivot_df" not in st.session_state
-    or "expr_df" not in st.session_state
-    or "group_map" not in st.session_state
-):
-    st.info("Abundance data not loaded. Please visit the Abundance page first.")
+if "workspace" not in st.session_state:
+    st.warning("Please initialize your workspace first.")
+    st.stop()
+
+result = get_abundance_data(st.session_state["workspace"])
+if result is None:
+    st.info("Abundance data not available. Please run the workflow and configure sample groups first.")
     st.page_link("content/results_abundance.py", label="Go to Abundance", icon="📋")
     st.stop()
 
-pivot_df = st.session_state["pivot_df"]
-expr_df = st.session_state["expr_df"]
-group_map = st.session_state["group_map"]
+pivot_df, expr_df, group_map = result
 
 top_n = 500
 
