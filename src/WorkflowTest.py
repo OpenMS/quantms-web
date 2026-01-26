@@ -954,9 +954,13 @@ class WorkflowTest(WorkflowManager):
                     )
 
                     # --------------------------------------------------
-                    # 1️⃣ Load group information
+                    # 1️⃣ Load group information from self.params
                     # --------------------------------------------------
-                    group_map = st.session_state.get("mzML_groups", {})
+                    group_map = {
+                        key[11:]: value  # Remove "mzML-group-" prefix
+                        for key, value in self.params.items()
+                        if key.startswith("mzML-group-") and value
+                    }
 
                     if not group_map:
                         st.warning("No group information found. Please define sample groups first.")
