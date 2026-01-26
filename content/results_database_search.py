@@ -61,10 +61,10 @@ st.subheader("PSM Overview")
 heatmap(state_manager=state_manager, height=350)
 
 st.subheader("PSM Table")
-table(state_manager=state_manager, height=800)
+table(state_manager=state_manager, height=533)
 
 st.subheader("Peptide Sequence")
-seq_view(key=f"seqview_{cache_id_prefix}", state_manager=state_manager, height=800)
+seq_view(key=f"seqview_{cache_id_prefix}", state_manager=state_manager, height=533)
 
 st.subheader("MS2 Spectrum")
 line_plot(key=f"lineplot_{cache_id_prefix}", state_manager=state_manager, height=450, sequence_view_key=f"seqview_{cache_id_prefix}")

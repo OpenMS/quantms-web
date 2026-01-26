@@ -6,7 +6,7 @@ import numpy as np
 import streamlit as st
 from pathlib import Path
 from scipy.stats import ttest_ind
-from pyopenms import IdXMLFile, PeptideIdentificationList, MSExperiment, MzMLFile
+from pyopenms import IdXMLFile, MSExperiment, MzMLFile
 from src.workflow.ParameterManager import ParameterManager
 
 
@@ -18,9 +18,8 @@ def get_workflow_dir(workspace):
 def idxml_to_df(idxml_file):
     """Parse idXML file and return DataFrame with peptide hits."""
     proteins = []
-    peptides = PeptideIdentificationList()
+    peptides = []
     IdXMLFile().load(str(idxml_file), proteins, peptides)
-    peptides = [peptides.at(i) for i in range(peptides.size())]
 
     records = []
     for pep in peptides:
@@ -103,9 +102,8 @@ def parse_idxml(idxml_path: Path) -> tuple[pl.DataFrame, list[str]]:
         Tuple of (id_df, spectra_data list of source filenames)
     """
     proteins = []
-    peptides = PeptideIdentificationList()
+    peptides = []
     IdXMLFile().load(str(idxml_path), proteins, peptides)
-    peptides = [peptides.at(i) for i in range(peptides.size())]
 
     # Derive mzML filename from idXML filename (e.g., 02COVID_filter.idXML -> 02COVID.mzML)
     spectra_data = [extract_filename_from_idxml(idxml_path)]

@@ -3,7 +3,7 @@ from pathlib import Path
 import pandas as pd
 import plotly.express as px
 from streamlit_plotly_events import plotly_events
-from pyopenms import IdXMLFile, PeptideIdentificationList
+from pyopenms import IdXMLFile
 from scipy.stats import ttest_ind
 import numpy as np
 
@@ -42,7 +42,7 @@ class WorkflowTest(WorkflowManager):
         self.ui.select_input_file("mzML-files", multiple=True, reactive=True)
         self.ui.select_input_file("fasta-file", multiple=False)
 
-        t = st.tabs(["**Identification**", "**Rescoring**", "**Filtering**", "**Quantification**", "**Group Selection**"])
+        t = st.tabs(["**Identification**", "**Rescoring**", "**Filtering**", "**Library Generation**", "**Quantification**", "**Group Selection**"])
 
         with t[0]:
             # Checkbox for decoy generation
@@ -164,7 +164,65 @@ class WorkflowTest(WorkflowManager):
                 exclude_parameters=["type_protein"],
             )
 
-        with t[3]:
+        with t[3]:  # Library Generation
+            st.info("""
+            **Spectral Library Generation (EasyPQP):**
+            Generate a spectral library from filtered PSMs for targeted proteomics (DIA/SWATH).
+            """)
+
+            self.ui.input_widget(
+                key="generate-library",
+                default=False,
+                name="Generate Spectral Library",
+                widget_type="checkbox",
+                help="Enable spectral library generation using EasyPQP.",
+                reactive=True,
+            )
+            self.params = self.parameter_manager.get_parameters_from_json()
+
+            if self.params.get("generate-library", False):
+                # FDR options
+                self.ui.input_widget(
+                    key="library-use-fdr",
+                    default=False,
+                    name="Apply additional FDR filtering",
+                    widget_type="checkbox",
+                    help="If disabled (recommended), uses --nofdr since IDFilter already applied FDR.",
+                    reactive=True,
+                )
+                self.params = self.parameter_manager.get_parameters_from_json()
+
+                if self.params.get("library-use-fdr", False):
+                    self.ui.input_widget(
+                        key="library-psm-fdr",
+                        default=0.01,
+                        name="PSM FDR Threshold",
+                        widget_type="number",
+                        min_value=0.001,
+                        max_value=1.0,
+                        step_size=0.01,
+                    )
+
+                # Decoy options
+                self.ui.input_widget(
+                    key="library-generate-decoys",
+                    default=True,
+                    name="Generate Decoy Library",
+                    widget_type="checkbox",
+                    reactive=True,
+                )
+                self.params = self.parameter_manager.get_parameters_from_json()
+
+                if self.params.get("library-generate-decoys", True):
+                    self.ui.input_widget(
+                        key="library-decoy-method",
+                        default="shuffle",
+                        name="Decoy Method",
+                        widget_type="selectbox",
+                        options=["shuffle", "reverse", "pseudo-reverse", "shift"],
+                    )
+
+        with t[4]:
             st.info("""
             **Quantification (ProteomicsLFQ):**
             * **intThreshold**: Peak intensity threshold applied in seed detection.
@@ -185,7 +243,7 @@ class WorkflowTest(WorkflowManager):
                 include_parameters=["intThreshold", "psmFDR", "proteinFDR"],
             )
 
-        with t[4]:
+        with t[5]:
             st.markdown("### 🧪 Sample Group Assignment")
             st.info(
                 "Enter a group name for each mzML file.\n\n"
@@ -383,7 +441,7 @@ class WorkflowTest(WorkflowManager):
                     {"field": "score", "title": "Score", "sorter": "number"},
                     {"field": "protein_accession", "title": "Proteins"},
                 ],
-                initial_sort=[{"column": "score", "dir": "desc"}],
+                initial_sort=[{"column": "score", "dir": "asc"}],
                 index_field="id_idx",
             )
 
@@ -477,7 +535,7 @@ class WorkflowTest(WorkflowManager):
                     {"field": "score", "title": "Score", "sorter": "number"},
                     {"field": "protein_accession", "title": "Proteins"},
                 ],
-                initial_sort=[{"column": "score", "dir": "desc"}],
+                initial_sort=[{"column": "score", "dir": "asc"}],
                 index_field="id_idx",
             )
 
@@ -570,7 +628,7 @@ class WorkflowTest(WorkflowManager):
                     {"field": "score", "title": "Score", "sorter": "number"},
                     {"field": "protein_accession", "title": "Proteins"},
                 ],
-                initial_sort=[{"column": "score", "dir": "desc"}],
+                initial_sort=[{"column": "score", "dir": "asc"}],
                 index_field="id_idx",
             )
 
@@ -627,6 +685,100 @@ class WorkflowTest(WorkflowManager):
         # if not Path(filter_results[i]).exists():
         #     st.error(f"IDFilter failed for {stem}")
         #     st.stop()
+
+        # ================================
+        # EasyPQP Spectral Library Generation (optional)
+        # ================================
+        if self.params.get("generate-library", False):
+            self.logger.log("📚 Building spectral library with EasyPQP...")
+            st.info("Building spectral library with EasyPQP...")
+            library_dir = Path(self.workflow_dir, "results", "library")
+            library_dir.mkdir(parents=True, exist_ok=True)
+
+            psms_files, peaks_files = [], []
+
+            for filter_idxml in filter_results:
+                original_stem = Path(filter_idxml).stem.replace("_filter", "")
+                matching_mzml = next((m for m in in_mzML if Path(m).stem == original_stem), None)
+                if not matching_mzml:
+                    self.logger.log(f"Warning: No matching mzML found for {filter_idxml}")
+                    continue
+
+                # easypqp library requires specific extensions for file recognition:
+                # - PSM files must contain 'psmpkl' → use .psmpkl extension
+                # - Peak files must contain 'peakpkl' → use .peakpkl extension
+                # After splitext(), stem will be just "{mzML_stem}" matching PSM base_name
+                psms_out = str(library_dir / f"{original_stem}.psmpkl")
+                peaks_out = str(library_dir / f"{original_stem}.peakpkl")
+
+                convert_cmd = [
+                    "easypqp", "convert",
+                    "--pepxml", filter_idxml,
+                    "--spectra", matching_mzml,
+                    "--psms", psms_out,
+                    "--peaks", peaks_out
+                ]
+                if self.executor.run_command(convert_cmd):
+                    psms_files.append(psms_out)
+                    peaks_files.append(peaks_out)
+
+            if psms_files:
+                # easypqp library outputs TSV format (despite common .pqp extension)
+                library_tsv = str(library_dir / "spectral_library.tsv")
+                library_cmd = ["easypqp", "library", "--out", library_tsv]
+
+                if not self.params.get("library-use-fdr", False):
+                    # --nofdr only skips FDR recalculation, NOT threshold filtering
+                    # Set all thresholds to 1.0 to bypass filtering for pre-filtered input
+                    library_cmd.extend([
+                        "--nofdr",
+                        "--psm_fdr_threshold", "1.0",
+                        "--peptide_fdr_threshold", "1.0",
+                        "--protein_fdr_threshold", "1.0"
+                    ])
+                else:
+                    # Apply user-specified FDR filtering
+                    library_cmd.extend([
+                        "--psm_fdr_threshold",
+                        str(self.params.get("library-psm-fdr", 0.01)),
+                        "--peptide_fdr_threshold",
+                        str(self.params.get("library-peptide-fdr", 0.01)),
+                        "--protein_fdr_threshold",
+                        str(self.params.get("library-protein-fdr", 0.01))
+                    ])
+
+                for psms, peaks in zip(psms_files, peaks_files):
+                    library_cmd.extend([psms, peaks])
+
+                if self.executor.run_command(library_cmd):
+                    self.logger.log(f"✅ Library TSV created: {library_tsv}")
+
+                    # Convert TSV to PQP format for downstream tools
+                    library_pqp = str(library_dir / "spectral_library.pqp")
+                    if self.executor.run_command([
+                        "easypqp", "targeted-file-converter",
+                        "--in", library_tsv,
+                        "--out", library_pqp
+                    ]):
+                        self.logger.log(f"✅ Library PQP created: {library_pqp}")
+
+                        # Generate decoys (optional)
+                        if self.params.get("library-generate-decoys", True):
+                            library_decoy = str(library_dir / "spectral_library_decoy.pqp")
+                            decoy_cmd = [
+                                "easypqp", "openswath-decoy-generator",
+                                "--in", library_pqp,
+                                "--out", library_decoy,
+                                "--method", self.params.get("library-decoy-method", "shuffle")
+                            ]
+                            if self.executor.run_command(decoy_cmd):
+                                self.logger.log(f"✅ Library with decoys: {library_decoy}")
+
+                    st.success(f"Spectral library created: spectral_library.tsv")
+                else:
+                    self.logger.log("Warning: Failed to build spectral library")
+            else:
+                self.logger.log("Warning: No PSMs converted for library generation")
 
         st.success(f"✓ {stem} identification completed")
 
@@ -727,9 +879,8 @@ class WorkflowTest(WorkflowManager):
 
             def idxml_to_df(idxml_file):
                 proteins = []
-                peptides = PeptideIdentificationList()
+                peptides = []
                 IdXMLFile().load(str(idxml_file), proteins, peptides)
-                peptides = [peptides.at(i) for i in range(peptides.size())]
 
                 records = []
                 for pep in peptides:

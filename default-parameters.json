@@ -8,6 +8,12 @@
 
     "controllo": false,
 
+    "generate-library": false,
+    "library-use-fdr": false,
+    "library-psm-fdr": 0.01,
+    "library-generate-decoys": true,
+    "library-decoy-method": "shuffle",
+
     "CometAdapter": {
         "fragment_mass_tolerance": 0.4,
         "fragment_error_units": "Da"
