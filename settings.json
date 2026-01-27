@@ -1,7 +1,7 @@
 {
-    "app-name": "OpenMS WebApp Template",
+    "app-name": "quantms-web (DDA-LFQ)",
     "github-user": "OpenMS",
-    "version": "1.1.1",
+    "version": "1.0",
     "repository-name": "streamlit-template",
     "analytics": {
         "google-analytics": {
