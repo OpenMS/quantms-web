@@ -751,30 +751,8 @@ class WorkflowTest(WorkflowManager):
                     library_cmd.extend([psms, peaks])
 
                 if self.executor.run_command(library_cmd):
-                    self.logger.log(f"✅ Library TSV created: {library_tsv}")
-
-                    # Convert TSV to PQP format for downstream tools
-                    library_pqp = str(library_dir / "spectral_library.pqp")
-                    if self.executor.run_command([
-                        "easypqp", "targeted-file-converter",
-                        "--in", library_tsv,
-                        "--out", library_pqp
-                    ]):
-                        self.logger.log(f"✅ Library PQP created: {library_pqp}")
-
-                        # Generate decoys (optional)
-                        if self.params.get("library-generate-decoys", True):
-                            library_decoy = str(library_dir / "spectral_library_decoy.pqp")
-                            decoy_cmd = [
-                                "easypqp", "openswath-decoy-generator",
-                                "--in", library_pqp,
-                                "--out", library_decoy,
-                                "--method", self.params.get("library-decoy-method", "shuffle")
-                            ]
-                            if self.executor.run_command(decoy_cmd):
-                                self.logger.log(f"✅ Library with decoys: {library_decoy}")
-
-                    st.success(f"Spectral library created: spectral_library.tsv")
+                    self.logger.log("✅ Spectral library created")
+                    st.success("Spectral library created")
                 else:
                     self.logger.log("Warning: Failed to build spectral library")
             else:
