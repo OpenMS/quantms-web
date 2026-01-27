@@ -16,7 +16,10 @@ Click on a PSM to view the annotated spectrum and peptide sequence.
 """
 )
 
-st.info("Explore the PSM scatterplot along with the detailed PSM table.")
+st.info(
+    "**Score:** The q-value represents the minimum false discovery rate (FDR) at which this PSM "
+    "would be accepted. Lower values indicate higher confidence identifications."
+)
 
 if "workspace" not in st.session_state:
     st.warning("Please initialize your workspace first.")

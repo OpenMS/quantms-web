@@ -16,6 +16,11 @@ Click on a PSM to view the annotated spectrum and peptide sequence.
 """
 )
 
+st.info(
+    "**Score:** The Posterior Error Probability (PEP) represents the probability that this PSM "
+    "is incorrect. Lower values indicate higher confidence identifications."
+)
+
 if "workspace" not in st.session_state:
     st.warning("Please initialize your workspace first.")
     st.stop()

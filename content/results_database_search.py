@@ -15,6 +15,11 @@ Click on a PSM to view the annotated spectrum and peptide sequence.
 """
 )
 
+st.info(
+    "**Score:** The e-value (expectation value) represents the expected number of random PSMs "
+    "with an equal or better score. Lower values indicate higher confidence identifications."
+)
+
 if "workspace" not in st.session_state:
     st.warning("Please initialize your workspace first.")
     st.stop()
