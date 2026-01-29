@@ -41,7 +41,7 @@
                 "algorithm:link:mz_tol": 10.0
             }
         },
-        "Comet High-Res": {
+        "High Res MS": {
             "_description": "Optimized for high-resolution MS2 (Orbitrap, TOF) when using ppm fragment tolerance",
             "CometAdapter": {
                 "instrument": "high_res",
@@ -49,7 +49,7 @@
                 "fragment_bin_offset": 0.0
             }
         },
-        "Comet Low-Res": {
+        "Low Res MS": {
             "_description": "Optimized for low-resolution MS2 (Ion trap) when using ppm fragment tolerance",
             "CometAdapter": {
                 "instrument": "low_res",
