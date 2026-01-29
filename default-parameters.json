@@ -1,21 +1,9 @@
 {
-    "example-workflow-selected-mzML-files": [],
     "image-format": "svg",
-    "2D-map-intensity-cutoff": 5000,
-
-    "example-x-dimension": 10,
-    "example-y-dimension": 5,
-
     "controllo": false,
-
     "generate-library": false,
     "library-use-fdr": false,
     "library-psm-fdr": 0.01,
     "library-generate-decoys": true,
-    "library-decoy-method": "shuffle",
-
-    "CometAdapter": {
-        "fragment_mass_tolerance": 0.4,
-        "fragment_error_units": "Da"
-    }
+    "library-decoy-method": "shuffle"
 }
