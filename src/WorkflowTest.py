@@ -86,6 +86,9 @@ class WorkflowTest(WorkflowManager):
             * **missed_cleavages**: Number of possible cleavage sites missed by the enzyme. It has no effect if enzyme is unspecific cleavage.
             * **fixed_modifications**: Fixed modifications, specified using Unimod (www.unimod.org) terms, e.g. 'Carbamidomethyl (C)' or 'Oxidation (M)'
             * **variable_modifications**: Variable modifications, specified using Unimod (www.unimod.org) terms, e.g. 'Carbamidomethyl (C)' or 'Oxidation (M)'
+            * **instrument**: Type of instrument (high_res or low_res). Use 'high_res' for high-resolution MS2 (Orbitrap, TOF), 'low_res' for ion trap.
+            * **fragment_mass_tolerance**: Fragment mass tolerance for MS2 matching.
+            * **fragment_bin_offset**: Offset for binning MS2 spectra. Typically 0.0 for high-res, 0.4 for low-res instruments.
             """
             if not self.params.get("generate-decoys", True):
                 comet_info += """* **PeptideIndexing:decoy_string**: String that was appended (or prefixed - see 'decoy_string_position' flag below) to the accessions
@@ -94,7 +97,7 @@ class WorkflowTest(WorkflowManager):
             st.info(comet_info)
 
             comet_include = [":enzyme", "missed_cleavages", "fixed_modifications", "variable_modifications",
-                             "fragment_mass_tolerance", "fragment_error_units"]
+                             "instrument", "fragment_mass_tolerance", "fragment_error_units", "fragment_bin_offset"]
             if not self.params.get("generate-decoys", True):
                 # Only show decoy_string when not generating decoys
                 comet_include.append("PeptideIndexing:decoy_string")
