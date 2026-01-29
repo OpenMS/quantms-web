@@ -245,11 +245,9 @@ jobs:
       run: |
         sed -i 's/#import site/import site/' python-${{ env.PYTHON_VERSION }}/python311._pth
 
-    - name: Install build dependencies (required for pyprophet build)
-      run: .\python-${{ env.PYTHON_VERSION }}\python -m pip install cython numpy --no-warn-script-location
-
-    - name: Install Required Packages
-      run: .\python-${{ env.PYTHON_VERSION }}\python -m pip install --force-reinstall -r requirements.txt --no-warn-script-location
+    - name: Install Required Packages (using system Python to compile, targeting embeddable)
+      run: |
+        python -m pip install -r requirements.txt --target python-${{ env.PYTHON_VERSION }}/Lib/site-packages --upgrade
 
     - name: Set to offline deployment
       run: |
