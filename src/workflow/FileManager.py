@@ -123,10 +123,7 @@ class FileManager:
         Returns:
             List[str]: The files list with new directory.
         """
-        if not subdir_name:
-            subdir_name = self._create_results_sub_dir(subdir_name)
-        else:
-            subdir_name = self._create_results_sub_dir(subdir_name)
+        subdir_name = self._create_results_sub_dir(subdir_name)
 
         def change_subdir(file_path, subdir):
             return Path(subdir, Path(file_path).name)

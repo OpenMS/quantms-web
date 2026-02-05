@@ -163,9 +163,6 @@ class StreamlitUI:
 
         # Local file upload option: via directory path
         if st.session_state.location == "local":
-            # c2_text, c2_checkbox = c2.columns([1.5, 1], gap="large")
-            # c2_text.markdown("**OR add files from local folder**")
-            # use_copy = c2_checkbox.checkbox("Make a copy of files", key=f"{key}-copy_files", value=True, help="Create a copy of files in workspace.")
             with c2.container(border=True):
                 st_cols = st.columns([0.05, 0.55], gap="small")
                 with st_cols[0]:
@@ -812,7 +809,6 @@ class StreamlitUI:
                         p["value"] = p["value"].split("\n")
                     # bools
                     if isinstance(p["value"], bool):
-                        cols[i].markdown("##")
                         cols[i].checkbox(
                             name,
                             value=(

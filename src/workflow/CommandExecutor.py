@@ -273,14 +273,14 @@ class CommandExecutor:
                 # get value from input_output dictionary
                 value = input_output[k]
                 # when multiple input/output files exist (e.g., multiple mzMLs and featureXMLs), but only one additional input file (e.g., one input database file)
-                if len(value) == 1:
-                    i = 0
+                # use index 0 for single-item lists, otherwise use the loop index
+                idx = 0 if len(value) == 1 else i
                 # when the entry is a list of collected files to be passed as one [["sample1", "sample2"]]
-                if isinstance(value[i], list):
-                    command += value[i]
+                if isinstance(value[idx], list):
+                    command += value[idx]
                 # standard case, files was a list of strings, take the file name at index
                 else:
-                    command += [value[i]]
+                    command += [value[idx]]
             # Add non-default TOPP tool parameters
             if tool in params.keys():
                 for k, v in params[tool].items():

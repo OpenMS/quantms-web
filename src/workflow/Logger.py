@@ -2,7 +2,7 @@ from pathlib import Path
 
 class Logger:
     """
-    A simple logging class for writing messages to a log file. input_widgetThis class is designed
+    A simple logging class for writing messages to a log file. This class is designed
     to append messages to a log file in the current workflow directory, facilitating
     easy tracking of events, errors, or other significant occurrences in processes called
     during workflow execution.
@@ -36,7 +36,3 @@ class Logger:
         if level <= 2:
             with open(Path(log_dir, "all.log"), "a", encoding="utf-8") as f:
                 f.write(f"{message}\n\n")
-        # log_types = ["minimal", "commands and run times", "tool outputs", "all"]
-        # for i, log_type in enumerate(log_types):
-        #     with open(Path(log_dir, f"{log_type.replace(" ", "-")}.log"), "a", encoding="utf-8") as f:
-        #         f.write(f"{message}\n\n")
