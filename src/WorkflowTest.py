@@ -8,7 +8,7 @@ from scipy.stats import ttest_ind
 import numpy as np
 
 from src.workflow.WorkflowManager import WorkflowManager
-from src.common.results_helpers import parse_idxml, build_spectra_cache
+from src.common.results_helpers import parse_idxml, build_spectra_cache, compute_abundance_data, save_abundance_data
 from openms_insight import Table, Heatmap, LinePlot, SequenceView
 
 
@@ -817,6 +817,39 @@ class WorkflowTest(WorkflowManager):
         #     st.error("ProteomicsLFQ failed: mzTab not created")
         #     st.stop()
 
+        # ================================
+        # 4.5️⃣ Compute and save abundance data
+        # ================================
+        self.logger.log("📊 Computing abundance statistics...")
+        st.info("Computing abundance statistics...")
+
+        # Get group mapping from parameters (locked at execution time)
+        group_map = {
+            key[11:]: value  # Remove "mzML-group-" prefix
+            for key, value in self.params.items()
+            if key.startswith("mzML-group-") and value
+        }
+
+        if group_map and len(set(group_map.values())) >= 2:
+            csv_file = Path(quant_msstats)
+            if csv_file.exists():
+                abundance_result = compute_abundance_data(csv_file, group_map)
+                if abundance_result is not None:
+                    pivot_df, expr_df, group_map_out = abundance_result
+                    if save_abundance_data(quant_dir, pivot_df, expr_df, group_map_out):
+                        self.logger.log("✅ Abundance statistics computed and saved")
+                        st.success("Abundance statistics computed and saved")
+                    else:
+                        self.logger.log("⚠️ Warning: Failed to save abundance statistics")
+                        st.warning("Failed to save abundance statistics (results will be computed on-the-fly)")
+                else:
+                    self.logger.log("⚠️ Warning: Could not compute abundance statistics")
+                    st.warning("Could not compute abundance statistics (check group assignments)")
+            else:
+                self.logger.log("⚠️ Warning: Quantification CSV not found")
+        else:
+            self.logger.log("⚠️ Warning: Insufficient group assignments for statistical analysis")
+            st.warning("Insufficient group assignments for statistical analysis. Please assign at least two different groups.")
 
         # ================================
         # 5️⃣ Final report

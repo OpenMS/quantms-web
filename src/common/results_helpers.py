@@ -1,4 +1,5 @@
 """Helper functions for results pages."""
+import json
 import re
 import pandas as pd
 import polars as pl
@@ -183,29 +184,19 @@ def build_spectra_cache(mzml_dir: Path, filename_to_index: dict) -> tuple[pl.Dat
     return pl.DataFrame(records), filename_to_index
 
 
-@st.cache_data
-def load_abundance_data(workspace_path: str, csv_mtime: float) -> tuple | None:
-    """Load CSV, compute stats (log2FC, p-value), build pivot_df and expr_df.
+def compute_abundance_data(csv_file: Path, group_map: dict) -> tuple | None:
+    """Compute abundance statistics from quantification CSV.
+
+    This function performs the actual computation of abundance data including
+    log2 fold change, p-values, pivot tables, and expression matrices.
 
     Args:
-        workspace_path: Path to the workspace directory
-        csv_mtime: Modification time of CSV file (used as cache key)
+        csv_file: Path to the quantification CSV file
+        group_map: Dictionary mapping sample filenames (e.g., "sample1.mzML") to group names
 
     Returns:
-        Tuple of (pivot_df, expr_df, group_map) or None if data unavailable
+        Tuple of (pivot_df, expr_df, group_map) or None if computation fails
     """
-    workflow_dir = get_workflow_dir(Path(workspace_path))
-    quant_dir = workflow_dir / "results" / "quant_results"
-
-    if not quant_dir.exists():
-        return None
-
-    csv_files = sorted(quant_dir.glob("*.csv"))
-    if not csv_files:
-        return None
-
-    csv_file = csv_files[0]
-
     try:
         df = pd.read_csv(csv_file)
     except Exception:
@@ -213,15 +204,6 @@ def load_abundance_data(workspace_path: str, csv_mtime: float) -> tuple | None:
 
     if df.empty:
         return None
-
-    # Get group mapping from parameters
-    param_manager = ParameterManager(workflow_dir)
-    params = param_manager.get_parameters_from_json()
-    group_map = {
-        key[11:]: value  # Remove "mzML-group-" prefix
-        for key, value in params.items()
-        if key.startswith("mzML-group-") and value
-    }
 
     if not group_map:
         return None
@@ -296,8 +278,75 @@ def load_abundance_data(workspace_path: str, csv_mtime: float) -> tuple | None:
     return pivot_df, expr_df, group_map
 
 
+def save_abundance_data(quant_dir: Path, pivot_df: pd.DataFrame, expr_df: pd.DataFrame, group_map: dict) -> bool:
+    """Save preprocessed abundance data to files.
+
+    Saves the computed abundance data so that results pages can load it
+    without recomputing. This ensures results are stable even if the user
+    changes group labels after running the workflow.
+
+    Args:
+        quant_dir: Directory to save the files (typically results/quant_results/)
+        pivot_df: Protein-level abundance pivot table with statistics
+        expr_df: Log2-transformed expression matrix
+        group_map: Dictionary mapping sample filenames to group names
+
+    Returns:
+        True if save was successful, False otherwise
+    """
+    try:
+        # Save pivot table as parquet for efficient loading
+        pivot_df.to_parquet(quant_dir / "abundance_pivot.parquet", index=False)
+
+        # Save expression matrix as parquet (with index preserved)
+        expr_df.to_parquet(quant_dir / "abundance_expr.parquet", index=True)
+
+        # Save group map as JSON
+        with open(quant_dir / "abundance_groups.json", "w") as f:
+            json.dump(group_map, f)
+
+        return True
+    except Exception:
+        return False
+
+
+def load_preprocessed_abundance_data(quant_dir: Path) -> tuple | None:
+    """Load preprocessed abundance data from files.
+
+    Args:
+        quant_dir: Directory containing the preprocessed files
+
+    Returns:
+        Tuple of (pivot_df, expr_df, group_map) or None if files don't exist
+    """
+    pivot_file = quant_dir / "abundance_pivot.parquet"
+    expr_file = quant_dir / "abundance_expr.parquet"
+    groups_file = quant_dir / "abundance_groups.json"
+
+    if not all(f.exists() for f in [pivot_file, expr_file, groups_file]):
+        return None
+
+    try:
+        pivot_df = pd.read_parquet(pivot_file)
+        expr_df = pd.read_parquet(expr_file)
+
+        with open(groups_file, "r") as f:
+            group_map = json.load(f)
+
+        return pivot_df, expr_df, group_map
+    except Exception:
+        return None
+
+
 def get_abundance_data(workspace: Path) -> tuple | None:
-    """Wrapper that handles cache key (workspace + CSV mtime).
+    """Load abundance data, preferring preprocessed files from workflow execution.
+
+    This function first tries to load preprocessed abundance data that was
+    computed during workflow execution. This ensures that results remain
+    stable even if the user changes group labels after running the workflow.
+
+    If preprocessed data is not available (e.g., older workflow runs), it
+    falls back to computing the data on-the-fly.
 
     Args:
         workspace: Path to the workspace directory
@@ -311,9 +360,25 @@ def get_abundance_data(workspace: Path) -> tuple | None:
     if not quant_dir.exists():
         return None
 
+    # Try to load preprocessed data first (computed during workflow execution)
+    preprocessed = load_preprocessed_abundance_data(quant_dir)
+    if preprocessed is not None:
+        return preprocessed
+
+    # Fallback: compute on-the-fly for backward compatibility
     csv_files = sorted(quant_dir.glob("*.csv"))
     if not csv_files:
         return None
 
-    csv_mtime = csv_files[0].stat().st_mtime
-    return load_abundance_data(str(workspace), csv_mtime)
+    csv_file = csv_files[0]
+
+    # Get group mapping from parameters
+    param_manager = ParameterManager(workflow_dir)
+    params = param_manager.get_parameters_from_json()
+    group_map = {
+        key[11:]: value  # Remove "mzML-group-" prefix
+        for key, value in params.items()
+        if key.startswith("mzML-group-") and value
+    }
+
+    return compute_abundance_data(csv_file, group_map)
