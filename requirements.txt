@@ -149,3 +149,4 @@ pyprophet>=2.2.0
 # Redis Queue dependencies (for online mode)
 redis>=5.0.0
 rq>=1.16.0
+mygene
