@@ -1,6 +1,48 @@
+import ast
+from pathlib import Path
 from streamlit.testing.v1 import AppTest
 import pytest
 import json
+
+
+def get_pages_from_app():
+    """Parse app.py AST to extract page paths from st.Page(Path(...)) calls."""
+    tree = ast.parse(Path("app.py").read_text())
+    pages = []
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "Page"
+            and node.args
+            and isinstance(node.args[0], ast.Call)
+            and isinstance(node.args[0].func, ast.Name)
+            and node.args[0].func.id == "Path"
+        ):
+            parts = [
+                arg.value
+                for arg in node.args[0].args
+                if isinstance(arg, ast.Constant) and isinstance(arg.value, str)
+            ]
+            if parts:
+                pages.append(str(Path(*parts)))
+    return pages
+
+
+def _uses_page_link(path: str) -> bool:
+    """Return True if the file calls st.page_link(), which is incompatible with AppTest."""
+    return "st.page_link(" in Path(path).read_text()
+
+
+# Collect all content pages: those registered in app.py plus any other .py files
+# in content/ (utility pages like digest.py, fragmentation.py, etc.).
+# Exclude pages using st.page_link() — these require full st.navigation()
+# context and cannot be launched in isolation via AppTest.
+_app_pages = get_pages_from_app()
+_all_content = sorted(str(p) for p in Path("content").glob("*.py"))
+_pages_to_test = sorted(
+    p for p in set(_app_pages) | set(_all_content) if not _uses_page_link(p)
+)
 
 
 @pytest.fixture
@@ -16,18 +58,7 @@ def launch(request):
 
 
 # Test launching of all pages
-@pytest.mark.parametrize(
-    "launch",
-    (
-        "content/workflow_fileupload.py",
-        "content/workflow_configure.py",
-        "content/workflow_run.py",
-        "content/digest.py",
-        "content/fragmentation.py",
-        "content/isotope_pattern_generator.py",
-    ),
-    indirect=True,
-)
+@pytest.mark.parametrize("launch", _pages_to_test, indirect=True)
 def test_launch(launch):
     """Test if all pages can be launched without errors."""
     launch.run(timeout=30)

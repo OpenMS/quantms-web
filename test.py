@@ -1,6 +1,32 @@
 import unittest
+import ast
 import json
 from pathlib import Path
+
+
+def get_pages_from_app():
+    """Parse app.py AST to extract page paths from st.Page(Path(...)) calls."""
+    tree = ast.parse(Path("app.py").read_text())
+    pages = []
+    for node in ast.walk(tree):
+        # Match st.Page(Path("content", "filename.py"), ...)
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "Page"
+            and node.args
+            and isinstance(node.args[0], ast.Call)
+            and isinstance(node.args[0].func, ast.Name)
+            and node.args[0].func.id == "Path"
+        ):
+            parts = [
+                arg.value
+                for arg in node.args[0].args
+                if isinstance(arg, ast.Constant) and isinstance(arg.value, str)
+            ]
+            if parts:
+                pages.append(str(Path(*parts)))
+    return pages
 
 
 class TestSettingsJson(unittest.TestCase):
@@ -17,21 +43,9 @@ class TestSettingsJson(unittest.TestCase):
 class TestContentPagesExist(unittest.TestCase):
     def test_all_content_pages_exist(self):
         """Test that all content pages referenced by app.py exist."""
-        expected_pages = [
-            "content/quickstart.py",
-            "content/workflow_fileupload.py",
-            "content/workflow_configure.py",
-            "content/workflow_run.py",
-            "content/results_database_search.py",
-            "content/results_rescoring.py",
-            "content/results_filtered.py",
-            "content/results_abundance.py",
-            "content/results_volcano.py",
-            "content/results_pca.py",
-            "content/results_heatmap.py",
-            "content/results_library.py",
-        ]
-        for page in expected_pages:
+        pages = get_pages_from_app()
+        self.assertTrue(len(pages) > 0, "No pages found in app.py")
+        for page in pages:
             self.assertTrue(Path(page).exists(), f"Content page {page} is missing")
 
 
