@@ -44,7 +44,10 @@ class TestContentPagesExist(unittest.TestCase):
     def test_all_content_pages_exist(self):
         """Test that all content pages referenced by app.py exist."""
         pages = get_pages_from_app()
-        self.assertTrue(len(pages) > 0, "No pages found in app.py")
+        self.assertTrue(
+            len(pages) > 0,
+            "No pages found in app.py — ensure app.py contains st.Page(Path(...)) calls",
+        )
         for page in pages:
             self.assertTrue(Path(page).exists(), f"Content page {page} is missing")
 

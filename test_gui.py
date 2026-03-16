@@ -39,7 +39,9 @@ def _uses_page_link(path: str) -> bool:
 # Exclude pages using st.page_link() — these require full st.navigation()
 # context and cannot be launched in isolation via AppTest.
 _app_pages = get_pages_from_app()
-_all_content = sorted(str(p) for p in Path("content").glob("*.py"))
+_all_content = sorted(
+    str(p) for p in Path("content").glob("*.py") if p.name != "__init__.py"
+)
 _pages_to_test = sorted(
     p for p in set(_app_pages) | set(_all_content) if not _uses_page_link(p)
 )
