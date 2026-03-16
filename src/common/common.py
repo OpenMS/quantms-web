@@ -329,7 +329,7 @@ def page_setup(page: str = "") -> dict[str, Any]:
     """
     if "settings" not in st.session_state:
         with open("settings.json", "r") as f:
-            st.session_state["settings"] = json.load(f)
+            st.session_state.settings = json.load(f)
 
     # Set Streamlit page configurations
     st.set_page_config(
