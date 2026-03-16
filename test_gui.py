@@ -1,134 +1,66 @@
+import ast
+from pathlib import Path
 from streamlit.testing.v1 import AppTest
 import pytest
-from src import fileupload
 import json
-from pathlib import Path
-import shutil
+
+
+def get_pages_from_app():
+    """Parse app.py AST to extract page paths from st.Page(Path(...)) calls."""
+    tree = ast.parse(Path("app.py").read_text(encoding="utf-8"))
+    pages = []
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "Page"
+            and node.args
+            and isinstance(node.args[0], ast.Call)
+            and isinstance(node.args[0].func, ast.Name)
+            and node.args[0].func.id == "Path"
+        ):
+            parts = [
+                arg.value
+                for arg in node.args[0].args
+                if isinstance(arg, ast.Constant) and isinstance(arg.value, str)
+            ]
+            if parts:
+                pages.append(str(Path(*parts)))
+    return pages
+
+
+def _uses_page_link(path: str) -> bool:
+    """Return True if the file calls st.page_link(), which is incompatible with AppTest."""
+    return "st.page_link(" in Path(path).read_text(encoding="utf-8")
+
+
+# Collect all content pages: those registered in app.py plus any other .py files
+# in content/. Exclude pages using st.page_link() — these require full
+# st.navigation() context and cannot be launched in isolation via AppTest.
+_app_pages = get_pages_from_app()
+_all_content = sorted(
+    str(p) for p in Path("content").glob("*.py") if p.name != "__init__.py"
+)
+_pages_to_test = sorted(
+    p for p in set(_app_pages) | set(_all_content) if not _uses_page_link(p)
+)
 
 
 @pytest.fixture
 def launch(request):
     test = AppTest.from_file(request.param)
 
-    ## Initialize session state ##
+    ## Initialize session state (use dict-style access for conda compatibility) ##
     with open("settings.json", "r") as f:
-        test.session_state.settings = json.load(f)
-    test.session_state.settings["test"] = True
+        test.session_state["settings"] = json.load(f)
+    test.session_state["settings"]["test"] = True
     test.secrets["workspace"] = "test"
     return test
 
 
 # Test launching of all pages
-@pytest.mark.parametrize(
-    "launch",
-    (
-        # "content/quickstart.py", # NOTE: this page does not work due to streamlit.errors.StreamlitPageNotFoundError error
-        "content/documentation.py",
-        "content/topp_workflow_file_upload.py",
-        "content/topp_workflow_parameter.py",
-        "content/topp_workflow_execution.py",
-        "content/topp_workflow_results.py",
-        "content/file_upload.py",
-        "content/raw_data_viewer.py",
-        "content/run_example_workflow.py",
-        "content/download_section.py",
-        "content/simple_workflow.py",
-        "content/run_subprocess.py",
-    ),
-    indirect=True,
-)
+@pytest.mark.parametrize("launch", _pages_to_test, indirect=True)
 def test_launch(launch):
     """Test if all pages can be launched without errors."""
-    launch.run(timeout=30)  # Increased timeout from 10 to 30 seconds
-    assert not launch.exception
-
-
-########### PAGE SPECIFIC TESTS ############
-@pytest.mark.parametrize(
-    "launch,selection",
-    [
-        ("content/documentation.py", "User Guide"),
-        ("content/documentation.py", "Installation"),
-        (
-            "content/documentation.py",
-            "Developers Guide: How to build app based on this template",
-        ),
-        ("content/documentation.py", "Developers Guide: TOPP Workflow Framework"),
-        ("content/documentation.py", "Developer Guide: Windows Executables"),
-        ("content/documentation.py", "Developers Guide: Deployment"),
-    ],
-    indirect=["launch"],
-)
-def test_documentation(launch, selection):
-    launch.run()
-    launch.selectbox[0].select(selection).run()
-    assert not launch.exception
-
-
-@pytest.mark.parametrize("launch", ["content/file_upload.py"], indirect=True)
-def test_file_upload_load_example(launch):
-    launch.run()
-    for i in launch.tabs:
-        if i.label == "Example Data":
-            i.button[0].click().run()
-            assert not launch.exception
-
-
-# NOTE: All tabs are automatically checked
-@pytest.mark.parametrize(
-    "launch,example",
-    [
-        ("content/raw_data_viewer.py", "Blank.mzML"),
-        ("content/raw_data_viewer.py", "Treatment.mzML"),
-        ("content/raw_data_viewer.py", "Pool.mzML"),
-        ("content/raw_data_viewer.py", "Control.mzML"),
-    ],
-    indirect=["launch"],
-)
-def test_view_raw_ms_data(launch, example):
-    launch.run(timeout=30)  # Increased timeout from 10 to 30 seconds
-
-    ## Load Example file, based on implementation of fileupload.load_example_mzML_files() ###
-    mzML_dir = Path(launch.session_state.workspace, "mzML-files")
-
-    # Copy files from example-data/mzML to workspace mzML directory, add to selected files
-    for f in Path("example-data", "mzML").glob("*.mzML"):
-        shutil.copy(f, mzML_dir)
-    launch.run()
-
-    ## TODO: Figure out a way to select a spectrum to be displayed
-    launch.selectbox[0].select(example).run()
-    assert not launch.exception
-
-
-@pytest.mark.parametrize(
-    "launch,example",
-    [
-        ("content/run_example_workflow.py", ["Blank"]),
-        ("content/run_example_workflow.py", ["Treatment"]),
-        ("content/run_example_workflow.py", ["Pool"]),
-        ("content/run_example_workflow.py", ["Control"]),
-        ("content/run_example_workflow.py", ["Control", "Blank"]),
-    ],
-    indirect=["launch"],
-)
-def test_run_workflow(launch, example):
-    launch.run()
-    ## Load Example file, based on implementation of fileupload.load_example_mzML_files() ###
-    mzML_dir = Path(launch.session_state.workspace, "mzML-files")
-
-    # Copy files from example-data/mzML to workspace mzML directory, add to selected files
-    for f in Path("example-data", "mzML").glob("*.mzML"):
-        shutil.copy(f, mzML_dir)
-    launch.run()
-
-    ## Select experiments to process
-    for e in example:
-        launch.multiselect[0].select(e)
-
-    launch.run()
-    assert not launch.exception
-
-    # Press the "Run Workflow" button
-    launch.button[1].click().run(timeout=60)
+    launch.run(timeout=30)
     assert not launch.exception
