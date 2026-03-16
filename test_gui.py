@@ -35,9 +35,8 @@ def _uses_page_link(path: str) -> bool:
 
 
 # Collect all content pages: those registered in app.py plus any other .py files
-# in content/ (utility pages like digest.py, fragmentation.py, etc.).
-# Exclude pages using st.page_link() — these require full st.navigation()
-# context and cannot be launched in isolation via AppTest.
+# in content/. Exclude pages using st.page_link() — these require full
+# st.navigation() context and cannot be launched in isolation via AppTest.
 _app_pages = get_pages_from_app()
 _all_content = sorted(
     str(p) for p in Path("content").glob("*.py") if p.name != "__init__.py"
