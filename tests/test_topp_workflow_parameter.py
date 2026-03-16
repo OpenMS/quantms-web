@@ -14,10 +14,19 @@ from unittest.mock import patch, MagicMock
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(PROJECT_ROOT)
 
+# Save original pyopenms module before mocking (to restore after import)
+_orig_pyopenms = sys.modules.get('pyopenms')
+
 # Create mock for pyopenms to avoid dependency on actual OpenMS installation
 mock_pyopenms = MagicMock()
 mock_pyopenms.__version__ = "2.9.1"  # Mock version for testing
 sys.modules['pyopenms'] = mock_pyopenms
+
+# Restore original pyopenms to avoid contaminating other test modules
+if _orig_pyopenms is not None:
+    sys.modules['pyopenms'] = _orig_pyopenms
+elif 'pyopenms' in sys.modules:
+    del sys.modules['pyopenms']
 
 @pytest.fixture
 def mock_streamlit():

@@ -16,6 +16,10 @@ from unittest.mock import patch, MagicMock
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(PROJECT_ROOT)
 
+# Save original modules before mocking (to restore after import)
+_orig_streamlit = sys.modules.get('streamlit')
+_orig_pyopenms = sys.modules.get('pyopenms')
+
 # Create mock for streamlit before importing ParameterManager
 mock_streamlit = MagicMock()
 mock_streamlit.session_state = {}
@@ -28,6 +32,17 @@ sys.modules['pyopenms'] = mock_pyopenms
 
 # Now import after mocks are set up
 from src.workflow.ParameterManager import ParameterManager
+
+# Restore original modules to avoid contaminating other test modules
+if _orig_streamlit is not None:
+    sys.modules['streamlit'] = _orig_streamlit
+elif 'streamlit' in sys.modules:
+    del sys.modules['streamlit']
+
+if _orig_pyopenms is not None:
+    sys.modules['pyopenms'] = _orig_pyopenms
+elif 'pyopenms' in sys.modules:
+    del sys.modules['pyopenms']
 
 
 @pytest.fixture

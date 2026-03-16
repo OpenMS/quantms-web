@@ -6,7 +6,7 @@ from pathlib import Path
 
 def get_pages_from_app():
     """Parse app.py AST to extract page paths from st.Page(Path(...)) calls."""
-    tree = ast.parse(Path("app.py").read_text())
+    tree = ast.parse(Path("app.py").read_text(encoding="utf-8"))
     pages = []
     for node in ast.walk(tree):
         # Match st.Page(Path("content", "filename.py"), ...)

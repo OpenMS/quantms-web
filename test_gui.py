@@ -7,7 +7,7 @@ import json
 
 def get_pages_from_app():
     """Parse app.py AST to extract page paths from st.Page(Path(...)) calls."""
-    tree = ast.parse(Path("app.py").read_text())
+    tree = ast.parse(Path("app.py").read_text(encoding="utf-8"))
     pages = []
     for node in ast.walk(tree):
         if (
@@ -31,7 +31,7 @@ def get_pages_from_app():
 
 def _uses_page_link(path: str) -> bool:
     """Return True if the file calls st.page_link(), which is incompatible with AppTest."""
-    return "st.page_link(" in Path(path).read_text()
+    return "st.page_link(" in Path(path).read_text(encoding="utf-8")
 
 
 # Collect all content pages: those registered in app.py plus any other .py files
@@ -51,10 +51,10 @@ _pages_to_test = sorted(
 def launch(request):
     test = AppTest.from_file(request.param)
 
-    ## Initialize session state ##
+    ## Initialize session state (use dict-style access for conda compatibility) ##
     with open("settings.json", "r") as f:
-        test.session_state.settings = json.load(f)
-    test.session_state.settings["test"] = True
+        test.session_state["settings"] = json.load(f)
+    test.session_state["settings"]["test"] = True
     test.secrets["workspace"] = "test"
     return test
 
