@@ -13,7 +13,10 @@ permissions:
   contents: write
 
 env:
-  OPENMS_VERSION: 3.5.0 
+  OPENMS_VERSION: 3.5.0
+  # Override to pin contrib to a specific release when OPENMS_VERSION is a non-release branch (e.g. "develop").
+  # Leave empty to use OPENMS_VERSION.
+  OPENMS_CONTRIB_VERSION: ""
   PYTHON_VERSION: 3.11.0
   # Name of the installer
   APP_NAME: quantms-web-DDA-LFQ
