@@ -29,7 +29,7 @@ Before asking the user anything, read a small known set of files directly (do no
 3. `k8s/base/kustomization.yaml`, `k8s/base/streamlit-deployment.yaml`, `k8s/base/rq-worker-deployment.yaml`, `k8s/base/workspace-pvc.yaml` — confirm the layout still matches the template:
    - PVC `metadata.name` is `workspaces-pvc`.
    - Deployments reference `image: openms-streamlit` (the placeholder Kustomize swaps).
-   - `streamlit-deployment.yaml` has `claimName: workspaces-pvc` and `volume-group: workspaces` (both as a pod label and as the pod-affinity `matchExpressions` value).
+   - `streamlit-deployment.yaml` has `claimName: workspaces-pvc`. (Co-location of the workspace-using pods is enforced by the shared RWO PVC mount, not by a pod-affinity rule.)
 4. `.github/workflows/build-and-test.yml` — confirm which tags CI publishes (the OpenMS template publishes `<branch>-full`, `<branch>-simple`, `<tag>-full`, `<tag>-simple`, plus `latest` on `main`-full pushes).
 
 If any of those files are missing, renamed, or significantly restructured, stop and ask the user how to proceed. Do not pattern-match the standard answers onto an unknown layout.
@@ -155,7 +155,7 @@ spec:
       storage: <size>     # Q6: e.g. 100Gi, 1Ti, 3Ti
 ```
 
-Do **not** rename the PVC, the base `kustomization.yaml` resource list, the `claimName` in `streamlit-deployment.yaml`, or the `volume-group` pod-affinity label. Kustomize's `namePrefix` already gives the in-cluster PVC a unique per-fork name; renaming the base creates a 3-file cascade for no benefit.
+Do **not** rename the PVC, the base `kustomization.yaml` resource list, or the `claimName` in `streamlit-deployment.yaml`. Kustomize's `namePrefix` already gives the in-cluster PVC a unique per-fork name; renaming the base creates a 3-file cascade for no benefit.
 
 Operator caveat (mention in handoff, not your job to verify): in-place expansion of an *already-deployed* PVC requires the StorageClass to have `allowVolumeExpansion: true`. If the operator's `cinder-csi` class does not allow expansion, growing a live PVC requires recreation, not a manifest edit. Resizing on first deploy is unaffected.
 
@@ -164,7 +164,7 @@ Operator caveat (mention in handoff, not your job to verify): in-place expansion
 After committing the edits, tell the user the next steps belong to a human operator (or CI) and are out of scope for you:
 
 1. Open a PR with the overlay edits and have it reviewed.
-2. Merge to `main`. CI (`build-and-test.yml`) rebuilds and pushes the image to GHCR with the tag from Q3.
+2. Merge to `main`. CI (`build-and-test.yml`) rebuilds and pushes the image to GHCR with the tag from Q3. The kind integration jobs (`test-nginx`, `test-traefik`) auto-discover slug and Traefik hostnames from the overlay output, so no workflow edits are needed for fork-specific values.
 3. Cluster operator runs `kubectl apply -k k8s/overlays/prod/` against the OpenMS cluster.
 4. Operator verifies with `kubectl -n openms rollout status deployment/<slug>-streamlit` and a browser check on `https://<sub>.webapps.openms.de`.
 
@@ -185,4 +185,5 @@ After committing the edits, tell the user the next steps belong to a human opera
 - [ ] Redis URL written in both Deployment patches (`streamlit` and `rq-worker`)
 - [ ] Memory-tier component selected
 - [ ] Storage size in `k8s/base/workspace-pvc.yaml` updated only if the user picked a non-default size; PVC name and `claimName` untouched
+- [ ] `.github/workflows/build-and-test.yml` uses dynamic overlay discovery (no `template-app` / `template.webapps.openms.*` literals); patched in if the fork's workflow was on the old hardcoded shape
 - [ ] Changes committed on a feature branch (no PR opened unless the user asked for one)
