@@ -39,10 +39,10 @@ def render_windows_download_box(app_bytes: bytes) -> None:
             st.markdown(
                 """
                 <h4 style="color: #6c757d; margin-bottom: 0.75rem; font-size: 1.1rem; font-weight: 600;">
-                    quantms for Windows
+                    OpenDDA for Windows
                 </h4>
                 <p style="color: #6c757d; margin-bottom: 1rem;">
-                    quantms is best enjoyed online but you can download an offline version for Windows systems below.
+                    OpenDDA is best enjoyed online but you can download an offline version for Windows systems below.
                 </p>
                 """,
                 unsafe_allow_html=True,
@@ -57,7 +57,7 @@ def render_windows_download_box(app_bytes: bytes) -> None:
                     mime="application/zip",
                     type="secondary",
                     use_container_width=True,
-                    help="Download quantms for Windows systems",
+                    help="Download OpenDDA for Windows systems",
                 )
 
             st.markdown(
