@@ -27,7 +27,7 @@ def render_windows_download_box(app_bytes: bytes) -> None:
     st.markdown(
         """
         <h4 style="color: #6c757d; margin-bottom: 1.5rem; font-size: 1.3rem; font-weight: 600; text-align: center;">
-            Want to use quantms offline?
+            Want to run free and open DDA analysis offline?
         </h4>
         """,
         unsafe_allow_html=True,
