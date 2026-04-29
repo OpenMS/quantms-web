@@ -5,12 +5,34 @@ This page provides an overview of the DDA-LFQ workflow and guidance
 for getting started with the analysis pipeline.
 """
 
+from pathlib import Path
+
 import streamlit as st
 from src.common.common import page_setup
+
+WINDOWS_APP_PATH = Path("/app/OpenMS-App.zip")
+
+
+@st.cache_resource
+def load_windows_app_bytes() -> bytes | None:
+    if WINDOWS_APP_PATH.exists():
+        return WINDOWS_APP_PATH.read_bytes()
+    return None
+
 
 page_setup(page="main")
 
 st.markdown("# DDA Label-Free Quantification")
+
+windows_app_bytes = load_windows_app_bytes()
+if windows_app_bytes is not None:
+    st.download_button(
+        label="Download for Windows",
+        data=windows_app_bytes,
+        file_name="OpenMS-App.zip",
+        mime="application/zip",
+        icon=":material/download:",
+    )
 
 st.markdown(
     """
