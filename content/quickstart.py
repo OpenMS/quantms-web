@@ -26,7 +26,7 @@ def render_windows_download_box(app_bytes: bytes) -> None:
 
     st.markdown(
         """
-        <h4 style="color: #6c757d; margin-bottom: 1rem; font-size: 1.3rem; font-weight: 600;">
+        <h4 style="color: #6c757d; margin-bottom: 1rem; font-size: 1.3rem; font-weight: 600; text-align: center;">
             Want to run free and open DDA analysis offline?
         </h4>
         """,
@@ -46,18 +46,21 @@ def render_windows_download_box(app_bytes: bytes) -> None:
             unsafe_allow_html=True,
         )
 
-        st.download_button(
-            label="📥 Download for Windows",
-            data=app_bytes,
-            file_name="OpenMS-App.zip",
-            mime="application/zip",
-            type="secondary",
-            help="Download OpenDDA for Windows systems",
-        )
+        cols = st.columns([2, 3, 2])
+        with cols[1]:
+            st.download_button(
+                label="📥 Download for Windows",
+                data=app_bytes,
+                file_name="OpenMS-App.zip",
+                mime="application/zip",
+                type="secondary",
+                use_container_width=True,
+                help="Download OpenDDA for Windows systems",
+            )
 
         st.markdown(
             """
-            <div style="margin-top: 1rem; color: #6c757d;">
+            <div style="text-align: center; margin-top: 1rem; color: #6c757d;">
                 Extract the zip file and run the installer (.msi) to install the app.
                 Launch using the desktop icon after installation.<br>
                 Even offline, it's still a web app - just packaged so you can use it without an internet connection.
@@ -75,6 +78,7 @@ def render_windows_download_box(app_bytes: bytes) -> None:
             border-radius: 8px !important;
             padding: 1.5rem !important;
             margin: 1rem 0 !important;
+            text-align: center !important;
             box-shadow: 0 2px 4px rgba(0,0,0,0.05) !important;
         }}
 
