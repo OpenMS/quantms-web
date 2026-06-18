@@ -5,12 +5,99 @@ This page provides an overview of the DDA-LFQ workflow and guidance
 for getting started with the analysis pipeline.
 """
 
+from pathlib import Path
+
 import streamlit as st
 from src.common.common import page_setup
+
+WINDOWS_APP_PATH = Path("/app/OpenMS-App.zip")
+
+
+@st.cache_resource
+def load_windows_app_bytes() -> bytes | None:
+    if WINDOWS_APP_PATH.exists():
+        return WINDOWS_APP_PATH.read_bytes()
+    return None
+
+
+def render_windows_download_box(app_bytes: bytes) -> None:
+    """Render a styled offline-download card for the Windows app."""
+    container_key = "windows_download_container"
+
+    st.markdown(
+        """
+        <h4 style="color: #6c757d; margin-bottom: 1rem; font-size: 1.3rem; font-weight: 600; text-align: center;">
+            Want to run free and open DDA analysis offline?
+        </h4>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    with st.container(key=container_key):
+        st.markdown(
+            """
+            <h4 style="color: #6c757d; margin-bottom: 0.75rem; font-size: 1.1rem; font-weight: 600;">
+                OpenDDA for Windows
+            </h4>
+            <p style="color: #6c757d; margin-bottom: 1rem;">
+                You can download an offline version for Windows systems below.
+            </p>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        cols = st.columns([2, 3, 2])
+        with cols[1]:
+            st.download_button(
+                label="📥 Download for Windows",
+                data=app_bytes,
+                file_name="OpenMS-App.zip",
+                mime="application/zip",
+                type="secondary",
+                use_container_width=True,
+                help="Download OpenDDA for Windows systems",
+            )
+
+        st.markdown(
+            """
+            <div style="text-align: center; margin-top: 1rem; color: #6c757d;">
+                Extract the zip file and run the installer (.msi) to install the app.
+                Launch using the desktop icon after installation.<br>
+                Even offline, it's still a web app - just packaged so you can use it without an internet connection.
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    st.markdown(
+        f"""
+        <style>
+        .st-key-{container_key} {{
+            background: linear-gradient(135deg, #f8f9fa 0%, #f1f3f4 100%) !important;
+            border: 1px solid #e0e0e0 !important;
+            border-radius: 8px !important;
+            padding: 1.5rem !important;
+            margin: 1rem 0 !important;
+            text-align: center !important;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05) !important;
+        }}
+
+        .st-key-{container_key} > div {{
+            background: transparent !important;
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
 
 page_setup(page="main")
 
 st.markdown("# DDA Label-Free Quantification")
+
+windows_app_bytes = load_windows_app_bytes()
+if windows_app_bytes is not None:
+    render_windows_download_box(windows_app_bytes)
 
 st.markdown(
     """

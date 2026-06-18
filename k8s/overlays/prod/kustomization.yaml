@@ -1,0 +1,44 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+components:
+  - ../../components/memory-tier-high
+
+namePrefix: quantms-ddalfq-
+
+commonLabels:
+  app: quantms-ddalfq
+
+images:
+  - name: openms-streamlit
+    newName: ghcr.io/openms/quantms-web
+    newTag: main-full
+
+patches:
+  - target:
+      kind: IngressRoute
+      name: streamlit-traefik
+    patch: |
+      - op: replace
+        path: /spec/routes/0/match
+        value: (Host(`opendda.webapps.openms.de`) || Host(`opendda.webapps.openms.org`)) && PathPrefix(`/`)
+      - op: replace
+        path: /spec/routes/0/services/0/name
+        value: quantms-ddalfq-streamlit
+  - target:
+      kind: Deployment
+      name: streamlit
+    patch: |
+      - op: replace
+        path: /spec/template/spec/containers/0/env/0/value
+        value: "redis://quantms-ddalfq-redis:6379/0"
+  - target:
+      kind: Deployment
+      name: rq-worker
+    patch: |
+      - op: replace
+        path: /spec/template/spec/containers/0/env/0/value
+        value: "redis://quantms-ddalfq-redis:6379/0"

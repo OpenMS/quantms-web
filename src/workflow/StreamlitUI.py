@@ -20,6 +20,7 @@ from src.common.common import (
     tk_directory_dialog,
     tk_file_dialog,
 )
+from src.workflow._log_status import classify_log_outcome
 
 
 class StreamlitUI:
@@ -1168,14 +1169,14 @@ class StreamlitUI:
 
         # Display threads configuration for local mode only
         if not st.session_state.settings.get("online_deployment", False):
-            # Initialize session state with default if not set
-            if "max_threads_override" not in st.session_state:
-                max_threads_config = st.session_state.settings.get("max_threads", {})
-                st.session_state.max_threads_override = max_threads_config.get("local", 4)
-            st.number_input(
-                "Threads",
+            max_threads_config = st.session_state.settings.get("max_threads", {})
+            default_threads = max_threads_config.get("local", 4)
+            self.input_widget(
+                key="max_threads",
+                default=default_threads,
+                name="Threads",
+                widget_type="number",
                 min_value=1,
-                key="max_threads_override",
                 help="Maximum threads for parallel processing. Threads are distributed between parallel commands and per-tool thread allocation."
             )
 
@@ -1326,9 +1327,11 @@ class StreamlitUI:
             with open(log_path, "r", encoding="utf-8") as f:
                 lines = f.readlines()
             content = "".join(lines)
-            # Check if workflow finished successfully
-            if "WORKFLOW FINISHED" in content:
+            outcome = classify_log_outcome(content)
+            if outcome == "finished":
                 st.success("**Workflow completed successfully.**")
+            elif outcome == "cancelled":
+                st.warning("**Workflow was cancelled.**")
             else:
                 st.error("**Errors occurred, check log file.**")
             # Apply line limit to static display
@@ -1381,6 +1384,9 @@ class StreamlitUI:
             if job_error:
                 with st.expander("Error Details", expanded=True):
                     st.code(job_error)
+
+        elif job_status == "canceled":
+            st.warning(f"**Status: {label}** - Workflow was cancelled.")
 
         # Expandable job details
         with st.expander("Job Details", expanded=False):

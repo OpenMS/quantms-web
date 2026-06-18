@@ -110,6 +110,7 @@ fig_pca.update_layout(
 st.plotly_chart(fig_pca, width="stretch")
 
 st.markdown(f"**Proteins used:** {expr_df_pca.shape[0]} (top {top_n} by p-adj)")
+st.markdown(f"**Proteins used:** {expr_df_pca.shape[0]} (top {top_n} by p-adj)")
 
 st.markdown("---")
 st.markdown("**Other visualizations:**")

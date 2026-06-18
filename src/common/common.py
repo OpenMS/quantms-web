@@ -32,29 +32,6 @@ from src.common.admin import (
 OS_PLATFORM = sys.platform
 
 
-def get_max_threads() -> int:
-    """
-    Get max threads for current deployment mode.
-
-    In local mode, checks for UI override in session state.
-    In online mode, uses the configured value directly.
-
-    Returns:
-        int: Maximum number of threads to use for parallel processing.
-    """
-    settings = st.session_state.get("settings", {})
-    max_threads_config = settings.get("max_threads", {"local": 4, "online": 2})
-
-    if settings.get("online_deployment", False):
-        return max_threads_config.get("online", 2)
-    else:
-        # Local mode: check for UI override, fallback to config default
-        return st.session_state.get(
-            "max_threads_override",
-            max_threads_config.get("local", 4)
-        )
-
-
 def is_safe_workspace_name(name: str) -> bool:
     """
     Check if a workspace name is safe (no path traversal characters).
@@ -428,6 +405,23 @@ def page_setup(page: str = "") -> dict[str, Any]:
                 width=1,
                 height=1,
             )
+        if (st.session_state.settings["analytics"]["matomo"]["enabled"]) and (
+            st.session_state.tracking_consent["matomo"] == True
+        ):
+            html(
+                """
+                <!DOCTYPE html>
+                <html lang="en">
+                    <head></head>
+                    <body><script>
+                    window.parent._mtm = window.parent._mtm || [];
+                    window.parent._mtm.push(['MTMSetConsentGiven']);
+                    </script></body>
+                </html>
+                """,
+                width=1,
+                height=1,
+            )
 
     # Determine the workspace for the current session
     if ("workspace" not in st.session_state) or (
@@ -455,6 +449,10 @@ def page_setup(page: str = "") -> dict[str, Any]:
             workspaces_dir = Path(
                 st.session_state.settings["workspaces_dir"],
                 "workspaces-" + st.session_state.settings["repository-name"],
+            )
+        elif st.session_state.location == "online":
+            workspaces_dir = Path(
+                os.environ.get("WORKSPACES_DIR", "/workspaces-streamlit-template")
             )
         else:
             workspaces_dir = ".."
@@ -653,73 +651,70 @@ def render_sidebar(page: str = "") -> None:
                                 time.sleep(1)
                                 st.rerun()
 
-                # Save as Demo section (online mode only)
-                with st.expander("💾 **Save as Demo**"):
-                    st.caption("Save current workspace as a demo for others to use")
+                # Save as Demo section (online mode only; hidden when admin
+                # password is not configured — the feature is then disabled).
+                if is_admin_configured():
+                    with st.expander("💾 **Save as Demo**"):
+                        st.caption("Save current workspace as a demo for others to use")
 
-                    demo_name_input = st.text_input(
-                        "Demo name",
-                        key="save-demo-name",
-                        placeholder="e.g., workshop-2024",
-                        help="Name for the demo workspace (no spaces or special characters)"
-                    )
-
-                    # Check if demo already exists
-                    demo_name_clean = demo_name_input.strip() if demo_name_input else ""
-                    existing_demo = demo_exists(demo_name_clean) if demo_name_clean else False
-
-                    if existing_demo:
-                        st.warning(f"Demo '{demo_name_clean}' already exists and will be overwritten.")
-                        confirm_overwrite = st.checkbox(
-                            "Confirm overwrite",
-                            key="confirm-demo-overwrite"
+                        demo_name_input = st.text_input(
+                            "Demo name",
+                            key="save-demo-name",
+                            placeholder="e.g., workshop-2024",
+                            help="Name for the demo workspace (no spaces or special characters)"
                         )
-                    else:
-                        confirm_overwrite = True  # No confirmation needed for new demos
 
-                    if st.button("Save as Demo", key="save-demo-btn", disabled=not demo_name_clean):
-                        if not is_admin_configured():
-                            st.error(
-                                "Admin not configured. Create `.streamlit/secrets.toml` with "
-                                "an `[admin]` section containing `password = \"your-password\"`"
+                        # Check if demo already exists
+                        demo_name_clean = demo_name_input.strip() if demo_name_input else ""
+                        existing_demo = demo_exists(demo_name_clean) if demo_name_clean else False
+
+                        if existing_demo:
+                            st.warning(f"Demo '{demo_name_clean}' already exists and will be overwritten.")
+                            confirm_overwrite = st.checkbox(
+                                "Confirm overwrite",
+                                key="confirm-demo-overwrite"
                             )
-                        elif existing_demo and not confirm_overwrite:
-                            st.error("Please confirm overwrite to continue.")
                         else:
-                            # Show password dialog
-                            st.session_state["show_admin_password_dialog"] = True
+                            confirm_overwrite = True  # No confirmation needed for new demos
 
-                    # Password dialog (shown after clicking Save as Demo)
-                    if st.session_state.get("show_admin_password_dialog", False):
-                        admin_password = st.text_input(
-                            "Admin password",
-                            type="password",
-                            key="admin-password-input",
-                            help="Enter the admin password to save this workspace as a demo"
-                        )
+                        if st.button("Save as Demo", key="save-demo-btn", disabled=not demo_name_clean):
+                            if existing_demo and not confirm_overwrite:
+                                st.error("Please confirm overwrite to continue.")
+                            else:
+                                # Show password dialog
+                                st.session_state["show_admin_password_dialog"] = True
 
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            if st.button("Confirm", key="confirm-save-demo"):
-                                if verify_admin_password(admin_password):
-                                    success, message = save_workspace_as_demo(
-                                        st.session_state.workspace,
-                                        demo_name_clean
-                                    )
-                                    if success:
-                                        st.success(message)
-                                        st.session_state["show_admin_password_dialog"] = False
-                                        time.sleep(1)
-                                        st.rerun()
+                        # Password dialog (shown after clicking Save as Demo)
+                        if st.session_state.get("show_admin_password_dialog", False):
+                            admin_password = st.text_input(
+                                "Admin password",
+                                type="password",
+                                key="admin-password-input",
+                                help="Enter the admin password to save this workspace as a demo"
+                            )
+
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                if st.button("Confirm", key="confirm-save-demo"):
+                                    if verify_admin_password(admin_password):
+                                        success, message = save_workspace_as_demo(
+                                            st.session_state.workspace,
+                                            demo_name_clean
+                                        )
+                                        if success:
+                                            st.success(message)
+                                            st.session_state["show_admin_password_dialog"] = False
+                                            time.sleep(1)
+                                            st.rerun()
+                                        else:
+                                            st.error(message)
                                     else:
-                                        st.error(message)
-                                else:
-                                    st.error("Invalid admin password.")
+                                        st.error("Invalid admin password.")
 
-                        with col2:
-                            if st.button("Cancel", key="cancel-save-demo"):
-                                st.session_state["show_admin_password_dialog"] = False
-                                st.rerun()
+                            with col2:
+                                if st.button("Cancel", key="cancel-save-demo"):
+                                    st.session_state["show_admin_password_dialog"] = False
+                                    st.rerun()
 
         # All pages have settings, workflow indicator and logo
         with st.expander("⚙️ **Settings**"):
