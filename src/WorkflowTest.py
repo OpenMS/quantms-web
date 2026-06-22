@@ -148,6 +148,7 @@ class WorkflowTest(WorkflowManager):
                     "max_variable_mods_in_peptide": 3,
                     "minimum_peaks": 1,
                     "clip_nterm_methionine": "true",
+                    "variable_modifications": "Oxidation (M)\nAcetyl (Protein N-term)",
                     "PeptideIndexing:IL_equivalent": True,
                     "PeptideIndexing:unmatched_action": "warn",
                     "PeptideIndexing:decoy_string": "rev_",
@@ -672,7 +673,6 @@ class WorkflowTest(WorkflowManager):
         current_mode = self.params.get("analysis-mode", "LFQ")
         st.write(f"Current analysis mode: **{current_mode}**")
 
-<<<<<<< HEAD
         if current_mode == "LFQ":
             self.logger.log("⚙️ Running LFQ workflow")
 
@@ -684,24 +684,11 @@ class WorkflowTest(WorkflowManager):
             perc_dir = results_dir / "percolator_results"
             filter_dir = results_dir / "psm_filter"
             quant_dir = results_dir / "quant_results"
-=======
-        for d in [comet_dir, perc_dir, filter_dir, quant_dir]:
-            d.mkdir(parents=True, exist_ok=True)
->>>>>>> upstream/main
 
             results_dir = Path(self.workflow_dir, "input-files")
 
-<<<<<<< HEAD
             for d in [comet_dir, perc_dir, filter_dir, quant_dir]:
                 d.mkdir(parents=True, exist_ok=True)
-=======
-        # # ================================
-        # # 2️⃣ File path definitions (per sample)
-        # # ================================
-        comet_results = []
-        percolator_results = []
-        filter_results = []
->>>>>>> upstream/main
 
             self.logger.log("📁 Output directories created")
 
@@ -727,7 +714,6 @@ class WorkflowTest(WorkflowManager):
 
             self.logger.log("🔬 Starting per-sample processing...")
 
-<<<<<<< HEAD
             # --- CometAdapter ---
             self.logger.log("🔎 Running peptide search...")
             with st.spinner(f"CometAdapter ({stem})"):
@@ -735,391 +721,6 @@ class WorkflowTest(WorkflowManager):
                 if self.params.get("generate-decoys", True):
                     # Propagate decoy_string from DecoyDatabase
                     comet_extra_params["PeptideIndexing:decoy_string"] = decoy_string
-=======
-        # Get fragment tolerance from CometAdapter parameters for visualization
-        comet_params = self.parameter_manager.get_topp_parameters("CometAdapter")
-        frag_tol = comet_params.get("fragment_mass_tolerance", 0.02)
-        frag_tol_is_ppm = comet_params.get("fragment_error_units", "Da") != "Da"
-
-        # Build visualization cache for Comet results
-        results_dir_path = Path(self.workflow_dir, "results")
-        cache_dir = results_dir_path / "insight_cache"
-        cache_dir.mkdir(parents=True, exist_ok=True)
-
-        # Get mzML directory
-        mzml_dir = Path(in_mzML[0]).parent
-
-        # Build spectra cache (once, shared by all stages)
-        spectra_df = None
-        filename_to_index = {}
-
-        for idxml_file in comet_results:
-            idxml_path = Path(idxml_file)
-            cache_id_prefix = idxml_path.stem
-
-            # Parse idXML to DataFrame
-            id_df, spectra_data = parse_idxml(idxml_path)
-
-            # Build spectra cache (only once)
-            if spectra_df is None:
-                filename_to_index = {Path(f).name: i for i, f in enumerate(spectra_data)}
-                spectra_df, filename_to_index = build_spectra_cache(mzml_dir, filename_to_index)
-
-            # Initialize Table component (caches itself)
-            Table(
-                cache_id=f"table_{cache_id_prefix}",
-                data=id_df.lazy(),
-                cache_path=str(cache_dir),
-                interactivity={"file": "file_index", "spectrum": "scan_id", "identification": "id_idx"},
-                column_definitions=[
-                    {"field": "sequence", "title": "Sequence"},
-                    {"field": "charge", "title": "Z", "sorter": "number"},
-                    {"field": "mz", "title": "m/z", "sorter": "number"},
-                    {"field": "rt", "title": "RT", "sorter": "number"},
-                    {"field": "score", "title": "Score", "sorter": "number"},
-                    {"field": "protein_accession", "title": "Proteins"},
-                ],
-                initial_sort=[{"column": "score", "dir": "asc"}],
-                index_field="id_idx",
-            )
-
-            # Initialize Heatmap component
-            Heatmap(
-                cache_id=f"heatmap_{cache_id_prefix}",
-                data=id_df.lazy(),
-                cache_path=str(cache_dir),
-                x_column="rt",
-                y_column="mz",
-                intensity_column="score",
-                interactivity={"identification": "id_idx"},
-            )
-
-            # Initialize SequenceView component
-            seq_view = SequenceView(
-                cache_id=f"seqview_{cache_id_prefix}",
-                sequence_data=id_df.lazy().select(["id_idx", "sequence", "charge", "file_index", "scan_id"]).rename({
-                    "id_idx": "sequence_id",
-                    "charge": "precursor_charge",
-                }),
-                peaks_data=spectra_df.lazy(),
-                filters={
-                    "identification": "sequence_id",
-                    "file": "file_index",
-                    "spectrum": "scan_id",
-                },
-                interactivity={"peak": "peak_id"},
-                cache_path=str(cache_dir),
-                deconvolved=False,
-                annotation_config={
-                    "ion_types": ["b", "y"],
-                    "neutral_losses": True,
-                    "tolerance": frag_tol,
-                    "tolerance_ppm": frag_tol_is_ppm,
-                },
-            )
-
-            # Initialize LinePlot from SequenceView
-            LinePlot.from_sequence_view(
-                seq_view,
-                cache_id=f"lineplot_{cache_id_prefix}",
-                cache_path=str(cache_dir),
-                title="Annotated Spectrum",
-                styling={
-                    "unhighlightedColor": "#CCCCCC",
-                    "highlightColor": "#E74C3C",
-                    "selectedColor": "#F3A712",
-                },
-            )
-
-        self.logger.log("✅ Peptide search complete")
-
-        # --- PercolatorAdapter ---
-        self.logger.log("📊 Running rescoring...")
-        with st.spinner(f"PercolatorAdapter ({stem})"):
-            if not self.executor.run_topp(
-                "PercolatorAdapter",
-                {
-                    "in": comet_results,
-                    "out": percolator_results,
-                },
-                {"decoy_pattern": decoy_string},  # Always propagated from upstream
-            ):
-                self.logger.log("Workflow stopped due to error")
-                return False
-
-        # Build visualization cache for Percolator results
-        for idxml_file in percolator_results:
-            idxml_path = Path(idxml_file)
-            cache_id_prefix = idxml_path.stem
-
-            # Parse idXML to DataFrame
-            id_df, spectra_data = parse_idxml(idxml_path)
-
-            # Initialize Table component (caches itself)
-            Table(
-                cache_id=f"table_{cache_id_prefix}",
-                data=id_df.lazy(),
-                cache_path=str(cache_dir),
-                interactivity={"file": "file_index", "spectrum": "scan_id", "identification": "id_idx"},
-                column_definitions=[
-                    {"field": "sequence", "title": "Sequence"},
-                    {"field": "charge", "title": "Z", "sorter": "number"},
-                    {"field": "mz", "title": "m/z", "sorter": "number"},
-                    {"field": "rt", "title": "RT", "sorter": "number"},
-                    {"field": "score", "title": "Score", "sorter": "number"},
-                    {"field": "protein_accession", "title": "Proteins"},
-                ],
-                initial_sort=[{"column": "score", "dir": "asc"}],
-                index_field="id_idx",
-            )
-
-            # Initialize Heatmap component
-            Heatmap(
-                cache_id=f"heatmap_{cache_id_prefix}",
-                data=id_df.lazy(),
-                cache_path=str(cache_dir),
-                x_column="rt",
-                y_column="mz",
-                intensity_column="score",
-                interactivity={"identification": "id_idx"},
-            )
-
-            # Initialize SequenceView component
-            seq_view = SequenceView(
-                cache_id=f"seqview_{cache_id_prefix}",
-                sequence_data=id_df.lazy().select(["id_idx", "sequence", "charge", "file_index", "scan_id"]).rename({
-                    "id_idx": "sequence_id",
-                    "charge": "precursor_charge",
-                }),
-                peaks_data=spectra_df.lazy(),
-                filters={
-                    "identification": "sequence_id",
-                    "file": "file_index",
-                    "spectrum": "scan_id",
-                },
-                interactivity={"peak": "peak_id"},
-                cache_path=str(cache_dir),
-                deconvolved=False,
-                annotation_config={
-                    "ion_types": ["b", "y"],
-                    "neutral_losses": True,
-                    "tolerance": frag_tol,
-                    "tolerance_ppm": frag_tol_is_ppm,
-                },
-            )
-
-            # Initialize LinePlot from SequenceView
-            LinePlot.from_sequence_view(
-                seq_view,
-                cache_id=f"lineplot_{cache_id_prefix}",
-                cache_path=str(cache_dir),
-                title="Annotated Spectrum",
-                styling={
-                    "unhighlightedColor": "#CCCCCC",
-                    "highlightColor": "#E74C3C",
-                    "selectedColor": "#F3A712",
-                },
-            )
-
-        self.logger.log("✅ Rescoring complete")
-
-        # if not Path(percolator_results[i]).exists():
-        #     st.error(f"PercolatorAdapter failed for {stem}")
-        #     st.stop()
-
-        # --- IDFilter ---
-        self.logger.log("🔧 Filtering identifications...")
-        with st.spinner(f"IDFilter ({stem})"):
-            if not self.executor.run_topp(
-                "IDFilter",
-                {
-                    "in": percolator_results,
-                    "out": filter_results,
-                },
-            ):
-                self.logger.log("Workflow stopped due to error")
-                return False
-
-        # Build visualization cache for Filter results
-        for idxml_file in filter_results:
-            idxml_path = Path(idxml_file)
-            cache_id_prefix = idxml_path.stem
-
-            # Parse idXML to DataFrame
-            id_df, spectra_data = parse_idxml(idxml_path)
-
-            # Initialize Table component (caches itself)
-            Table(
-                cache_id=f"table_{cache_id_prefix}",
-                data=id_df.lazy(),
-                cache_path=str(cache_dir),
-                interactivity={"file": "file_index", "spectrum": "scan_id", "identification": "id_idx"},
-                column_definitions=[
-                    {"field": "sequence", "title": "Sequence"},
-                    {"field": "charge", "title": "Z", "sorter": "number"},
-                    {"field": "mz", "title": "m/z", "sorter": "number"},
-                    {"field": "rt", "title": "RT", "sorter": "number"},
-                    {"field": "score", "title": "Score", "sorter": "number"},
-                    {"field": "protein_accession", "title": "Proteins"},
-                ],
-                initial_sort=[{"column": "score", "dir": "asc"}],
-                index_field="id_idx",
-            )
-
-            # Initialize Heatmap component
-            Heatmap(
-                cache_id=f"heatmap_{cache_id_prefix}",
-                data=id_df.lazy(),
-                cache_path=str(cache_dir),
-                x_column="rt",
-                y_column="mz",
-                intensity_column="score",
-                interactivity={"identification": "id_idx"},
-            )
-
-            # Initialize SequenceView component
-            seq_view = SequenceView(
-                cache_id=f"seqview_{cache_id_prefix}",
-                sequence_data=id_df.lazy().select(["id_idx", "sequence", "charge", "file_index", "scan_id"]).rename({
-                    "id_idx": "sequence_id",
-                    "charge": "precursor_charge",
-                }),
-                peaks_data=spectra_df.lazy(),
-                filters={
-                    "identification": "sequence_id",
-                    "file": "file_index",
-                    "spectrum": "scan_id",
-                },
-                interactivity={"peak": "peak_id"},
-                cache_path=str(cache_dir),
-                deconvolved=False,
-                annotation_config={
-                    "ion_types": ["b", "y"],
-                    "neutral_losses": True,
-                    "tolerance": frag_tol,
-                    "tolerance_ppm": frag_tol_is_ppm,
-                },
-            )
-
-            # Initialize LinePlot from SequenceView
-            LinePlot.from_sequence_view(
-                seq_view,
-                cache_id=f"lineplot_{cache_id_prefix}",
-                cache_path=str(cache_dir),
-                title="Annotated Spectrum",
-                styling={
-                    "unhighlightedColor": "#CCCCCC",
-                    "highlightColor": "#E74C3C",
-                    "selectedColor": "#F3A712",
-                },
-            )
-
-        self.logger.log("✅ Filtering complete")
-
-        # if not Path(filter_results[i]).exists():
-        #     st.error(f"IDFilter failed for {stem}")
-        #     st.stop()
-
-        # ================================
-        # EasyPQP Spectral Library Generation (optional)
-        # ================================
-        if self.params.get("generate-library", False):
-            self.logger.log("📚 Building spectral library with EasyPQP...")
-            st.info("Building spectral library with EasyPQP...")
-            library_dir = Path(self.workflow_dir, "results", "library")
-            library_dir.mkdir(parents=True, exist_ok=True)
-
-            psms_files, peaks_files = [], []
-
-            for filter_idxml in filter_results:
-                original_stem = Path(filter_idxml).stem.replace("_filter", "")
-                matching_mzml = next((m for m in in_mzML if Path(m).stem == original_stem), None)
-                if not matching_mzml:
-                    self.logger.log(f"Warning: No matching mzML found for {filter_idxml}")
-                    continue
-
-                # easypqp library requires specific extensions for file recognition:
-                # - PSM files must contain 'psmpkl' → use .psmpkl extension
-                # - Peak files must contain 'peakpkl' → use .peakpkl extension
-                # After splitext(), stem will be just "{mzML_stem}" matching PSM base_name
-                psms_out = str(library_dir / f"{original_stem}.psmpkl")
-                peaks_out = str(library_dir / f"{original_stem}.peakpkl")
-
-                convert_cmd = [
-                    "easypqp", "convert",
-                    "--pepxml", filter_idxml,
-                    "--spectra", matching_mzml,
-                    "--psms", psms_out,
-                    "--peaks", peaks_out
-                ]
-                if self.executor.run_command(convert_cmd):
-                    psms_files.append(psms_out)
-                    peaks_files.append(peaks_out)
-
-            if psms_files:
-                # easypqp library outputs TSV format (despite common .pqp extension)
-                library_tsv = str(library_dir / "spectral_library.tsv")
-                library_cmd = ["easypqp", "library", "--out", library_tsv]
-
-                if not self.params.get("library-use-fdr", False):
-                    # --nofdr only skips FDR recalculation, NOT threshold filtering
-                    # Set all thresholds to 1.0 to bypass filtering for pre-filtered input
-                    library_cmd.extend([
-                        "--nofdr",
-                        "--psm_fdr_threshold", "1.0",
-                        "--peptide_fdr_threshold", "1.0",
-                        "--protein_fdr_threshold", "1.0"
-                    ])
-                else:
-                    # Apply user-specified FDR filtering
-                    library_cmd.extend([
-                        "--psm_fdr_threshold",
-                        str(self.params.get("library-psm-fdr", 0.01)),
-                        "--peptide_fdr_threshold",
-                        str(self.params.get("library-peptide-fdr", 0.01)),
-                        "--protein_fdr_threshold",
-                        str(self.params.get("library-protein-fdr", 0.01))
-                    ])
-
-                for psms, peaks in zip(psms_files, peaks_files):
-                    library_cmd.extend([psms, peaks])
-
-                if self.executor.run_command(library_cmd):
-                    self.logger.log("✅ Spectral library created")
-                    st.success("Spectral library created")
-                else:
-                    self.logger.log("Warning: Failed to build spectral library")
-            else:
-                self.logger.log("Warning: No PSMs converted for library generation")
-
-        st.success(f"✓ {stem} identification completed")
-
-        # ================================
-        # 4️⃣ ProteomicsLFQ (cross-sample)
-        # ================================
-        self.logger.log("📈 Running cross-sample quantification...")
-        st.info("Running ProteomicsLFQ (cross-sample quantification)")
-
-        quant_mztab = str(quant_dir / "openms_quant.mzTab")
-        quant_cxml = str(quant_dir / "openms.consensusXML")
-        quant_msstats = str(quant_dir / "openms_msstats.csv")
-
-        with st.spinner("ProteomicsLFQ"):
-                combined_in = " ".join(in_mzML)
-                combined_ids = " ".join(filter_results)
-                self.logger.log(f"COMBINED_IN {combined_in}", 1)
-                self.logger.log(f"COMBINED_IN_TYPE {type(combined_in).__name__}", 1)
-                self.logger.log(f"FILTER_RESULTS = {filter_results}", 1)
-                self.logger.log(f"FILTER_RESULTS_LEN = {len(filter_results)}", 1)
-
-                # ✅ Streamlit output (debug view)
-                st.markdown("### 🔍 ProteomicsLFQ Input Debug")
-                st.write("**combined_in:**", combined_in)
-                st.write("**combined_in type:**", type(combined_in).__name__)
-
-                st.write("**combined_ids:**", combined_ids)
-                st.write("**combined_ids type:**", type(combined_ids).__name__)
->>>>>>> upstream/main
 
                 if not self.executor.run_topp(
                     "CometAdapter",
@@ -1132,7 +733,6 @@ class WorkflowTest(WorkflowManager):
                     self.logger.log("Workflow stopped due to error")
                     return False
 
-<<<<<<< HEAD
             # Get fragment tolerance from CometAdapter parameters for visualization
             comet_params = self.parameter_manager.get_topp_parameters("CometAdapter")
             frag_tol = comet_params.get("fragment_mass_tolerance", 0.02)
@@ -1546,29 +1146,13 @@ class WorkflowTest(WorkflowManager):
             #     st.error("ProteomicsLFQ failed: mzTab not created")
             #     st.stop()
 
-=======
-        # ======================================================
-        # ⚠️ 5️⃣ GO Enrichment Analysis (INLINE IN EXECUTION)
-        # ======================================================
-        workspace_path = Path(self.workflow_dir).parent
-        res = get_abundance_data(workspace_path)
-        if res is not None:
-            pivot_df, _, _ = res
-            self.logger.log("✅ pivot_df loaded, starting GO enrichment...")
-            self._run_go_enrichment(pivot_df, results_dir)
-        else:
-            st.warning("GO enrichment skipped: abundance data not available.")
->>>>>>> upstream/main
-
             # ================================
             # 5️⃣ Final report
             # # ================================
             st.success("🎉 TOPP workflow completed successfully")
             st.write("📁 Results directory:")   
             st.code(str(results_dir)) 
-
-<<<<<<< HEAD
-
+            
             st.write("📄 Generated files:")
             st.write(f"- mzTab: {quant_mztab}")
             st.write(f"- consensusXML: {quant_cxml}")
@@ -2024,160 +1608,6 @@ class WorkflowTest(WorkflowManager):
             self.logger.log("📄 Generating protein table...")
             
             self.logger.log("🎉 WORKFLOW FINISHED")
-=======
-        return True
-    
-    def _run_go_enrichment(self, pivot_df: pd.DataFrame, results_dir: Path):
-        p_cutoff = 0.05
-        fc_cutoff = 1.0
-
-        analysis_df = pivot_df.dropna(subset=["p-value", "log2FC"]).copy()
-
-        if analysis_df.empty:
-            st.error("No valid statistical data found for GO enrichment.")
-            self.logger.log("❗ analysis_df is empty")
-        else:
-            with st.spinner("Fetching GO terms from MyGene.info API..."):
-                mg = mygene.MyGeneInfo()
-
-                def get_clean_uniprot(name):
-                    parts = str(name).split("|")
-                    return parts[1] if len(parts) >= 2 else parts[0]
-
-                analysis_df["UniProt"] = analysis_df["ProteinName"].apply(get_clean_uniprot)
-
-                bg_ids = analysis_df["UniProt"].dropna().astype(str).unique().tolist()
-                fg_ids = analysis_df[
-                    (analysis_df["p-value"] < p_cutoff) &
-                    (analysis_df["log2FC"].abs() >= fc_cutoff)
-                ]["UniProt"].dropna().astype(str).unique().tolist()
-                self.logger.log("✅ get_clean_uniprot applied")
-
-                if len(fg_ids) < 3:
-                    st.warning(
-                        f"Not enough significant proteins "
-                        f"(p < {p_cutoff}, |log2FC| ≥ {fc_cutoff}). "
-                        f"Found: {len(fg_ids)}"
-                    )
-                    self.logger.log("❗ Not enough significant proteins")
-                else:
-                    res_list = mg.querymany(
-                        bg_ids, scopes="uniprot", fields="go", as_dataframe=False
-                    )
-                    res_go = pd.DataFrame(res_list)
-                    if "notfound" in res_go.columns:
-                        res_go = res_go[res_go["notfound"] != True]
-
-                    def extract_go_terms(go_data, go_type):
-                        if not isinstance(go_data, dict) or go_type not in go_data:
-                            return []
-                        terms = go_data[go_type]
-                        if isinstance(terms, dict):
-                            terms = [terms]
-                        return list({t.get("term") for t in terms if "term" in t})
-
-                    for go_type in ["BP", "CC", "MF"]:
-                        res_go[f"{go_type}_terms"] = res_go["go"].apply(
-                            lambda x: extract_go_terms(x, go_type)
-                        )
-
-                    annotated_ids = set(res_go["query"].astype(str))
-                    fg_set = annotated_ids.intersection(fg_ids)
-                    bg_set = annotated_ids
-                    self.logger.log(f"✅ fg_set bg_set are set")
-
-                    def run_go(go_type):
-                        go2fg = defaultdict(set)
-                        go2bg = defaultdict(set)
-
-                        for _, row in res_go.iterrows():
-                            uid = str(row["query"])
-                            for term in row[f"{go_type}_terms"]:
-                                go2bg[term].add(uid)
-                                if uid in fg_set:
-                                    go2fg[term].add(uid)
-
-                        records = []
-                        N_fg = len(fg_set)
-                        N_bg = len(bg_set)
-
-                        for term, fg_genes in go2fg.items():
-                            a = len(fg_genes)
-                            if a == 0:
-                                continue
-                            b = N_fg - a
-                            c = len(go2bg[term]) - a
-                            d = N_bg - (a + b + c)
-
-                            _, p = fisher_exact([[a, b], [c, d]], alternative="greater")
-                            records.append({
-                                "GO_Term": term,
-                                "Count": a,
-                                "GeneRatio": f"{a}/{N_fg}",
-                                "p_value": p,
-                            })
-
-                        df = pd.DataFrame(records)
-                        if df.empty:
-                            return None, None
-
-                        df["-log10(p)"] = -np.log10(df["p_value"].replace(0, 1e-10))
-                        df = df.sort_values("p_value").head(20)
-
-                        # ✅ Plotly Figure
-                        fig = px.bar(
-                            df,
-                            x="-log10(p)",
-                            y="GO_Term",
-                            orientation="h",
-                            title=f"GO Enrichment ({go_type})",
-                        )
-
-                        self.logger.log(f"✅ Plotly Figure generated")
-
-                        fig.update_layout(
-                            yaxis=dict(autorange="reversed"),
-                            height=500,
-                            margin=dict(l=10, r=10, t=40, b=10),
-                        )
-
-                        return fig, df
-
-                    go_results = {}
-
-                    for go_type in ["BP", "CC", "MF"]:
-                        fig, df_go = run_go(go_type)
-                        if fig is not None:
-                            go_results[go_type] = {
-                                "fig": fig,
-                                "df": df_go
-                            }
-                    self.logger.log(f"✅ go_type generated")
-
-                    go_dir = results_dir / "go-terms"
-                    go_dir.mkdir(parents=True, exist_ok=True)
-
-                    import json
-                    go_data = {}
-                    
-                    for go_type in ["BP", "CC", "MF"]:
-                        if go_type in go_results:
-                            fig = go_results[go_type]["fig"]
-                            df = go_results[go_type]["df"]
-                            
-                            go_data[go_type] = {
-                                "fig_json": fig.to_json(),  # Figure → JSON string
-                                "df_dict": df.to_dict(orient="records")  # DataFrame → list of dicts
-                            }
-                    
-                    go_json_file = go_dir / "go_results.json"
-                    with open(go_json_file, "w") as f:
-                        json.dump(go_data, f)
-                    st.session_state["go_results"] = go_results
-                    st.session_state["go_ready"] = True if go_data else False
-                    self.logger.log("✅ GO enrichment analysis complete")
-        
->>>>>>> upstream/main
 
     @st.fragment
     def results(self) -> None:
