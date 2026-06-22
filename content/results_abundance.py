@@ -59,25 +59,33 @@ try:
             st.page_link("content/workflow_configure.py", label="Go to Configure", icon="⚙️")
             st.stop()
 
-        pivot_df, expr_df, group_map = result
+        pivot_df, group_map = result
 
-        # Display group comparison info
-        groups = sorted(set(group_map.values()))
-        if len(groups) >= 2:
-            group1, group2 = sorted(groups)[:2]
-            st.info(f"Statistical comparison: **{group2} vs {group1}**")
+        # st.write("------------ pivot_df -------------")
+        # st.write(pivot_df)
 
-        # Get sample columns (between stats and PeptideSequence)
-        sample_cols = [c for c in pivot_df.columns if c not in ["ProteinName", "log2FC", "p-value", "PeptideSequence"]]
+        # st.write("----------group_map-------------")
+        # st.write(group_map)
 
+        # 1. Dynamically extract actual sample columns, excluding ProteinName and PeptideSequence
+        sample_cols = [
+            c
+            for c in pivot_df.columns
+            if c not in ["ProteinName", "PeptideSequence"]
+        ]
+
+        # 2. Combine values from sample columns to create an 'Intensity' list column for the bar chart
         pivot_df["Intensity"] = pivot_df[sample_cols].apply(list, axis=1)
 
-        # Reorder columns: place Intensity after p-value
-        display_cols = ["ProteinName", "log2FC", "p-value", "Intensity"] + sample_cols + ["PeptideSequence"]
+        # 3. Reorder columns: [ProteinName, Intensity(chart), sample_cols..., PeptideSequence]
+        display_cols = (
+            ["ProteinName", "Intensity"] + sample_cols + ["PeptideSequence"]
+        )
         display_df = pivot_df[display_cols]
 
+        # 4. Display the dataframe as is without sorting, since statistical columns are removed
         st.dataframe(
-            display_df.sort_values("p-value"),
+            display_df,
             column_config={
                 "Intensity": st.column_config.BarChartColumn(
                     "Intensity",

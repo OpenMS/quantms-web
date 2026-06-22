@@ -9,6 +9,7 @@ from scipy.stats import ttest_ind
 from pyopenms import IdXMLFile, MSExperiment, MzMLFile
 from src.workflow.ParameterManager import ParameterManager
 from statsmodels.stats.multitest import multipletests
+from openms_insight.analysis.statistics import calculate_statistical_tests, adjust_fdr_lazy
 
 def get_workflow_dir(workspace):
     """Get the workflow directory path."""
@@ -184,15 +185,14 @@ def build_spectra_cache(mzml_dir: Path, filename_to_index: dict) -> tuple[pl.Dat
 
 
 @st.cache_data
-def load_abundance_data(workspace_path: str, csv_mtime: float) -> tuple | None:
-    """Load CSV, compute stats (log2FC, p-value), build pivot_df and expr_df.
+def load_abundance_data(
+    workspace_path: str,
+    csv_mtime: float,
+) -> tuple | None:
+    """Load a long-format CSV, pivot it into a standard wide-format table
 
-    Args:
-        workspace_path: Path to the workspace directory
-        csv_mtime: Modification time of CSV file (used as cache key)
-
-    Returns:
-        Tuple of (pivot_df, expr_df, group_map) or None if data unavailable
+    with sample intensity columns, and return the table along with the group
+    mapping.
     """
     workflow_dir = get_workflow_dir(Path(workspace_path))
     quant_dir = workflow_dir / "results" / "quant_results"
@@ -214,7 +214,7 @@ def load_abundance_data(workspace_path: str, csv_mtime: float) -> tuple | None:
     if df.empty:
         return None
 
-    # Get group mapping from parameters
+    # 1. Extract group mapping information from the parameter JSON
     param_manager = ParameterManager(workflow_dir)
     params = param_manager.get_parameters_from_json()
     group_map = {
@@ -226,64 +226,36 @@ def load_abundance_data(workspace_path: str, csv_mtime: float) -> tuple | None:
     if not group_map:
         return None
 
+    # 2. Extract sample names and map to groups
     df["Sample"] = df["Reference"].str.replace(".mzML", "", regex=False)
     df["Group"] = df["Reference"].map(group_map)
     df = df.dropna(subset=["Group"])
 
     groups = sorted(df["Group"].unique())
-
     if len(groups) < 2:
         return None
 
-    group1, group2 = groups[:2]
-
-    # Compute statistics per protein
-    stats_rows = []
-    for protein, protein_df in df.groupby("ProteinName"):
-        g1_vals = protein_df[protein_df["Group"] == group1]["Intensity"].values
-        g2_vals = protein_df[protein_df["Group"] == group2]["Intensity"].values
-
-        if len(g1_vals) < 2 or len(g2_vals) < 2:
-            pval = np.nan
-        else:
-            _, pval = ttest_ind(g1_vals, g2_vals, equal_var=False)
-
-        mean_g1 = np.mean(g1_vals) if len(g1_vals) > 0 else np.nan
-        mean_g2 = np.mean(g2_vals) if len(g2_vals) > 0 else np.nan
-
-        log2fc = np.log2(mean_g2 / mean_g1) if mean_g1 > 0 else np.nan
-
-        stats_rows.append({
-            "ProteinName": protein,
-            "log2FC": log2fc,
-            "p-value": pval,
-        })
-
-    stats_df = pd.DataFrame(stats_rows)
-
-    if not stats_df.empty:
-        mask = stats_df["p-value"].notna()
-        if mask.any():
-            _, p_adj, _, _ = multipletests(stats_df.loc[mask, "p-value"], method="fdr_bh")
-            stats_df.loc[mask, "p-adj"] = p_adj
-        else:
-            stats_df["p-adj"] = np.nan
-
-    # Order samples by group (group2 first, then group1)
+    # 3. Define ordering and build sample arrays
     sample_group_df = df[["Sample", "Group"]].drop_duplicates()
-    group2_samples = sample_group_df[sample_group_df["Group"] == group2]["Sample"].tolist()
-    group1_samples = sample_group_df[sample_group_df["Group"] == group1]["Sample"].tolist()
-    all_samples = group2_samples + group1_samples
+    group1_samples = sample_group_df[sample_group_df["Group"] == groups[0]][
+        "Sample"
+    ].tolist()
+    group2_samples = sample_group_df[sample_group_df["Group"] == groups[1]][
+        "Sample"
+    ].tolist()
+    all_samples = group1_samples + group2_samples
 
-    # Build pivot table
+    # 4. Convert from long to wide format (Pivot) and fill missing values with 0.0
     pivot_list = []
     for protein, group_df in df.groupby("ProteinName"):
         peptides = ";".join(group_df["PeptideSequence"].unique())
         intensity_dict = group_df.groupby("Sample")["Intensity"].sum().to_dict()
+
+        # Fill sample columns (use 0.0 if missing)
         intensity_dict_complete = {
-            sample: intensity_dict.get(sample, 0)
-            for sample in all_samples
+            sample: intensity_dict.get(sample, 0.0) for sample in all_samples
         }
+
         row = {
             "ProteinName": protein,
             **intensity_dict_complete,
@@ -292,16 +264,20 @@ def load_abundance_data(workspace_path: str, csv_mtime: float) -> tuple | None:
         pivot_list.append(row)
 
     pivot_df = pd.DataFrame(pivot_list)
-    pivot_df = pivot_df.merge(stats_df, on="ProteinName", how="left")
-    pivot_df = pivot_df[["ProteinName", "log2FC", "p-value", "p-adj"] + all_samples + ["PeptideSequence"]]
 
-    # Build expression matrix (log2-transformed)
-    expr_df = pivot_df.set_index("ProteinName")[all_samples]
-    expr_df = expr_df.replace(0, np.nan)
-    expr_df = np.log2(expr_df + 1)
-    expr_df = expr_df.dropna()
+    # 5. Reorder columns to match the required standard format
+    # Structure: [ProteinName, Sample_1, Sample_2, ..., PeptideSequence]
+    columns_order = ["ProteinName"] + all_samples + ["PeptideSequence"]
+    pivot_df = pivot_df[columns_order]
 
-    return pivot_df, expr_df, group_map
+    # 6. Clean up the group_map keys right before returning to the caller
+    clean_group_map = {}
+    for k, v in group_map.items():
+        clean_key = k[:-5] if k.endswith(".mzML") else k
+        clean_group_map[clean_key] = v
+
+    # Return final results with the clean group map
+    return pivot_df, clean_group_map
 
 
 def get_abundance_data(workspace: Path) -> tuple | None:
