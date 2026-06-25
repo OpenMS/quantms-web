@@ -1,7 +1,7 @@
 # This Dockerfile builds OpenMS, the TOPP tools, pyOpenMS and thidparty tools.
 # It also adds a basic streamlit server that serves a pyOpenMS-based app.
 # hints:
-# build image and give it a name (here: streamlitapp) with: docker build --no-cache -t streamlitapp:latest --build-arg GITHUB_TOKEN=<your-github-token> . 2>&1 | tee build.log
+# build image and give it a name (here: streamlitapp) with: docker build -f Dockerfile.arm --no-cache -t streamlitapp:latest-arm64 --build-arg GITHUB_TOKEN=<your-github-token> . 2>&1 | tee build.log
 # check if image was build: docker image ls
 # run container: docker run -p 8501:8501 streamlitappsimple:latest
 # debug container after build (comment out ENTRYPOINT) and run container with interactive /bin/bash shell
@@ -14,13 +14,13 @@ ARG PORT=8501
 # Streamlit app GitHub user name (to download artifact from).
 ARG GITHUB_USER=OpenMS
 # Streamlit app GitHub repository name (to download artifact from).
-ARG GITHUB_REPO=quantms-web
+ARG GITHUB_REPO=streamlit-template
 
 USER root
 
 # Install required Ubuntu packages.
 RUN apt-get -y update
-RUN apt-get install -y --no-install-recommends --no-install-suggests g++ autoconf automake patch libtool make git gpg wget ca-certificates curl jq libgtk2.0-dev openjdk-8-jdk cron
+RUN apt-get install -y --no-install-recommends --no-install-suggests g++ autoconf automake patch libtool make git gpg wget ca-certificates curl jq libgtk2.0-dev openjdk-8-jdk cron cmake
 RUN update-ca-certificates
 RUN apt-get install -y --no-install-recommends --no-install-suggests libsvm-dev libeigen3-dev coinor-libcbc-dev libglpk-dev libzip-dev zlib1g-dev libxerces-c-dev libbz2-dev libomp-dev libhdf5-dev
 RUN apt-get install -y --no-install-recommends --no-install-suggests libboost-date-time1.74-dev \
@@ -42,9 +42,9 @@ RUN (type -p wget >/dev/null || (apt-get update && apt-get install wget -y)) \
 # Download and install miniforge.
 ENV PATH="/root/miniforge3/bin:${PATH}"
 RUN wget -q \
-    https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh \
-    && bash Miniforge3-Linux-x86_64.sh -b \
-    && rm -f Miniforge3-Linux-x86_64.sh
+    https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-aarch64.sh \
+    && bash Miniforge3-Linux-aarch64.sh -b \
+    && rm -f Miniforge3-Linux-aarch64.sh
 RUN mamba --version
 
 # Make /root traversable so the entrypoint can `source
@@ -72,9 +72,11 @@ WORKDIR /OpenMS
 RUN mkdir /thirdparty && \
     git submodule update --init THIRDPARTY && \
     cp -r THIRDPARTY/All/* /thirdparty && \
-    cp -r THIRDPARTY/Linux/x86_64/* /thirdparty && \
+    if [ -d "THIRDPARTY/Linux/aarch64" ]; then \
+        cp -r THIRDPARTY/Linux/aarch64/* /thirdparty; \
+    fi && \
     chmod -R +x /thirdparty
-ENV PATH="/thirdparty/LuciPHOr2:/thirdparty/MSGFPlus:/thirdparty/Sirius:/thirdparty/ThermoRawFileParser:/thirdparty/Comet:/thirdparty/Fido:/thirdparty/MaRaCluster:/thirdparty/MyriMatch:/thirdparty/OMSSA:/thirdparty/Percolator:/thirdparty/SpectraST:/thirdparty/XTandem:/thirdparty/crux:${PATH}"
+ENV PATH="/thirdparty/LuciPHOr2:/thirdparty/MSGFPlus:/thirdparty/ThermoRawFileParser:/thirdparty/Comet:/thirdparty/Percolator:/thirdparty/Sage:${PATH}"
 
 # Build OpenMS and pyOpenMS.
 FROM setup-build-system AS compile-openms
@@ -84,15 +86,47 @@ WORKDIR /
 RUN mkdir /openms-build
 WORKDIR /openms-build
 
-# Configure.
-RUN /bin/bash -c "cmake -DCMAKE_BUILD_TYPE='Release' -DCMAKE_PREFIX_PATH='/OpenMS/contrib-build/;/usr/;/usr/local' -DHAS_XSERVER=OFF -DBOOST_USE_STATIC=OFF -DPYOPENMS=OFF ../OpenMS"
+# Configure (two-pass — mirrors FLASHApp.arm).
+# Pass 1 runs under plain bash so cmake does NOT search /root/miniforge3
+# when resolving C++ system dependencies. On ARM the conda-forge build of
+# libyaml-cpp.so.0.8 is linked against a newer libstdc++ (GLIBCXX_3.4.32,
+# i.e. gcc 13+) than ubuntu:22.04's system g++ ships, so letting cmake
+# pick the miniforge yaml-cpp makes TOPP linking fail with
+#   undefined reference to `std::ios_base_library_init()@GLIBCXX_3.4.32`
+# amd64 happens to work because its conda-forge yaml-cpp build is older.
+# We call the mamba-env cmake by full path so we get a version >= 3.24
+# (OpenMS 3.5's floor); ubuntu:22.04's apt cmake is 3.22 which is too old.
+# CMAKE_IGNORE_PREFIX_PATH keeps cmake from auto-discovering miniforge libs
+# even though the binary itself lives there.
+# Pass 2 re-runs cmake inside the mamba env with PYOPENMS=ON so the Python
+# bindings can find the conda-forge Python/Cython/NumPy; CMAKE_IGNORE_PREFIX_PATH
+# keeps the C++ link command unchanged from pass 1.
+SHELL ["/bin/bash", "-c"]
+RUN /root/miniforge3/envs/streamlit-env/bin/cmake -DCMAKE_BUILD_TYPE='Release' -DCMAKE_PREFIX_PATH='/OpenMS/contrib-build/;/usr/;/usr/local' -DCMAKE_IGNORE_PREFIX_PATH=/root/miniforge3 -DHAS_XSERVER=OFF -DBOOST_USE_STATIC=OFF ../OpenMS
+SHELL ["mamba", "run", "-n", "streamlit-env", "/bin/bash", "-c"]
+RUN cmake -DPYOPENMS=ON -DPY_MEMLEAK_DISABLE=On -DCMAKE_IGNORE_PREFIX_PATH=/root/miniforge3 .
 
 # Build TOPP tools and clean up.
 RUN make -j4 TOPP
-RUN rm -rf src doc CMakeFiles
+# NOTE: do NOT delete CMakeFiles/ here. The two-pass cmake configure used
+# above generates CMakeFiles/VerifyGlobs.cmake for the pyOpenMS targets'
+# CONFIGURE_DEPENDS globs; the next `make -j4 pyopenms` runs
+# `cmake_check_build_system` which fails fast if VerifyGlobs.cmake is gone:
+#   CMake Error: Not a file: /openms-build/CMakeFiles/VerifyGlobs.cmake
+# The x86 single-pass build seems to avoid generating that file (different
+# cmake codepath when PYOPENMS is set during the initial configure), which
+# is why it can still `rm -rf CMakeFiles` here. CMakeFiles/ adds ~a few
+# hundred MB to the intermediate layer — acceptable.
+RUN rm -rf src doc
 
-# Install dependencies (pyopenms will be installed from pip)
-COPY requirements.txt ./requirements.txt
+# Build pyOpenMS wheels and install via pip.
+RUN make -j4 pyopenms
+WORKDIR /openms-build/pyOpenMS
+RUN pip install dist/*.whl
+
+# Install other dependencies (excluding pyopenms)
+COPY requirements.txt ./requirements.txt 
+RUN grep -Ev '^pyopenms([=<>!~].*)?$' requirements.txt > requirements_cleaned.txt && mv requirements_cleaned.txt requirements.txt
 RUN pip install -r requirements.txt
 
 WORKDIR /
@@ -144,6 +178,7 @@ RUN mkdir -p /workspaces-streamlit-template /mounted-data
 WORKDIR /app
 COPY assets/ /app/assets
 COPY content/ /app/content
+COPY docs/ /app/docs
 COPY example-data/ /app/example-data
 COPY gdpr_consent/ /app/gdpr_consent
 COPY hooks/ /app/hooks
