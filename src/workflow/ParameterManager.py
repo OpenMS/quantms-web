@@ -129,6 +129,30 @@ class ParameterManager:
             except:
                 st.error("**ERROR**: Attempting to load an invalid JSON parameter file. Reset to defaults.")
                 return {}
+            
+    def get_merged_params(self, tool_instance_name: str, ini_params: dict = None) -> dict:
+        """
+        Three-layer parameter merge: ini defaults < _defaults < user overrides.
+
+        Args:
+            tool_instance_name: Instance name (or tool name) to look up in params.json.
+            ini_params: Base parameters from the .ini file. Optional — callers that
+                don't need the ini layer (e.g., run_topp, which passes -ini separately)
+                can omit this.
+
+        Returns:
+            Merged dict with the effective value for each parameter.
+        """
+        params = self.get_parameters_from_json()
+        defaults = params.get("_defaults", {}).get(tool_instance_name, {})
+        user = params.get(tool_instance_name, {})
+
+        merged = {}
+        if ini_params:
+            merged.update(ini_params)
+        merged.update(defaults)
+        merged.update(user)
+        return merged
 
     def get_topp_parameters(self, tool: str) -> dict:
         """

@@ -9,6 +9,7 @@ from scipy.stats import ttest_ind
 from pyopenms import IdXMLFile, MSExperiment, MzMLFile
 from src.workflow.ParameterManager import ParameterManager
 from statsmodels.stats.multitest import multipletests
+from statsmodels.stats.multitest import multipletests
 
 def get_workflow_dir(workspace):
     """Get the workflow directory path."""
@@ -197,111 +198,289 @@ def load_abundance_data(workspace_path: str, csv_mtime: float) -> tuple | None:
     workflow_dir = get_workflow_dir(Path(workspace_path))
     quant_dir = workflow_dir / "results" / "quant_results"
 
-    if not quant_dir.exists():
-        return None
+    parameter_manager = ParameterManager(workflow_dir, "TOPP Workflow")
 
-    csv_files = sorted(quant_dir.glob("*.csv"))
-    if not csv_files:
-        return None
+    workflow_params = parameter_manager.get_parameters_from_json() 
+    analysis_mode = workflow_params.get("analysis-mode", "LFQ")
 
-    csv_file = csv_files[0]
+    if analysis_mode == "LFQ":
+        if not quant_dir.exists():
+            return None
 
-    try:
-        df = pd.read_csv(csv_file)
-    except Exception:
-        return None
+        csv_files = sorted(quant_dir.glob("*.csv"))
+        if not csv_files:
+            return None
 
-    if df.empty:
-        return None
+        csv_file = csv_files[0]
 
-    # Get group mapping from parameters
-    param_manager = ParameterManager(workflow_dir)
-    params = param_manager.get_parameters_from_json()
-    group_map = {
-        key[11:]: value  # Remove "mzML-group-" prefix
-        for key, value in params.items()
-        if key.startswith("mzML-group-") and value
-    }
+        try:
+            df = pd.read_csv(csv_file)
+        except Exception:
+            return None
 
-    if not group_map:
-        return None
+        if df.empty:
+            return None
 
-    df["Sample"] = df["Reference"].str.replace(".mzML", "", regex=False)
-    df["Group"] = df["Reference"].map(group_map)
-    df = df.dropna(subset=["Group"])
-
-    groups = sorted(df["Group"].unique())
-
-    if len(groups) < 2:
-        return None
-
-    group1, group2 = groups[:2]
-
-    # Compute statistics per protein
-    stats_rows = []
-    for protein, protein_df in df.groupby("ProteinName"):
-        g1_vals = protein_df[protein_df["Group"] == group1]["Intensity"].values
-        g2_vals = protein_df[protein_df["Group"] == group2]["Intensity"].values
-
-        if len(g1_vals) < 2 or len(g2_vals) < 2:
-            pval = np.nan
-        else:
-            _, pval = ttest_ind(g1_vals, g2_vals, equal_var=False)
-
-        mean_g1 = np.mean(g1_vals) if len(g1_vals) > 0 else np.nan
-        mean_g2 = np.mean(g2_vals) if len(g2_vals) > 0 else np.nan
-
-        log2fc = np.log2(mean_g2 / mean_g1) if mean_g1 > 0 else np.nan
-
-        stats_rows.append({
-            "ProteinName": protein,
-            "log2FC": log2fc,
-            "p-value": pval,
-        })
-
-    stats_df = pd.DataFrame(stats_rows)
-
-    if not stats_df.empty:
-        mask = stats_df["p-value"].notna()
-        if mask.any():
-            _, p_adj, _, _ = multipletests(stats_df.loc[mask, "p-value"], method="fdr_bh")
-            stats_df.loc[mask, "p-adj"] = p_adj
-        else:
-            stats_df["p-adj"] = np.nan
-
-    # Order samples by group (group2 first, then group1)
-    sample_group_df = df[["Sample", "Group"]].drop_duplicates()
-    group2_samples = sample_group_df[sample_group_df["Group"] == group2]["Sample"].tolist()
-    group1_samples = sample_group_df[sample_group_df["Group"] == group1]["Sample"].tolist()
-    all_samples = group2_samples + group1_samples
-
-    # Build pivot table
-    pivot_list = []
-    for protein, group_df in df.groupby("ProteinName"):
-        peptides = ";".join(group_df["PeptideSequence"].unique())
-        intensity_dict = group_df.groupby("Sample")["Intensity"].sum().to_dict()
-        intensity_dict_complete = {
-            sample: intensity_dict.get(sample, 0)
-            for sample in all_samples
+        # Get group mapping from parameters
+        param_manager = ParameterManager(workflow_dir)
+        params = param_manager.get_parameters_from_json()
+        group_map = {
+            key[11:]: value  # Remove "mzML-group-" prefix
+            for key, value in params.items()
+            if key.startswith("mzML-group-") and value
         }
-        row = {
-            "ProteinName": protein,
-            **intensity_dict_complete,
-            "PeptideSequence": peptides,
+
+        if not group_map:
+            return None
+
+        df["Sample"] = df["Reference"].str.replace(".mzML", "", regex=False)
+        df["Group"] = df["Reference"].map(group_map)
+        df = df.dropna(subset=["Group"])
+
+        groups = sorted(df["Group"].unique())
+
+        if len(groups) < 2:
+            return None
+
+        group1, group2 = groups[:2]
+
+        # Compute statistics per protein
+        stats_rows = []
+        for protein, protein_df in df.groupby("ProteinName"):
+            g1_vals = protein_df[protein_df["Group"] == group1]["Intensity"].values
+            g2_vals = protein_df[protein_df["Group"] == group2]["Intensity"].values
+
+            if len(g1_vals) < 2 or len(g2_vals) < 2:
+                pval = np.nan
+            else:
+                _, pval = ttest_ind(g1_vals, g2_vals, equal_var=False)
+
+            mean_g1 = np.mean(g1_vals) if len(g1_vals) > 0 else np.nan
+            mean_g2 = np.mean(g2_vals) if len(g2_vals) > 0 else np.nan
+
+            log2fc = np.log2(mean_g2 / mean_g1) if mean_g1 > 0 else np.nan
+
+            stats_rows.append({
+                "ProteinName": protein,
+                "log2FC": log2fc,
+                "p-value": pval,
+            })
+
+        stats_df = pd.DataFrame(stats_rows)
+
+        if not stats_df.empty:
+            mask = stats_df["p-value"].notna()
+            if mask.any():
+                _, p_adj, _, _ = multipletests(stats_df.loc[mask, "p-value"], method="fdr_bh")
+                stats_df.loc[mask, "p-adj"] = p_adj
+            else:
+                stats_df["p-adj"] = np.nan
+
+        # Order samples by group (group2 first, then group1)
+        sample_group_df = df[["Sample", "Group"]].drop_duplicates()
+        group2_samples = sample_group_df[sample_group_df["Group"] == group2]["Sample"].tolist()
+        group1_samples = sample_group_df[sample_group_df["Group"] == group1]["Sample"].tolist()
+        all_samples = group2_samples + group1_samples
+
+        # Build pivot table
+        pivot_list = []
+        for protein, group_df in df.groupby("ProteinName"):
+            peptides = ";".join(group_df["PeptideSequence"].unique())
+            intensity_dict = group_df.groupby("Sample")["Intensity"].sum().to_dict()
+            intensity_dict_complete = {
+                sample: intensity_dict.get(sample, 0)
+                for sample in all_samples
+            }
+            row = {
+                "ProteinName": protein,
+                **intensity_dict_complete,
+                "PeptideSequence": peptides,
+            }
+            pivot_list.append(row)
+
+        pivot_df = pd.DataFrame(pivot_list)
+        pivot_df = pivot_df.merge(stats_df, on="ProteinName", how="left")
+        pivot_df = pivot_df[["ProteinName", "log2FC", "p-value", "p-adj"] + all_samples + ["PeptideSequence"]]
+
+        # Build expression matrix (log2-transformed)
+        expr_df = pivot_df.set_index("ProteinName")[all_samples]
+        expr_df = expr_df.replace(0, np.nan)
+        expr_df = np.log2(expr_df + 1)
+        expr_df = expr_df.dropna()
+
+        return pivot_df, expr_df, group_map
+    
+    else:
+        if not quant_dir.exists():
+            return None
+
+        csv_files = sorted(quant_dir.glob("*.csv"))
+        if not csv_files:
+            return None
+
+        csv_file = csv_files[0]
+
+        try:
+            df = pd.read_csv(csv_file, sep="\t", comment="#", engine="python")
+        except Exception:
+            return None
+
+        if df.empty:
+            return None
+
+        # ratio column removal
+        df = df.loc[:, ~df.columns.str.contains('ratio', case=False)]
+        
+        # exclude_indices = st.session_state.get("tmt_exclude_indices", [])
+        # group_map = st.session_state.get("tmt_group_map", {})
+        # Get group mapping from parameters
+        parameter_manager = ParameterManager(Path(workflow_dir), "TOPP Workflow")
+        params = parameter_manager.get_parameters_from_json()
+        group_map = {}
+        for key, value in params.items():
+            if key.startswith("TMT-group-") and value:
+                # Extract the numeric part from keys like "TMT-group-sample1"
+                match = re.search(r'sample(\d+)', key)
+                if match:
+                    # Subtract 1 to convert to a 0-based index (0, 1, 2...).
+                    # If your samples are already 0-based, remove the -1 adjustment.
+                    index = str(int(match.group(1)) - 1)
+                    group_map[index] = value
+
+        # 1. Extract keys labeled as "skip" from group_map as integer list
+        exclude_indices = [
+            int(k) for k, v in group_map.items() if v.lower() == "skip"
+        ]
+
+        # 2. Remove "skip" entries from group_map (keep only actual group info)
+        group_map = {
+            int(k): v for k, v in group_map.items() if v.lower() != "skip"
         }
-        pivot_list.append(row)
 
-    pivot_df = pd.DataFrame(pivot_list)
-    pivot_df = pivot_df.merge(stats_df, on="ProteinName", how="left")
-    pivot_df = pivot_df[["ProteinName", "log2FC", "p-value", "p-adj"] + all_samples + ["PeptideSequence"]]
+        start_column_offset = 4
 
-    # Build expression matrix (log2-transformed)
-    expr_df = pivot_df.set_index("ProteinName")[all_samples]
-    expr_df = expr_df.replace(0, np.nan)
-    expr_df = np.log2(expr_df + 1)
-    expr_df = expr_df.dropna()
+        # st.write("exclude_indices:", exclude_indices)
+        # st.write("group_map:", group_map)
 
-    return pivot_df, expr_df, group_map
+        if not group_map:
+            st.warning("⚠️ Group mapping information is missing. Please configure sample groups in the Setup page.")
+            return None
+        
+        if exclude_indices:
+            # st.write("Current columns:", df.columns.tolist())
+            # st.write("Number of columns:", len(df.columns))
+            # st.write("Exclude indices:", exclude_indices)
+            # st.write("Offset:", start_column_offset)
+            cols_to_drop = [df.columns[i + start_column_offset] for i in exclude_indices]
+            df_cleaned = df.drop(columns=cols_to_drop)
+        else:
+            df_cleaned = df.copy()
+
+        if group_map:
+            # Create new row data (defaulting to empty strings)
+            # Create a list with the same length as the column order of df_cleaned
+            new_row = [""] * len(df_cleaned.columns)
+            new_row[0] = "Group"
+            
+            # Get the column names of the current dataframe as a list
+            current_cols = df_cleaned.columns.tolist()
+            original_cols = df.columns.tolist()
+
+            for col_name in current_cols[start_column_offset:]:
+                # Check the original index position of this column
+                original_idx = original_cols.index(col_name) - start_column_offset
+                col_pos = current_cols.index(col_name)
+                new_row[col_pos] = group_map.get(original_idx, "NA")
+
+            # Insert the row at the top of the dataframe
+            # Create a new DF and concatenate to prepend the row to existing data
+            group_df = pd.DataFrame([new_row], columns=df_cleaned.columns)
+            df_with_groups = pd.concat([group_df, df_cleaned], ignore_index=True)
+
+            # drop_msg = f"{len(exclude_indices)} channels dropped" if exclude_indices else "No channels dropped"
+            # st.success(f"✅ {drop_msg} and Group names have been inserted at the top of the data.")
+            
+            # st.write("### Data Preview with Group Information")
+            # st.dataframe(df_with_groups.head(10))
+
+            if group_map and len(set(group_map.values())) >= 2:
+                # Prepare data for calculation
+                # Extract group information from row 0 of df_with_groups (the newly added Group row)
+                # Actual sample data starts from the 5th column (index 4)
+                group_info_row = df_with_groups.iloc[0]
+                
+                # Get unique group names (excluding NA)
+                unique_groups = sorted([g for g in set(group_map.values()) if g != "NA"])
+                g1_name, g2_name = unique_groups[0], unique_groups[1]
+
+                # Extract numerical data for statistical calculation (from row 1 and column index 4 onwards)
+                # Convert to numeric type (to prevent calculation errors)
+                numeric_data = df_with_groups.iloc[1:, 4:].apply(pd.to_numeric, errors='coerce')
+                
+                # Column indexing by group
+                # Categorize columns based on the values in the Group row
+                g1_cols = [col for col in numeric_data.columns if group_info_row[col] == g1_name]
+                g2_cols = [col for col in numeric_data.columns if group_info_row[col] == g2_name]
+
+                # Calculate log2FC and p-value for each row
+                def run_stats(row):
+                    v1 = row[g1_cols].dropna()
+                    v2 = row[g2_cols].dropna()
+                    
+                    # log2FC (Group2 / Group1)
+                    m1, m2 = v1.mean(), v2.mean()
+                    l2fc = np.log2(m2 / m1) if m1 > 0 and m2 > 0 else np.nan
+                    
+                    # p-value (T-test)
+                    if len(v1) > 1 and len(v2) > 1:
+                        _, pval = ttest_ind(v1, v2, equal_var=False)
+                    else:
+                        pval = np.nan
+                    return pd.Series([l2fc, pval])
+
+                stats_results = numeric_data.apply(run_stats, axis=1)
+                stats_results.columns = ['log2FC', 'p-value']
+                # Add Adjusted p-value (FDR) calculation
+                if not stats_results['p-value'].isna().all():
+                    # Select only rows that contain p-values
+                    mask = stats_results['p-value'].notna()
+                    # Apply Benjamini-Hochberg (BH) correction
+                    _, p_adj, _, _ = multipletests(stats_results.loc[mask, 'p-value'], method='fdr_bh')
+                    stats_results.loc[mask, 'p-adj'] = p_adj
+                else:
+                    stats_results['p-adj'] = np.nan
+
+                # Construct the final dataframe (Based on df_cleaned - excluding the group row)
+                # Insert calculation results into the 2nd and 3rd column positions
+                pivot_df = df_cleaned.copy()
+                pivot_df.insert(1, "log2FC", stats_results['log2FC'].values)
+                pivot_df.insert(2, "p-value", stats_results['p-value'].values)
+                pivot_df.insert(3, "p-adj", stats_results['p-adj'].values)
+
+                # st.success(f"Analysis Complete: {g1_name} (n={len(g1_cols)}) vs {g2_name} (n={len(g2_cols)})")
+
+                # Set the first column ('protein') of final_df as the index
+                protein_col = pivot_df.columns[0]
+                sample_cols = current_cols[start_column_offset:] # Identify actual sample column names
+                
+                # Select sample columns and create a matrix
+                expr_df = pivot_df.set_index(protein_col)[sample_cols]
+                
+                # Replace 0 with NaN (to prevent log transformation errors)
+                expr_df = expr_df.replace(0, np.nan)
+                
+                # Log2 transformation (data normalization)
+                expr_df = np.log2(expr_df + 1)
+                
+                # Remove proteins (rows) with any missing values
+                expr_df = expr_df.dropna()
+
+                return pivot_df, expr_df, group_map
+            else:
+                st.warning("⚠️ At least two distinct groups are required for statistical analysis.")
+        else:
+            st.warning("⚠️ No group mapping information is set. Please check the Configure page.")
+        return None
 
 
 def get_abundance_data(workspace: Path) -> tuple | None:

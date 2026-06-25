@@ -613,10 +613,12 @@ class StreamlitUI:
         num_cols: int = 4,
         exclude_parameters: List[str] = [],
         include_parameters: List[str] = [],
+        flag_parameters: List[str] = [],
         display_tool_name: bool = True,
         display_subsections: bool = True,
         display_subsection_tabs: bool = False,
         custom_defaults: dict = {},
+        tool_instance_name: str = None,
     ) -> None:
         """
         Generates input widgets for TOPP tool parameters dynamically based on the tool's
@@ -628,33 +630,59 @@ class StreamlitUI:
             num_cols (int, optional): Number of columns to use for the layout. Defaults to 3.
             exclude_parameters (List[str], optional): List of parameter names to exclude from the widget. Defaults to an empty list.
             include_parameters (List[str], optional): List of parameter names to include in the widget. Defaults to an empty list.
+            flag_parameters (List[str], optional): List of parameter names that should
+                be treated as no-value CLI flags during command construction.
             display_tool_name (bool, optional): Whether to display the TOPP tool name. Defaults to True.
             display_subsections (bool, optional): Whether to split parameters into subsections based on the prefix. Defaults to True.
             display_subsection_tabs (bool, optional): Whether to display main subsections in separate tabs (if more than one main section). Defaults to False.
             custom_defaults (dict, optional): Dictionary of custom defaults to use. Defaults to an empty dict.
+            tool_instance_name (str, optional): A unique instance name for this tool
+                invocation. Allows multiple instances of the same TOPP tool with
+                independent parameters (e.g., two IDFilter calls). If not provided,
+                defaults to topp_tool_name. The instance name is used for session
+                state keys and parameter storage, while topp_tool_name is used for
+                the actual tool executable and ini file creation.
         """
+        # Default instance name to the tool name when not provided
+        if tool_instance_name is None:
+            tool_instance_name = topp_tool_name
+
+        # Register instance-name → real-tool-name mapping in session state
+        if "_topp_tool_instance_map" not in st.session_state:
+            st.session_state["_topp_tool_instance_map"] = {}
+        st.session_state["_topp_tool_instance_map"][tool_instance_name] = topp_tool_name
+        if "_topp_flag_params" not in st.session_state:
+            st.session_state["_topp_flag_params"] = {}
+        st.session_state["_topp_flag_params"][tool_instance_name] = list(flag_parameters)
+        # Persist flag metadata so execution still sees it outside UI reruns/session context.
+        params = self.parameter_manager.get_parameters_from_json()
+        if "_flag_params" not in params:
+            params["_flag_params"] = {}
+        params["_flag_params"][tool_instance_name] = list(flag_parameters)
+        with open(self.parameter_manager.params_file, "w", encoding="utf-8") as f:
+            json.dump(params, f, indent=4)
 
         if not display_subsections:
             display_subsection_tabs = False
         if display_subsection_tabs:
             display_subsections = True
 
-        # write defaults ini files
+        # Create pristine ini file (never mutated with custom defaults)
         ini_file_path = Path(self.parameter_manager.ini_dir, f"{topp_tool_name}.ini")
-        ini_existed = ini_file_path.exists()
         if not self.parameter_manager.create_ini(topp_tool_name):
             st.error(f"TOPP tool **'{topp_tool_name}'** not found.")
             return
-        if not ini_existed:
-            # update custom defaults if necessary
-            if custom_defaults:
-                param = poms.Param()
-                poms.ParamXMLFile().load(str(ini_file_path), param)
-                for key, value in custom_defaults.items():
-                    encoded_key = f"{topp_tool_name}:1:{key}".encode()
-                    if encoded_key in param.keys():
-                        param.setValue(encoded_key, value)
-                poms.ParamXMLFile().store(str(ini_file_path), param)
+
+        # Seed custom defaults into params.json under _defaults key
+        if custom_defaults:
+            params = self.parameter_manager.get_parameters_from_json()
+            if "_defaults" not in params:
+                params["_defaults"] = {}
+            params["_defaults"][tool_instance_name] = custom_defaults
+            with open(self.parameter_manager.params_file, "w", encoding="utf-8") as f:
+                json.dump(params, f, indent=4)
+            # Refresh self.params so widget resolution sees _defaults
+            self.params = self.parameter_manager.get_parameters_from_json()
 
         # read into Param object
         param = poms.Param()
@@ -724,6 +752,7 @@ class StreamlitUI:
                     ":".join(key.decode().split(":")[:-1])
                 ),
             }
+            p["is_flag"] = (b"flag" in param.getTags(key))
             # Parameter sections and subsections as string (e.g. "section:subsection")
             if display_subsections:
                 p["sections"] = ":".join(
@@ -731,18 +760,18 @@ class StreamlitUI:
                 )
             params.append(p)
 
-        # for each parameter in params_decoded
-        # if a parameter with custom default value exists, use that value
-        # else check if the parameter is already in self.params, if yes take the value from self.params
+        # Build ini_params dict for three-layer merge
+        ini_params = {}
         for p in params:
             name = p["key"].decode().split(":1:")[1]
-            if topp_tool_name in self.params:
-                if name in self.params[topp_tool_name]:
-                    p["value"] = self.params[topp_tool_name][name]
-                elif name in custom_defaults:
-                    p["value"] = custom_defaults[name]
-            elif name in custom_defaults:
-                p["value"] = custom_defaults[name]
+            ini_params[name] = p["value"]
+
+        # Resolve effective values: ini < _defaults < user overrides
+        merged = self.parameter_manager.get_merged_params(tool_instance_name, ini_params=ini_params)
+        for p in params:
+            name = p["key"].decode().split(":1:")[1]
+            if name in merged:
+                p["value"] = merged[name]
             # Ensure list parameters stay as lists after loading from JSON
             # (JSON may store single-item lists as strings)
             if p["original_is_list"] and isinstance(p["value"], str):
@@ -776,7 +805,7 @@ class StreamlitUI:
 
         # Display tool name if required
         if display_tool_name:
-            st.markdown(f"**{topp_tool_name}**")
+            st.markdown(f"**{tool_instance_name}**")
 
         tab_names = [k for k in param_sections.keys() if ":" not in k]
         tabs = None
@@ -804,23 +833,53 @@ class StreamlitUI:
             cols = st.columns(num_cols)
             i = 0
             for p in params:
-                # get key and name
-                key = f"{self.parameter_manager.topp_param_prefix}{p['key'].decode()}"
+                # get key and name – use tool_instance_name in session state key
+                key_str = p['key'].decode()
+                if tool_instance_name != topp_tool_name:
+                    key_str = key_str.replace(f"{topp_tool_name}:1:", f"{tool_instance_name}:1:", 1)
+                key = f"{self.parameter_manager.topp_param_prefix}{key_str}"
                 name = p["name"]
                 try:
                     # sometimes strings with newline, handle as list
                     if isinstance(p["value"], str) and "\n" in p["value"]:
                         p["value"] = p["value"].split("\n")
-                    # bools
-                    if isinstance(p["value"], bool):
-                        cols[i].markdown("##")
-                        cols[i].checkbox(
+                    # no-value CLI flag parameters should be shown as checkboxes
+                    if p.get("is_flag", False):
+                        flag_default = p["value"]
+                        if isinstance(flag_default, str):
+                            flag_default = flag_default.lower() in {"true", "1", "yes", "on"}
+                        else:
+                            flag_default = bool(flag_default)
+                        # Streamlit widget keys persist in session_state and can override
+                        # updated custom_defaults. Normalize and seed key explicitly.
+                        if key in st.session_state:
+                            current = st.session_state[key]
+                            if isinstance(current, str):
+                                st.session_state[key] = current.lower() in {"true", "1", "yes", "on"}
+                            else:
+                                st.session_state[key] = bool(current)
+                        else:
+                            st.session_state[key] = flag_default
+                        cols[i].selectbox(
                             name,
-                            value=(
-                                (p["value"] == "true")
-                                if type(p["value"]) == str
-                                else p["value"]
-                            ),
+                            options=[True, False],
+                            index=0 if st.session_state[key] else 1,
+                            format_func=lambda x: "True" if x else "False",
+                            help=p["description"],
+                            key=key,
+                        )
+                    # bools
+                    elif isinstance(p["value"], bool):
+                        bool_value = (
+                            (p["value"] == "true")
+                            if type(p["value"]) == str
+                            else p["value"]
+                        )
+                        cols[i].selectbox(
+                            name,
+                            options=[True, False],
+                            index=0 if bool_value else 1,
+                            format_func=lambda x: "True" if x else "False",
                             help=p["description"],
                             key=key,
                         )
@@ -904,7 +963,6 @@ class StreamlitUI:
                 except Exception as e:
                     cols[i].error(f"Error in parameter **{p['name']}**.")
                     print('Error parsing "' + p["name"] + '": ' + str(e))
-
 
         for section, params in param_sections.items():
             if tabs is None:

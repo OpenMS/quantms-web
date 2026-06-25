@@ -5,7 +5,8 @@ import plotly.express as px
 from scipy.cluster.hierarchy import linkage, leaves_list
 from scipy.spatial.distance import pdist
 from src.common.common import page_setup
-from src.common.results_helpers import get_abundance_data
+from src.common.results_helpers import get_abundance_data, get_workflow_dir
+from src.workflow.ParameterManager import ParameterManager
 
 params = page_setup()
 st.title("Heatmap")
@@ -29,48 +30,103 @@ if result is None:
 
 pivot_df, expr_df, group_map = result
 
-top_n = st.slider("Number of proteins", 20, 200, 50, key="heatmap_top_n")
+workflow_dir = get_workflow_dir(st.session_state["workspace"])
+parameter_manager = ParameterManager(workflow_dir, "TOPP Workflow")
 
-var_series = expr_df.var(axis=1)
-top_proteins = var_series.sort_values(ascending=False).head(top_n).index
-heatmap_df = expr_df.loc[top_proteins]
-heatmap_z = heatmap_df.sub(heatmap_df.mean(axis=1), axis=0).div(heatmap_df.std(axis=1), axis=0)
-heatmap_z = heatmap_z.replace([np.inf, -np.inf], np.nan).dropna()
+workflow_params = parameter_manager.get_parameters_from_json() 
+analysis_mode = workflow_params.get("analysis-mode", "LFQ")
 
-if not heatmap_z.empty:
-    row_linkage = linkage(pdist(heatmap_z.values), method="average")
-    row_order = leaves_list(row_linkage)
+st.write("Workflow Analysis Mode:", analysis_mode)
 
-    col_linkage = linkage(pdist(heatmap_z.T.values), method="average")
-    col_order = leaves_list(col_linkage)
+if analysis_mode == "LFQ":
+    top_n = st.slider("Number of proteins", 20, 200, 50, key="heatmap_top_n")
 
-    heatmap_clustered = heatmap_z.iloc[row_order, col_order]
+    var_series = expr_df.var(axis=1)
+    top_proteins = var_series.sort_values(ascending=False).head(top_n).index
+    heatmap_df = expr_df.loc[top_proteins]
+    heatmap_z = heatmap_df.sub(heatmap_df.mean(axis=1), axis=0).div(heatmap_df.std(axis=1), axis=0)
+    heatmap_z = heatmap_z.replace([np.inf, -np.inf], np.nan).dropna()
 
-    fig_heatmap = px.imshow(
-        heatmap_clustered,
-        labels=dict(x="Sample", y="Protein", color="Z-score"),
-        aspect="auto",
-        color_continuous_scale=[[0.0, "#3b6fb6"], [0.5, "white"], [1.0, "#b40426"]],
-        zmin=-3, zmax=3
-    )
+    if not heatmap_z.empty:
+        row_linkage = linkage(pdist(heatmap_z.values), method="average")
+        row_order = leaves_list(row_linkage)
 
-    fig_heatmap.update_layout(
-        height=700,
-        xaxis={'side': 'bottom'},
-        yaxis={'side': 'left'}
-    )
+        col_linkage = linkage(pdist(heatmap_z.T.values), method="average")
+        col_order = leaves_list(col_linkage)
 
-    fig_heatmap.update_xaxes(tickfont=dict(size=10))
-    fig_heatmap.update_yaxes(tickfont=dict(size=8))
+        heatmap_clustered = heatmap_z.iloc[row_order, col_order]
 
-    st.plotly_chart(fig_heatmap, use_container_width=True)
+        fig_heatmap = px.imshow(
+            heatmap_clustered,
+            labels=dict(x="Sample", y="Protein", color="Z-score"),
+            aspect="auto",
+            color_continuous_scale=[[0.0, "#3b6fb6"], [0.5, "white"], [1.0, "#b40426"]],
+            zmin=-3, zmax=3
+        )
+
+        fig_heatmap.update_layout(
+            height=700,
+            xaxis={'side': 'bottom'},
+            yaxis={'side': 'left'}
+        )
+
+        fig_heatmap.update_xaxes(tickfont=dict(size=10))
+        fig_heatmap.update_yaxes(tickfont=dict(size=8))
+
+        st.plotly_chart(fig_heatmap, use_container_width=True)
+    else:
+        st.warning("Insufficient data to generate the heatmap.")
+
+    st.markdown("---")
+    st.markdown("**Other visualizations:**")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.page_link("content/results_volcano.py", label="Volcano Plot", icon="🌋")
+    with col2:
+        st.page_link("content/results_pca.py", label="PCA", icon="📊")
 else:
-    st.warning("Insufficient data to generate the heatmap.")
+    top_n = st.slider("Number of proteins", 20, 200, 50, key="heatmap_top_n")
 
-st.markdown("---")
-st.markdown("**Other visualizations:**")
-col1, col2 = st.columns(2)
-with col1:
-    st.page_link("content/results_volcano.py", label="Volcano Plot", icon="🌋")
-with col2:
-    st.page_link("content/results_pca.py", label="PCA", icon="📊")
+    var_series = expr_df.var(axis=1)
+    top_proteins = var_series.sort_values(ascending=False).head(top_n).index
+    heatmap_df = expr_df.loc[top_proteins]
+    heatmap_z = heatmap_df.sub(heatmap_df.mean(axis=1), axis=0).div(heatmap_df.std(axis=1), axis=0)
+    heatmap_z = heatmap_z.replace([np.inf, -np.inf], np.nan).dropna()
+
+    if not heatmap_z.empty:
+        row_linkage = linkage(pdist(heatmap_z.values), method="average")
+        row_order = leaves_list(row_linkage)
+
+        col_linkage = linkage(pdist(heatmap_z.T.values), method="average")
+        col_order = leaves_list(col_linkage)
+
+        heatmap_clustered = heatmap_z.iloc[row_order, col_order]
+
+        fig_heatmap = px.imshow(
+            heatmap_clustered,
+            labels=dict(x="Sample", y="Protein", color="Z-score"),
+            aspect="auto",
+            color_continuous_scale=[[0.0, "#3b6fb6"], [0.5, "white"], [1.0, "#b40426"]],
+            zmin=-3, zmax=3
+        )
+
+        fig_heatmap.update_layout(
+            height=700,
+            xaxis={'side': 'bottom'},
+            yaxis={'side': 'left'}
+        )
+
+        fig_heatmap.update_xaxes(tickfont=dict(size=10))
+        fig_heatmap.update_yaxes(tickfont=dict(size=8))
+
+        st.plotly_chart(fig_heatmap, width="stretch")
+    else:
+        st.warning("Insufficient data to generate the heatmap.")
+
+    st.markdown("---")
+    st.markdown("**Other visualizations:**")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.page_link("content/results_volcano.py", label="Volcano Plot", icon="🌋")
+    with col2:
+        st.page_link("content/results_pca.py", label="PCA", icon="📊")
