@@ -223,6 +223,8 @@ def load_abundance_data(
         if key.startswith("mzML-group-") and value
     }
 
+    st.write(f"group_map: {group_map}")
+
     if not group_map:
         return None
 

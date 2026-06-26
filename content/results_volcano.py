@@ -1,9 +1,11 @@
 """Volcano Plot Results Page."""
 import streamlit as st
+import polars as pl
 import plotly.express as px
 import numpy as np
 from src.common.common import page_setup
 from src.common.results_helpers import get_abundance_data
+from openms_insight import VolcanoPlot
 
 params = page_setup()
 st.title("Volcano Plot")
@@ -19,23 +21,27 @@ if "workspace" not in st.session_state:
     st.warning("Please initialize your workspace first.")
     st.stop()
 
-result = get_abundance_data(st.session_state["workspace"])
-if result is None:
-    st.info("Abundance data not available. Please run the workflow and configure sample groups first.")
-    st.page_link("content/results_abundance.py", label="Go to Abundance", icon="📋")
+# 🔍 1. Check if statistical analysis results are available in the session state
+if "statistics_df" not in st.session_state or st.session_state["statistics_df"] is None:
+    st.info("Statistical analysis data not found. Please run the statistical engine first.")
+    # Set the icon link to the actual statistics page file path (e.g. statistical.py).
+    st.page_link("content/statistical.py", label="Go to Statistical Inference", icon="🔬")
     st.stop()
 
-pivot_df, expr_df, group_map = result
+# Retrieve the completed statistical analysis DataFrame
+statistics_df = st.session_state["statistics_df"]
 
-if pivot_df.empty:
+if statistics_df.empty:
     st.info("No data available for volcano plot.")
     st.stop()
 
-volcano_df = pivot_df.copy()
-volcano_df = volcano_df.dropna(subset=["log2FC", "p-adj"])
+# 2. Clean data and convert to Polars for component input
+# Drop missing values from the required 'log2FC' and 'p-adj' columns in `statistics_df`.
+volcano_df = statistics_df.dropna(subset=["log2FC", "p-adj"]).copy()
+# Convert the Pandas DataFrame to a Polars LazyFrame for component injection.
+volcano_pl_lazy = pl.from_pandas(volcano_df).lazy()
 
-volcano_df["neg_log10_padj"] = -np.log10(volcano_df["p-adj"])
-
+# 3. Configure UI sliders (changing thresholds does not invalidate cache)
 fc_thresh = st.slider(
     "log2 Fold Change threshold",
     min_value=0.5,
@@ -52,49 +58,34 @@ p_thresh = st.slider(
     step=0.001,
 )
 
-volcano_df["Significance"] = "Not significant"
-volcano_df.loc[
-    (volcano_df["p-adj"] <= p_thresh) & (volcano_df["log2FC"] >= fc_thresh),
-    "Significance",
-] = "Up-regulated"
-
-volcano_df.loc[
-    (volcano_df["p-adj"] <= p_thresh) & (volcano_df["log2FC"] <= -fc_thresh),
-    "Significance",
-] = "Down-regulated"
-
-fig_volcano = px.scatter(
-    volcano_df,
-    x="log2FC",
-    y="neg_log10_padj",
-    color="Significance",
-    hover_data=["ProteinName", "log2FC", "p-value", "p-adj"],
-    color_discrete_map={
-        "Up-regulated": "red",
-        "Down-regulated": "blue",
-        "Not significant": "lightgrey",
-    }
+# 4. Initialize the OpenMS-Insight VolcanoPlot component
+volcano_plot_component = VolcanoPlot(
+    cache_id="quantms_volcano_plot",
+    data=volcano_pl_lazy,
+    log2fc_column="log2FC",
+    pvalue_column="p-adj",        
+    label_column="ProteinName",   
+    up_color="#E74C3C",          
+    down_color="#3498DB",        
+    ns_color="#95A5A6",          
+    show_threshold_lines=True,
+    threshold_line_style="dash",
 )
 
-fig_volcano.add_vline(x=fc_thresh, line_dash="dash")
-fig_volcano.add_vline(x=-fc_thresh, line_dash="dash")
-fig_volcano.add_hline(y=-np.log10(p_thresh), line_dash="dash")
+# 5. Render the component
+state_manager = st.session_state.get("state")  # Inject the project state management object
 
-# Make x-axis symmetric around zero
-max_abs_fc = volcano_df["log2FC"].abs().max()
-x_range = [-max_abs_fc * 1.1, max_abs_fc * 1.1]  # 10% padding
-
-fig_volcano.update_layout(
-    xaxis_title="log2 Fold Change",
-    yaxis_title="-log10(p-adj)",
-    xaxis_range=x_range,
+volcano_plot_component(
+    state_manager=state_manager,
+    fc_threshold=fc_thresh,
+    p_threshold=p_thresh,
+    max_labels=10,  # Display labels for the top N significant proteins
     height=600,
 )
 
-st.plotly_chart(fig_volcano, use_container_width=True)
-
-up_count = (volcano_df["Significance"] == "Up-regulated").sum()
-down_count = (volcano_df["Significance"] == "Down-regulated").sum()
+# 6. Keep the existing statistical summary and bottom links
+up_count = ((volcano_df["p-adj"] <= p_thresh) & (volcano_df["log2FC"] >= fc_thresh)).sum()
+down_count = ((volcano_df["p-adj"] <= p_thresh) & (volcano_df["log2FC"] <= -fc_thresh)).sum()
 st.markdown(f"**Up-regulated:** {up_count} | **Down-regulated:** {down_count}")
 
 st.markdown("---")

@@ -1,0 +1,26 @@
+{
+  "version": 3,
+  "component_type": "volcanoplot",
+  "created_at": "2026-06-25T14:41:42.791178",
+  "config_hash": "b06bb8d4c9dc289910868a8f1d6fdb18e1deb7feaa21962787f7d334e30f5608",
+  "config": {
+    "log2fc_column": "log2FC",
+    "pvalue_column": "p-adj",
+    "label_column": "ProteinName",
+    "title": null,
+    "x_label": "log2 Fold Change",
+    "y_label": "-log10(p-value)",
+    "up_color": "#E74C3C",
+    "down_color": "#3498DB",
+    "ns_color": "#95A5A6",
+    "show_threshold_lines": true,
+    "threshold_line_style": "dash"
+  },
+  "filters": {},
+  "filter_defaults": {},
+  "interactivity": {},
+  "data_files": {
+    "volcanoData": "volcanoData.parquet"
+  },
+  "data_values": {}
+}
