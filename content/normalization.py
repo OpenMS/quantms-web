@@ -119,7 +119,7 @@ with col3:
     st.markdown("### 📊 3. Row Scaling")
     scaling_strategy = st.selectbox(
         "Select Scaling Mode",
-        options=["None", "mean_centering", "pareto_scaling", "range_scaling"],
+        options=["None", "mean_centering", "auto_scaling", "pareto_scaling", "range_scaling"],
         index=0,
         help="Adjust individual feature weights to make low and high abundance proteins comparable.",
     )
