@@ -1,3 +1,10 @@
+import os
+# Polars' default (CPU-core-count-sized) native thread pool access-violation
+# crashes the whole process on some high-core-count Windows machines when
+# invoked from Streamlit's script-runner thread. Must be set before polars
+# is imported anywhere (including transitively via openms_insight).
+os.environ.setdefault("POLARS_MAX_THREADS", "1")
+
 import streamlit as st
 from pathlib import Path
 import json
