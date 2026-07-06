@@ -41,6 +41,7 @@ if __name__ == '__main__':
             st.Page(Path("content", "results_volcano.py"), title="Volcano", icon="🌋"),
             st.Page(Path("content", "results_pca.py"), title="PCA", icon="📊"),
             st.Page(Path("content", "results_heatmap.py"), title="Heatmap", icon="🔥"),
+            st.Page(Path("content", "results_heatmap_clustered.py"), title="Clustered Heatmap (test)", icon="🧬"),
         ]
     }
 
