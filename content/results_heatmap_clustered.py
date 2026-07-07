@@ -60,7 +60,18 @@ metadata_pl = pl.DataFrame(
 
 # Assign group annotation-bar colors in sorted-group order (matching how
 # ClusteredHeatmap._preprocess() orders unique groups internally).
-group_palette = ["#00BFC4", "#F8766D"]
+group_palette = [
+    "#00BFC4",  # teal
+    "#F8766D",  # salmon
+    "#7CAE00",  # yellow-green
+    "#C77CFF",  # lavender purple
+    "#E7B800",  # gold/amber
+    "#619CFF",  # blue
+    "#FF61C3",  # pink/magenta
+    "#00BA38",  # green
+    "#FF8C42",  # orange
+    "#00B0F6",  # sky blue
+]
 unique_groups = sorted(set(group_map.values()))
 group_colors = {g: group_palette[i % len(group_palette)] for i, g in enumerate(unique_groups)}
 
