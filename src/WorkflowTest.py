@@ -2,8 +2,8 @@ import streamlit as st
 from pathlib import Path
 import pandas as pd
 import plotly.express as px
-from streamlit_plotly_events import plotly_events
-from pyopenms import IdXMLFile
+#from streamlit_plotly_events import plotly_events
+#from pyopenms import IdXMLFile
 from scipy.stats import ttest_ind
 import numpy as np
 import mygene
@@ -14,7 +14,7 @@ from src.workflow.WorkflowManager import WorkflowManager
 from src.common.common import page_setup
 from src.common.results_helpers import get_abundance_data
 from src.common.results_helpers import parse_idxml, build_spectra_cache
-from openms_insight import Table, Heatmap, LinePlot, SequenceView
+#from openms_insight import Table, Heatmap, LinePlot, SequenceView
 
 # params = page_setup()
 class WorkflowTest(WorkflowManager):
@@ -129,6 +129,7 @@ class WorkflowTest(WorkflowManager):
                     "PeptideIndexing:unmatched_action": "warn",
                     "PeptideIndexing:decoy_string": "rev_",
                 },
+                flag_parameters=["PeptideIndexing:IL_equivalent"],
                 include_parameters=comet_include,
                 exclude_parameters=["second_enzyme"],
             )
@@ -152,6 +153,7 @@ class WorkflowTest(WorkflowManager):
                     "score_type": "pep",
                     "post_processing_tdc": "true",
                 },
+                flag_parameters=["post_processing_tdc"],
                 include_parameters=percolator_include,
                 exclude_parameters=["out_type"],
             )

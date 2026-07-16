@@ -819,8 +819,80 @@ class StreamlitUI:
 
         self.parameter_manager.save_parameters()
 
-    @st.fragment
     def input_TOPP(
+        self,
+        topp_tool_name: str,
+        num_cols: int = 4,
+        exclude_parameters: List[str] = [],
+        include_parameters: List[str] = [],
+        flag_parameters: List[str] = [],
+        display_tool_name: bool = True,
+        display_subsections: bool = True,
+        display_subsection_tabs: bool = False,
+        custom_defaults: dict = {},
+        tool_instance_name: str = None,
+        reactive: bool = False,
+    ) -> None:
+        """
+        Wrapper for TOPP parameter input. When `reactive` is True the
+        implementation is rendered directly in the parent context so changes
+        trigger a parent re-render; otherwise the widgets are rendered inside
+        a `st.fragment` to isolate reruns for performance.
+        """
+        if reactive:
+            return self._input_TOPP_impl(
+                topp_tool_name=topp_tool_name,
+                num_cols=num_cols,
+                exclude_parameters=exclude_parameters,
+                include_parameters=include_parameters,
+                flag_parameters=flag_parameters,
+                display_tool_name=display_tool_name,
+                display_subsections=display_subsections,
+                display_subsection_tabs=display_subsection_tabs,
+                custom_defaults=custom_defaults,
+                tool_instance_name=tool_instance_name,
+            )
+        return self._input_TOPP_fragmented(
+            topp_tool_name=topp_tool_name,
+            num_cols=num_cols,
+            exclude_parameters=exclude_parameters,
+            include_parameters=include_parameters,
+            flag_parameters=flag_parameters,
+            display_tool_name=display_tool_name,
+            display_subsections=display_subsections,
+            display_subsection_tabs=display_subsection_tabs,
+            custom_defaults=custom_defaults,
+            tool_instance_name=tool_instance_name,
+        )
+
+    @st.fragment
+    def _input_TOPP_fragmented(
+        self,
+        topp_tool_name: str,
+        num_cols: int = 4,
+        exclude_parameters: List[str] = [],
+        include_parameters: List[str] = [],
+        flag_parameters: List[str] = [],
+        display_tool_name: bool = True,
+        display_subsections: bool = True,
+        display_subsection_tabs: bool = False,
+        custom_defaults: dict = {},
+        tool_instance_name: str = None,
+    ) -> None:
+        return self._input_TOPP_impl(
+            topp_tool_name=topp_tool_name,
+            num_cols=num_cols,
+            exclude_parameters=exclude_parameters,
+            include_parameters=include_parameters,
+            flag_parameters=flag_parameters,
+            display_tool_name=display_tool_name,
+            display_subsections=display_subsections,
+            display_subsection_tabs=display_subsection_tabs,
+            custom_defaults=custom_defaults,
+            tool_instance_name=tool_instance_name,
+        )
+
+    def _input_TOPP_impl(
         self,
         topp_tool_name: str,
         num_cols: int = 4,
