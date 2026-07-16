@@ -3,8 +3,7 @@ import streamlit as st
 import plotly.express as px
 import numpy as np
 from src.common.common import page_setup
-from src.common.results_helpers import get_abundance_data, get_workflow_dir
-from src.workflow.ParameterManager import ParameterManager
+from src.common.results_helpers import get_abundance_data
 
 params = page_setup()
 st.title("Volcano Plot")
@@ -29,164 +28,79 @@ if result is None:
 pivot_df, expr_df, group_map = result
 
 if pivot_df.empty:
-        st.info("No data available for volcano plot.")
-        st.stop()
+    st.info("No data available for volcano plot.")
+    st.stop()
 
-workflow_dir = get_workflow_dir(st.session_state["workspace"])
-parameter_manager = ParameterManager(workflow_dir, "TOPP Workflow")
+volcano_df = pivot_df.copy()
+volcano_df = volcano_df.dropna(subset=["log2FC", "p-adj"])
 
-workflow_params = parameter_manager.get_parameters_from_json() 
-analysis_mode = workflow_params.get("analysis-mode", "LFQ")
+volcano_df["neg_log10_padj"] = -np.log10(volcano_df["p-adj"])
 
-st.write("Workflow Analysis Mode:", analysis_mode)
+fc_thresh = st.slider(
+    "log2 Fold Change threshold",
+    min_value=0.5,
+    max_value=3.0,
+    value=1.0,
+    step=0.1,
+)
 
-if analysis_mode == "LFQ":
-    volcano_df = pivot_df.copy()
-    volcano_df = volcano_df.dropna(subset=["log2FC", "p-adj"])
+p_thresh = st.slider(
+    "p-adj (FDR) threshold",
+    min_value=0.001,
+    max_value=0.1,
+    value=0.05,
+    step=0.001,
+)
 
-    volcano_df["neg_log10_padj"] = -np.log10(volcano_df["p-adj"])
+volcano_df["Significance"] = "Not significant"
+volcano_df.loc[
+    (volcano_df["p-adj"] <= p_thresh) & (volcano_df["log2FC"] >= fc_thresh),
+    "Significance",
+] = "Up-regulated"
 
-    fc_thresh = st.slider(
-        "log2 Fold Change threshold",
-        min_value=0.5,
-        max_value=3.0,
-        value=1.0,
-        step=0.1,
-    )
+volcano_df.loc[
+    (volcano_df["p-adj"] <= p_thresh) & (volcano_df["log2FC"] <= -fc_thresh),
+    "Significance",
+] = "Down-regulated"
 
-    p_thresh = st.slider(
-        "p-adj (FDR) threshold",
-        min_value=0.001,
-        max_value=0.1,
-        value=0.05,
-        step=0.001,
-    )
+fig_volcano = px.scatter(
+    volcano_df,
+    x="log2FC",
+    y="neg_log10_padj",
+    color="Significance",
+    hover_data=["ProteinName", "log2FC", "p-value", "p-adj"],
+    color_discrete_map={
+        "Up-regulated": "red",
+        "Down-regulated": "blue",
+        "Not significant": "lightgrey",
+    }
+)
 
-    volcano_df["Significance"] = "Not significant"
-    volcano_df.loc[
-        (volcano_df["p-adj"] <= p_thresh) & (volcano_df["log2FC"] >= fc_thresh),
-        "Significance",
-    ] = "Up-regulated"
+fig_volcano.add_vline(x=fc_thresh, line_dash="dash")
+fig_volcano.add_vline(x=-fc_thresh, line_dash="dash")
+fig_volcano.add_hline(y=-np.log10(p_thresh), line_dash="dash")
 
-    volcano_df.loc[
-        (volcano_df["p-adj"] <= p_thresh) & (volcano_df["log2FC"] <= -fc_thresh),
-        "Significance",
-    ] = "Down-regulated"
+# Make x-axis symmetric around zero
+max_abs_fc = volcano_df["log2FC"].abs().max()
+x_range = [-max_abs_fc * 1.1, max_abs_fc * 1.1]  # 10% padding
 
-    fig_volcano = px.scatter(
-        volcano_df,
-        x="log2FC",
-        y="neg_log10_padj",
-        color="Significance",
-        hover_data=["ProteinName", "log2FC", "p-value", "p-adj"],
-        color_discrete_map={
-            "Up-regulated": "red",
-            "Down-regulated": "blue",
-            "Not significant": "lightgrey",
-        }
-    )
+fig_volcano.update_layout(
+    xaxis_title="log2 Fold Change",
+    yaxis_title="-log10(p-adj)",
+    xaxis_range=x_range,
+    height=600,
+)
 
-    fig_volcano.add_vline(x=fc_thresh, line_dash="dash")
-    fig_volcano.add_vline(x=-fc_thresh, line_dash="dash")
-    fig_volcano.add_hline(y=-np.log10(p_thresh), line_dash="dash")
+st.plotly_chart(fig_volcano, use_container_width=True)
 
-    # Make x-axis symmetric around zero
-    max_abs_fc = volcano_df["log2FC"].abs().max()
-    x_range = [-max_abs_fc * 1.1, max_abs_fc * 1.1]  # 10% padding
+up_count = (volcano_df["Significance"] == "Up-regulated").sum()
+down_count = (volcano_df["Significance"] == "Down-regulated").sum()
+st.markdown(f"**Up-regulated:** {up_count} | **Down-regulated:** {down_count}")
 
-    fig_volcano.update_layout(
-        xaxis_title="log2 Fold Change",
-        yaxis_title="-log10(p-adj)",
-        xaxis_range=x_range,
-        height=600,
-    )
-
-    st.plotly_chart(fig_volcano, use_container_width=True)
-
-    up_count = (volcano_df["Significance"] == "Up-regulated").sum()
-    down_count = (volcano_df["Significance"] == "Down-regulated").sum()
-    st.markdown(f"**Up-regulated:** {up_count} | **Down-regulated:** {down_count}")
-
-    st.markdown("---")
-    st.markdown("**Other visualizations:**")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.page_link("content/results_pca.py", label="PCA", icon="📊")
-    with col2:
-        st.page_link("content/results_heatmap.py", label="Heatmap", icon="🔥")
-else:
-    # Threshold Selection UI
-    st.divider()
-    c1, c2 = st.columns(2)
-    with c1:
-        fc_thresh = st.slider(
-            "log2 Fold Change threshold",
-            min_value=0.1,
-            max_value=3.0,
-            value=1.0,
-            step=0.1,
-        )
-    with c2:
-        p_thresh = st.slider(
-            "p-adj (FDR) threshold",
-            min_value=0.001,
-            max_value=0.1,
-            value=0.05,
-            step=0.001,
-        )
-
-    volcano_df = pivot_df.dropna(subset=["log2FC", "p-adj"]).copy()
-    volcano_df["neg_log10_padj"] = -np.log10(volcano_df["p-adj"])
-
-    volcano_df["Significance"] = "Not significant"
-    volcano_df.loc[
-        (volcano_df["p-adj"] <= p_thresh) & (volcano_df["log2FC"] >= fc_thresh),
-        "Significance",
-    ] = "Up-regulated"
-
-    volcano_df.loc[
-        (volcano_df["p-adj"] <= p_thresh) & (volcano_df["log2FC"] <= -fc_thresh),
-        "Significance",
-    ] = "Down-regulated"
-
-    fig_volcano = px.scatter(
-        volcano_df,
-        x="log2FC",
-        y="neg_log10_padj",
-        color="Significance",
-        hover_data=["protein", "log2FC", "p-value", "p-adj"],
-        color_discrete_map={
-            "Up-regulated": "red",
-            "Down-regulated": "blue",
-            "Not significant": "lightgrey",
-        }
-    )
-
-    fig_volcano.add_vline(x=fc_thresh, line_dash="dash")
-    fig_volcano.add_vline(x=-fc_thresh, line_dash="dash")
-    fig_volcano.add_hline(y=-np.log10(p_thresh), line_dash="dash")
-
-    # Make x-axis symmetric around zero
-    max_abs_fc = volcano_df["log2FC"].abs().max()
-    x_range = [-max_abs_fc * 1.1, max_abs_fc * 1.1]  # 10% padding
-
-    fig_volcano.update_layout(
-        xaxis_title="log2 Fold Change",
-        yaxis_title="-log10(p-adj)",
-        xaxis_range=x_range,
-        height=600,
-    )
-
-    st.plotly_chart(fig_volcano, width="stretch")
-
-    up_count = (volcano_df["Significance"] == "Up-regulated").sum()
-    down_count = (volcano_df["Significance"] == "Down-regulated").sum()
-    st.markdown(f"**Up-regulated:** {up_count} | **Down-regulated:** {down_count}")
-
-    st.markdown("---")
-    st.markdown("**Other visualizations:**")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.page_link("content/results_pca.py", label="PCA", icon="📊")
-    with col2:
-        st.page_link("content/results_heatmap.py", label="Heatmap", icon="🔥")
+st.markdown("---")
+st.markdown("**Other visualizations:**")
+col1, col2 = st.columns(2)
+with col1:
+    st.page_link("content/results_pca.py", label="PCA", icon="📊")
+with col2:
+    st.page_link("content/results_heatmap.py", label="Heatmap", icon="🔥")
