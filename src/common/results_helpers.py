@@ -5,10 +5,8 @@ import polars as pl
 import numpy as np
 import streamlit as st
 from pathlib import Path
-from scipy.stats import ttest_ind
 from pyopenms import IdXMLFile, MSExperiment, MzMLFile
 from src.workflow.ParameterManager import ParameterManager
-from statsmodels.stats.multitest import multipletests
 
 def get_workflow_dir(workspace):
     """Get the workflow directory path."""
@@ -184,12 +182,15 @@ def build_spectra_cache(mzml_dir: Path, filename_to_index: dict) -> tuple[pl.Dat
 
 
 @st.cache_data
-def load_abundance_data(workspace_path: str, csv_mtime: float) -> tuple | None:
-    """Load CSV, compute stats (log2FC, p-value), build pivot_df and expr_df.
+def load_abundance_data(workspace_path: str, csv_mtime: float, params_mtime: float = 0.0) -> tuple | None:
+    """Load CSV and build abundance matrices for downstream preprocessing.
 
     Args:
         workspace_path: Path to the workspace directory
         csv_mtime: Modification time of CSV file (used as cache key)
+        params_mtime: Modification time of params.json (used as cache key so
+            changing group assignments in Configure invalidates the cache
+            even when the CSV itself hasn't changed)
 
     Returns:
         Tuple of (pivot_df, expr_df, group_map) or None if data unavailable
@@ -197,115 +198,166 @@ def load_abundance_data(workspace_path: str, csv_mtime: float) -> tuple | None:
     workflow_dir = get_workflow_dir(Path(workspace_path))
     quant_dir = workflow_dir / "results" / "quant_results"
 
-    if not quant_dir.exists():
-        return None
+    parameter_manager = ParameterManager(workflow_dir, "TOPP Workflow")
 
-    csv_files = sorted(quant_dir.glob("*.csv"))
-    if not csv_files:
-        return None
+    workflow_params = parameter_manager.get_parameters_from_json()
+    analysis_mode = workflow_params.get("analysis-mode", "LFQ")
 
-    csv_file = csv_files[0]
+    if analysis_mode == "LFQ":
+        if not quant_dir.exists():
+            return None
 
-    try:
-        df = pd.read_csv(csv_file)
-    except Exception:
-        return None
+        csv_files = sorted(quant_dir.glob("*.csv"))
+        if not csv_files:
+            return None
 
-    if df.empty:
-        return None
+        csv_file = csv_files[0]
 
-    # Get group mapping from parameters
-    param_manager = ParameterManager(workflow_dir)
-    params = param_manager.get_parameters_from_json()
-    group_map = {
-        key[11:]: value  # Remove "mzML-group-" prefix
-        for key, value in params.items()
-        if key.startswith("mzML-group-") and value
-    }
+        try:
+            df = pd.read_csv(csv_file)
+        except Exception:
+            return None
 
-    if not group_map:
-        return None
+        if df.empty:
+            return None
 
-    df["Sample"] = df["Reference"].str.replace(".mzML", "", regex=False)
-    df["Group"] = df["Reference"].map(group_map)
-    df = df.dropna(subset=["Group"])
-
-    groups = sorted(df["Group"].unique())
-
-    if len(groups) < 2:
-        return None
-
-    group1, group2 = groups[:2]
-
-    # Compute statistics per protein
-    stats_rows = []
-    for protein, protein_df in df.groupby("ProteinName"):
-        g1_vals = protein_df[protein_df["Group"] == group1]["Intensity"].values
-        g2_vals = protein_df[protein_df["Group"] == group2]["Intensity"].values
-
-        if len(g1_vals) < 2 or len(g2_vals) < 2:
-            pval = np.nan
-        else:
-            _, pval = ttest_ind(g1_vals, g2_vals, equal_var=False)
-
-        mean_g1 = np.mean(g1_vals) if len(g1_vals) > 0 else np.nan
-        mean_g2 = np.mean(g2_vals) if len(g2_vals) > 0 else np.nan
-
-        log2fc = np.log2(mean_g2 / mean_g1) if mean_g1 > 0 else np.nan
-
-        stats_rows.append({
-            "ProteinName": protein,
-            "log2FC": log2fc,
-            "p-value": pval,
-        })
-
-    stats_df = pd.DataFrame(stats_rows)
-
-    if not stats_df.empty:
-        mask = stats_df["p-value"].notna()
-        if mask.any():
-            _, p_adj, _, _ = multipletests(stats_df.loc[mask, "p-value"], method="fdr_bh")
-            stats_df.loc[mask, "p-adj"] = p_adj
-        else:
-            stats_df["p-adj"] = np.nan
-
-    # Order samples by group (group2 first, then group1)
-    sample_group_df = df[["Sample", "Group"]].drop_duplicates()
-    group2_samples = sample_group_df[sample_group_df["Group"] == group2]["Sample"].tolist()
-    group1_samples = sample_group_df[sample_group_df["Group"] == group1]["Sample"].tolist()
-    all_samples = group2_samples + group1_samples
-
-    # Build pivot table
-    pivot_list = []
-    for protein, group_df in df.groupby("ProteinName"):
-        peptides = ";".join(group_df["PeptideSequence"].unique())
-        intensity_dict = group_df.groupby("Sample")["Intensity"].sum().to_dict()
-        intensity_dict_complete = {
-            sample: intensity_dict.get(sample, 0)
-            for sample in all_samples
+        # Get optional group mapping from parameters.
+        # Group information is not required at this stage; statistical testing
+        # happens in the Statistical page.
+        param_manager = ParameterManager(workflow_dir)
+        params = param_manager.get_parameters_from_json()
+        group_map = {
+            key[11:]: value  # Remove "mzML-group-" prefix
+            for key, value in params.items()
+            if key.startswith("mzML-group-") and value
         }
-        row = {
-            "ProteinName": protein,
-            **intensity_dict_complete,
-            "PeptideSequence": peptides,
+
+        df["Sample"] = df["Reference"].str.replace(".mzML", "", regex=False)
+
+        # Build sample display order.
+        if group_map:
+            sample_group_df = df[["Sample", "Reference"]].drop_duplicates()
+            sample_group_df["Group"] = sample_group_df["Reference"].map(group_map)
+            grouped_samples = []
+            for grp in sorted(sample_group_df["Group"].dropna().unique()):
+                grouped_samples.extend(
+                    sample_group_df[sample_group_df["Group"] == grp]["Sample"].tolist()
+                )
+            remaining_samples = [
+                s for s in sorted(df["Sample"].unique()) if s not in grouped_samples
+            ]
+            all_samples = grouped_samples + remaining_samples
+        else:
+            all_samples = sorted(df["Sample"].unique())
+
+        # Build pivot table
+        pivot_list = []
+        for protein, group_df in df.groupby("ProteinName"):
+            peptides = ";".join(group_df["PeptideSequence"].unique())
+            intensity_dict = group_df.groupby("Sample")["Intensity"].sum().to_dict()
+            intensity_dict_complete = {
+                sample: intensity_dict.get(sample, 0)
+                for sample in all_samples
+            }
+            row = {
+                "ProteinName": protein,
+                **intensity_dict_complete,
+                "PeptideSequence": peptides,
+            }
+            pivot_list.append(row)
+
+        pivot_df = pd.DataFrame(pivot_list)
+        pivot_df = pivot_df[["ProteinName"] + all_samples + ["PeptideSequence"]]
+
+        # Build expression matrix (log2-transformed)
+        expr_df = pivot_df.set_index("ProteinName")[all_samples]
+        expr_df = expr_df.replace(0, np.nan)
+        expr_df = np.log2(expr_df + 1)
+        expr_df = expr_df.dropna()
+
+        return pivot_df, expr_df, group_map
+
+    else:
+        if not quant_dir.exists():
+            return None
+
+        csv_files = sorted(quant_dir.glob("*.csv"))
+        if not csv_files:
+            return None
+
+        csv_file = csv_files[0]
+
+        try:
+            df = pd.read_csv(csv_file, sep="\t", comment="#", engine="python")
+        except Exception:
+            return None
+
+        if df.empty:
+            return None
+
+        # ratio column removal
+        df = df.loc[:, ~df.columns.str.contains('ratio', case=False)]
+
+        # exclude_indices = st.session_state.get("tmt_exclude_indices", [])
+        # group_map = st.session_state.get("tmt_group_map", {})
+        # Get group mapping from parameters
+        parameter_manager = ParameterManager(Path(workflow_dir), "TOPP Workflow")
+        params = parameter_manager.get_parameters_from_json()
+        group_map = {}
+        for key, value in params.items():
+            if key.startswith("TMT-group-") and value:
+                # Extract the numeric part from keys like "TMT-group-sample1"
+                match = re.search(r'sample(\d+)', key)
+                if match:
+                    # Subtract 1 to convert to a 0-based index (0, 1, 2...).
+                    # If your samples are already 0-based, remove the -1 adjustment.
+                    index = str(int(match.group(1)) - 1)
+                    group_map[index] = value
+
+        # 1. Extract keys labeled as "skip" from group_map as integer list
+        exclude_indices = [
+            int(k) for k, v in group_map.items() if v.lower() == "skip"
+        ]
+
+        # 2. Remove "skip" entries from group_map (keep only actual group info)
+        group_map = {
+            int(k): v for k, v in group_map.items() if v.lower() != "skip"
         }
-        pivot_list.append(row)
 
-    pivot_df = pd.DataFrame(pivot_list)
-    pivot_df = pivot_df.merge(stats_df, on="ProteinName", how="left")
-    pivot_df = pivot_df[["ProteinName", "log2FC", "p-value", "p-adj"] + all_samples + ["PeptideSequence"]]
+        start_column_offset = 4
 
-    # Build expression matrix (log2-transformed)
-    expr_df = pivot_df.set_index("ProteinName")[all_samples]
-    expr_df = expr_df.replace(0, np.nan)
-    expr_df = np.log2(expr_df + 1)
-    expr_df = expr_df.dropna()
+        # st.write("exclude_indices:", exclude_indices)
+        # st.write("group_map:", group_map)
 
-    return pivot_df, expr_df, group_map
+        if exclude_indices:
+            # st.write("Current columns:", df.columns.tolist())
+            # st.write("Number of columns:", len(df.columns))
+            # st.write("Exclude indices:", exclude_indices)
+            # st.write("Offset:", start_column_offset)
+            cols_to_drop = [df.columns[i + start_column_offset] for i in exclude_indices]
+            df_cleaned = df.drop(columns=cols_to_drop)
+        else:
+            df_cleaned = df.copy()
+
+        current_cols = df_cleaned.columns.tolist()
+        sample_cols = current_cols[start_column_offset:]
+
+        # Ensure sample columns are numeric for downstream preprocessing/statistics.
+        pivot_df = df_cleaned.copy()
+        if sample_cols:
+            pivot_df[sample_cols] = pivot_df[sample_cols].apply(pd.to_numeric, errors='coerce')
+
+        protein_col = pivot_df.columns[0]
+        expr_df = pivot_df.set_index(protein_col)[sample_cols]
+        expr_df = expr_df.replace(0, np.nan)
+        expr_df = np.log2(expr_df + 1)
+        expr_df = expr_df.dropna()
+
+        return pivot_df, expr_df, group_map
 
 
 def get_abundance_data(workspace: Path) -> tuple | None:
-    """Wrapper that handles cache key (workspace + CSV mtime).
+    """Wrapper that handles cache key (workspace + CSV mtime + params mtime).
 
     Args:
         workspace: Path to the workspace directory
@@ -324,4 +376,49 @@ def get_abundance_data(workspace: Path) -> tuple | None:
         return None
 
     csv_mtime = csv_files[0].stat().st_mtime
-    return load_abundance_data(str(workspace), csv_mtime)
+
+    params_file = workflow_dir / "params.json"
+    params_mtime = params_file.stat().st_mtime if params_file.exists() else 0.0
+
+    return load_abundance_data(str(workspace), csv_mtime, params_mtime)
+
+
+def get_id_column(workspace: Path, pivot_df: pd.DataFrame) -> str:
+    """Resolve the protein/row identifier column for the active analysis mode.
+
+    LFQ reports always use "ProteinName"; TMT reports use whatever the
+    report's first column is actually named (e.g. "protein").
+    """
+    workflow_dir = get_workflow_dir(workspace)
+    analysis_mode = ParameterManager(workflow_dir, "TOPP Workflow").get_parameters_from_json().get("analysis-mode", "LFQ")
+    return "ProteinName" if analysis_mode == "LFQ" else pivot_df.columns[0]
+
+
+def get_sample_group_map(workspace: Path, pivot_df: pd.DataFrame, group_map: dict) -> dict:
+    """Normalize group_map into {actual_sample_column_name: group_name}.
+
+    LFQ group_map keys are already clean sample names (optionally with a
+    ".mzML" suffix). TMT group_map keys are 0-based channel indices that must
+    be matched against the report's actual "sampleN[...]" column names.
+    """
+    workflow_dir = get_workflow_dir(workspace)
+    analysis_mode = ParameterManager(workflow_dir, "TOPP Workflow").get_parameters_from_json().get("analysis-mode", "LFQ")
+
+    if analysis_mode == "LFQ":
+        return {
+            k[:-5] if k.endswith(".mzML") else k: v
+            for k, v in group_map.items()
+        }
+
+    actual_sample_names = pivot_df.columns.tolist()
+    norm_map = {}
+    for k, v in group_map.items():
+        try:
+            sample_idx = int(k) + 1
+        except (TypeError, ValueError):
+            continue
+        target_substring = f"sample{sample_idx}["
+        real_full_name = next((name for name in actual_sample_names if target_substring in name), None)
+        if real_full_name:
+            norm_map[real_full_name] = v if v and v.strip() else "Unassigned"
+    return norm_map
