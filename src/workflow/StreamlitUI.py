@@ -23,6 +23,32 @@ from src.common.common import (
 from src.workflow._log_status import classify_log_outcome
 
 
+def _mounted_data_root() -> Union[Path, None]:
+    """Return the validated mount root from the ``local_data_dir`` setting.
+
+    The browser renders only when ``local_data_dir`` is an actual mount
+    point inside the container — i.e. the operator passed ``-v`` /
+    ``--bind`` / ``volumeMount`` to attach host data. Existence alone is
+    no longer sufficient because the image now pre-creates the path so
+    apptainer/singularity binds have a real attach target; without
+    ``os.path.ismount`` the browser would render an empty tree for every
+    user who didn't mount anything.
+    """
+    settings = st.session_state.get("settings") or {}
+    raw = (settings.get("local_data_dir") or "").strip()
+    if not raw:
+        return None
+    try:
+        p = Path(raw).expanduser().resolve(strict=True)
+    except (OSError, RuntimeError):
+        return None
+    if not p.is_dir():
+        return None
+    if not os.path.ismount(p):
+        return None
+    return p
+
+
 class StreamlitUI:
     """
     Provides an interface for Streamlit applications to handle file uploads,
@@ -76,6 +102,8 @@ class StreamlitUI:
 
         c1, c2 = st.columns(2)
         c1.markdown("**Upload file(s)**")
+
+        mount_root = _mounted_data_root() if st.session_state.location == "online" else None
 
         if st.session_state.location == "local":
             c2_text, c2_checkbox = c2.columns([1.5, 1], gap="large")
@@ -247,7 +275,19 @@ class StreamlitUI:
                     "This means that the original files will be used instead. "
                 )
 
-        if fallback and not any([f for f in Path(files_dir).iterdir() if f.name != "external_files.txt"]):
+        if mount_root is not None:
+            with c2:
+                self._mounted_drive_browser(key, name, file_types, files_dir, mount_root)
+
+        external_files_path = Path(files_dir, "external_files.txt")
+        has_real_files = any(
+            p.name != "external_files.txt" for p in files_dir.iterdir()
+        )
+        has_external_picks = external_files_path.exists() and any(
+            line.strip() and os.path.exists(line.strip())
+            for line in external_files_path.read_text().splitlines()
+        )
+        if fallback and not has_real_files and not has_external_picks:
             if isinstance(fallback, str):
                 fallback = [fallback]
             for f in fallback:
@@ -302,6 +342,179 @@ class StreamlitUI:
                 st.rerun()
         elif not fallback:
             st.warning(f"No **{name}** files!")
+
+    def _resolve_browser_cwd(self, key: str, mount_root: Path) -> Path:
+        """Read cwd for this widget from session state, confine it to mount_root."""
+        sess_key = f"mounted_cwd_{key}"
+        raw = st.session_state.get(sess_key, str(mount_root))
+        try:
+            cwd = Path(raw).expanduser().resolve(strict=True)
+        except (OSError, RuntimeError):
+            cwd = mount_root
+        if cwd != mount_root and mount_root not in cwd.parents:
+            cwd = mount_root
+        st.session_state[sess_key] = str(cwd)
+        return cwd
+
+    def _mounted_drive_browser(
+        self,
+        key: str,
+        name: str,
+        file_types: List[str],
+        files_dir: Path,
+        mount_root: Path,
+    ) -> None:
+        """Render a tree browser for a mounted host directory.
+
+        Selected files are referenced in place via ``external_files.txt`` —
+        the same mechanism the offline tkinter flow uses.
+        """
+        external_files = Path(files_dir, "external_files.txt")
+        if not external_files.exists():
+            external_files.touch()
+
+        cwd = self._resolve_browser_cwd(key, mount_root)
+        sess_cwd_key = f"mounted_cwd_{key}"
+
+        st.markdown(
+            """
+            <style>
+            div[data-testid="stButton"] button[kind="tertiary"] {
+                padding-top: 0.15rem;
+                padding-bottom: 0.15rem;
+                min-height: 0;
+                line-height: 1.3;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        with st.container(border=True):
+            st.markdown(
+                f"**Add {name} files from mounted directory** "
+                f"`{mount_root}`"
+            )
+
+            # Breadcrumbs: compact tertiary buttons separated by »,
+            # with a right-aligned Parent button.
+            try:
+                rel = cwd.relative_to(mount_root)
+                segments = [mount_root.name] + list(rel.parts) if rel.parts else [mount_root.name]
+            except ValueError:
+                segments = [mount_root.name]
+            n = len(segments)
+            ratios: List[float] = []
+            for i in range(n):
+                ratios.append(max(len(segments[i]), 3))
+                if i < n - 1:
+                    ratios.append(1)
+            ratios.append(20)  # flexible spacer
+            ratios.append(6)   # parent button slot
+            crumb_cols = st.columns(ratios, vertical_alignment="center")
+            col_idx = 0
+            for i, seg in enumerate(segments):
+                target = mount_root.joinpath(*segments[1 : i + 1]) if i > 0 else mount_root
+                if crumb_cols[col_idx].button(
+                    seg,
+                    key=f"crumb_{key}_{i}",
+                    type="tertiary",
+                ):
+                    st.session_state[sess_cwd_key] = str(target)
+                    st.rerun(scope="fragment")
+                col_idx += 1
+                if i < n - 1:
+                    crumb_cols[col_idx].markdown(
+                        "<span style='color:#888'>»</span>",
+                        unsafe_allow_html=True,
+                    )
+                    col_idx += 1
+            # spacer column
+            col_idx += 1
+            if cwd != mount_root:
+                if crumb_cols[col_idx].button(
+                    "⬆ Parent",
+                    key=f"mounted_parent_{key}",
+                    type="tertiary",
+                ):
+                    st.session_state[sess_cwd_key] = str(cwd.parent)
+                    st.rerun(scope="fragment")
+
+            try:
+                entries = sorted(
+                    (p for p in cwd.iterdir() if not p.name.startswith(".")),
+                    key=lambda p: (not p.is_dir(), p.name.lower()),
+                )
+            except PermissionError:
+                st.error(f"Permission denied reading `{cwd}`.")
+                return
+
+            def _is_match(p: Path) -> bool:
+                return any(p.name.endswith(f".{ft}") for ft in file_types)
+
+            subdirs = [p for p in entries if p.is_dir() and not _is_match(p)]
+            bundled = [p for p in entries if p.is_dir() and _is_match(p)]
+            files = [p for p in entries if p.is_file() and _is_match(p)]
+
+            for d in subdirs:
+                indent, body = st.columns([1, 60], vertical_alignment="center")
+                if body.button(
+                    f"📂 {d.name}/",
+                    key=f"mounted_dir_{key}_{d.name}",
+                    type="tertiary",
+                ):
+                    st.session_state[sess_cwd_key] = str(d)
+                    st.rerun(scope="fragment")
+
+            selectable = bundled + files
+            selected_paths: List[str] = []
+            for f in selectable:
+                cb_key = f"mounted_pick_{key}_{f}"
+                size_label = ""
+                if f.is_file():
+                    try:
+                        size_mb = f.stat().st_size / (1024 * 1024)
+                        size_label = f"  ·  {size_mb:.1f} MB"
+                    except OSError:
+                        pass
+                icon = "🗂️" if f.is_dir() else "📄"
+                if st.checkbox(
+                    f"{icon} {f.name}{size_label}",
+                    key=cb_key,
+                ):
+                    selected_paths.append(str(f))
+
+            if not subdirs and not selectable:
+                st.info(
+                    f"No subdirectories or files matching "
+                    f"**{', '.join('.' + ft for ft in file_types)}** here."
+                )
+
+            count = len(selected_paths)
+            if st.button(
+                f"➕ Add {count} selected {name} file(s)" if count else f"➕ Add selected {name} file(s)",
+                key=f"mounted_add_{key}",
+                type="primary",
+                use_container_width=True,
+                disabled=count == 0,
+            ):
+                existing = set(
+                    line.strip()
+                    for line in external_files.read_text().splitlines()
+                    if line.strip()
+                )
+                added = 0
+                with open(external_files, "a") as fh:
+                    for p in selected_paths:
+                        if p not in existing:
+                            fh.write(f"{p}\n")
+                            existing.add(p)
+                            added += 1
+                # Clear the checkboxes by removing their session keys.
+                for f in selectable:
+                    st.session_state.pop(f"mounted_pick_{key}_{f}", None)
+                st.success(f"Added {added} file(s) from `{cwd}`.")
+                st.rerun(scope="fragment")
 
     def select_input_file(
         self,
@@ -617,6 +830,7 @@ class StreamlitUI:
         display_subsections: bool = True,
         display_subsection_tabs: bool = False,
         custom_defaults: dict = {},
+        tool_instance_name: str = None,
     ) -> None:
         """
         Generates input widgets for TOPP tool parameters dynamically based on the tool's
@@ -632,29 +846,43 @@ class StreamlitUI:
             display_subsections (bool, optional): Whether to split parameters into subsections based on the prefix. Defaults to True.
             display_subsection_tabs (bool, optional): Whether to display main subsections in separate tabs (if more than one main section). Defaults to False.
             custom_defaults (dict, optional): Dictionary of custom defaults to use. Defaults to an empty dict.
+            tool_instance_name (str, optional): A unique instance name for this tool
+                invocation. Allows multiple instances of the same TOPP tool with
+                independent parameters (e.g., two IDFilter calls). If not provided,
+                defaults to topp_tool_name. The instance name is used for session
+                state keys and parameter storage, while topp_tool_name is used for
+                the actual tool executable and ini file creation.
         """
+        # Default instance name to the tool name when not provided
+        if tool_instance_name is None:
+            tool_instance_name = topp_tool_name
+
+        # Register instance-name → real-tool-name mapping in session state
+        if "_topp_tool_instance_map" not in st.session_state:
+            st.session_state["_topp_tool_instance_map"] = {}
+        st.session_state["_topp_tool_instance_map"][tool_instance_name] = topp_tool_name
 
         if not display_subsections:
             display_subsection_tabs = False
         if display_subsection_tabs:
             display_subsections = True
 
-        # write defaults ini files
+        # Create pristine ini file (never mutated with custom defaults)
         ini_file_path = Path(self.parameter_manager.ini_dir, f"{topp_tool_name}.ini")
-        ini_existed = ini_file_path.exists()
         if not self.parameter_manager.create_ini(topp_tool_name):
             st.error(f"TOPP tool **'{topp_tool_name}'** not found.")
             return
-        if not ini_existed:
-            # update custom defaults if necessary
-            if custom_defaults:
-                param = poms.Param()
-                poms.ParamXMLFile().load(str(ini_file_path), param)
-                for key, value in custom_defaults.items():
-                    encoded_key = f"{topp_tool_name}:1:{key}".encode()
-                    if encoded_key in param.keys():
-                        param.setValue(encoded_key, value)
-                poms.ParamXMLFile().store(str(ini_file_path), param)
+
+        # Seed custom defaults into params.json under _defaults key
+        if custom_defaults:
+            params = self.parameter_manager.get_parameters_from_json()
+            if "_defaults" not in params:
+                params["_defaults"] = {}
+            params["_defaults"][tool_instance_name] = custom_defaults
+            with open(self.parameter_manager.params_file, "w", encoding="utf-8") as f:
+                json.dump(params, f, indent=4)
+            # Refresh self.params so widget resolution sees _defaults
+            self.params = self.parameter_manager.get_parameters_from_json()
 
         # read into Param object
         param = poms.Param()
@@ -731,18 +959,18 @@ class StreamlitUI:
                 )
             params.append(p)
 
-        # for each parameter in params_decoded
-        # if a parameter with custom default value exists, use that value
-        # else check if the parameter is already in self.params, if yes take the value from self.params
+        # Build ini_params dict for three-layer merge
+        ini_params = {}
         for p in params:
             name = p["key"].decode().split(":1:")[1]
-            if topp_tool_name in self.params:
-                if name in self.params[topp_tool_name]:
-                    p["value"] = self.params[topp_tool_name][name]
-                elif name in custom_defaults:
-                    p["value"] = custom_defaults[name]
-            elif name in custom_defaults:
-                p["value"] = custom_defaults[name]
+            ini_params[name] = p["value"]
+
+        # Resolve effective values: ini < _defaults < user overrides
+        merged = self.parameter_manager.get_merged_params(tool_instance_name, ini_params=ini_params)
+        for p in params:
+            name = p["key"].decode().split(":1:")[1]
+            if name in merged:
+                p["value"] = merged[name]
             # Ensure list parameters stay as lists after loading from JSON
             # (JSON may store single-item lists as strings)
             if p["original_is_list"] and isinstance(p["value"], str):
@@ -776,7 +1004,7 @@ class StreamlitUI:
 
         # Display tool name if required
         if display_tool_name:
-            st.markdown(f"**{topp_tool_name}**")
+            st.markdown(f"**{tool_instance_name}**")
 
         tab_names = [k for k in param_sections.keys() if ":" not in k]
         tabs = None
@@ -804,8 +1032,11 @@ class StreamlitUI:
             cols = st.columns(num_cols)
             i = 0
             for p in params:
-                # get key and name
-                key = f"{self.parameter_manager.topp_param_prefix}{p['key'].decode()}"
+                # get key and name – use tool_instance_name in session state key
+                key_str = p['key'].decode()
+                if tool_instance_name != topp_tool_name:
+                    key_str = key_str.replace(f"{topp_tool_name}:1:", f"{tool_instance_name}:1:", 1)
+                key = f"{self.parameter_manager.topp_param_prefix}{key_str}"
                 name = p["name"]
                 try:
                     # sometimes strings with newline, handle as list
@@ -1377,7 +1608,8 @@ Started: {status.get('started_at', 'N/A')}""")
         general = {}
 
         for k, v in params.items():
-            # skip if v is a file path
+            if k == "_defaults":
+                continue
             if isinstance(v, dict):
                 topp[k] = v
             elif ".py" in k:
@@ -1387,6 +1619,13 @@ Started: {status.get('started_at', 'N/A')}""")
                 python[script][k.split(".py")[1][1:]] = v
             else:
                 general[k] = v
+
+        # Merge _defaults into topp so summary shows custom defaults + user overrides
+        defaults = params.get("_defaults", {})
+        for tool_name, default_vals in defaults.items():
+            if tool_name not in topp:
+                topp[tool_name] = {}
+            topp[tool_name] = {**default_vals, **topp.get(tool_name, {})}
 
         markdown = []
 
