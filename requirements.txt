@@ -44,7 +44,7 @@ jsonschema-specifications==2024.10.1
     # via jsonschema
 kiwisolver==1.4.8
     # via matplotlib
-markupsafe==3.0.2
+markupsafe==3.0.3
     # via jinja2
 matplotlib==3.10.1
     # via pyopenms
