@@ -13,3 +13,6 @@ gdpr_consent/node_modules/
 *~
 .streamlit/secrets.toml
 docs/superpowers/
+quantms_pca_plot/
+quantms_protein_heatmap/
+quantms_volcano_plot/

@@ -135,6 +135,7 @@ try:
         group_field="group",
         n_components=5,
         title="Sample PCA",
+        show_ellipses=False,
     )
 except ValueError as e:
     st.error(f"PCA computation failed: {e}")
