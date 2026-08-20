@@ -140,7 +140,7 @@ xlsxwriter
 streamlit_plotly_events
 scipy
 scikit-learn
-openms-insight>=0.1.13
+openms-insight==0.2.0
 polars>=1.0.0
 # Forces polars to prefer its most CPU-compatible native runtime.
 # Without this, polars can select an AVX-optimized runtime (e.g. runtime-32)
