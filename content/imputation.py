@@ -127,7 +127,7 @@ if st.button("Apply Imputation", type="primary"):
             group_column="group",
             strategy=strategy_opt,
         )
-    elif impute_category == "MNAR (Missing Not At Random)":
+    else:  # "MNAR (Missing Not At Random)"
         imputed_lazy = impute_smallest_value(
             quantification_data=quant_lazy, metadata=metadata_pl, scope=scope_opt
         )

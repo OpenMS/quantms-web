@@ -98,16 +98,17 @@ col1, col2 = st.columns(2)
 with col1:
     st.markdown("### 🔬 1. Hypothesis Testing Method")
     
+    if group_count < 2:
+        st.error("❌ Statistical testing requires at least 2 unique sample groups.")
+        st.stop()
+
     # Route available method options dynamically based on the group count
     if group_count == 2:
         method_options = ["limma_like", "welch", "paired"]
         help_text = "'limma_like' uses Empirical Bayes variance shrinking. 'welch' is for unequal variances. 'paired' is for dependent samples."
-    elif group_count >= 3:
+    else:
         method_options = ["limma_like", "anova"]
         help_text = "'limma_like' supports multi-group design matrices. 'anova' computes standard row-wise One-way ANOVA."
-    else:
-        st.error("❌ Statistical testing requires at least 2 unique sample groups.")
-        st.stop()
         
     selected_method = st.selectbox(
         "Select Statistical Test",

@@ -141,7 +141,7 @@ if st.button("Apply Filter", type="primary"):
             group_column="group",
             max_missing_ratio=threshold / 100.0,
         )
-    elif filter_method == "Low Variance":
+    else:  # "Low Variance"
         filtered_lazy = filter_low_variance(
             quantification_data=quant_lazy,
             metadata=metadata_pl,

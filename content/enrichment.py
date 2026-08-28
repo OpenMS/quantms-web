@@ -24,14 +24,9 @@ if "workspace" not in st.session_state:
 
 # --- STEP 1: Upstream Statistics Checkpoint ---
 if (
-    "statistics_df" in st.session_state
-    and st.session_state["statistics_df"] is not None
+    "statistics_df" not in st.session_state
+    or st.session_state["statistics_df"] is None
 ):
-    final_statistics_report = st.session_state["statistics_df"]
-    st.info(
-        "🔄 **Upstream Pipeline Detected**: Using analyzed matrices from the **Statistical Inference** step."
-    )
-else:
     st.warning(
         "⚠️ **Missing Prerequisites**: Statistical inference data not detected. Please run hypothesis testing first."
     )
@@ -39,6 +34,11 @@ else:
         "content/statistical.py", label="Go to Statistical Inference", icon="🔬"
     )
     st.stop()
+
+final_statistics_report = st.session_state["statistics_df"]
+st.info(
+    "🔄 **Upstream Pipeline Detected**: Using analyzed matrices from the **Statistical Inference** step."
+)
 
 # --- STEP 2: Preprocessing Mapping Key Configuration ---
 # Identify target identifier columns dynamically
