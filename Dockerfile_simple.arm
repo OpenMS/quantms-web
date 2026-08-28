@@ -22,7 +22,9 @@ USER root
 
 RUN apt-get -y update
 # note: streamlit in docker needs libgtk2.0-dev (see https://yugdamor.medium.com/importerror-libgthread-2-0-so-0-cannot-open-shared-object-file-no-such-file-or-directory-895b94a7827b)
-RUN apt-get install -y --no-install-recommends --no-install-suggests wget ca-certificates libgtk2.0-dev curl jq cron nginx
+# build-essential is needed on arm64: pyprophet (a quantms-web requirement, not a
+# template one) publishes x86_64 wheels only, so pip builds it from sdist here.
+RUN apt-get install -y --no-install-recommends --no-install-suggests wget ca-certificates libgtk2.0-dev curl jq cron nginx build-essential
 RUN update-ca-certificates
 
 # Install Github CLI
