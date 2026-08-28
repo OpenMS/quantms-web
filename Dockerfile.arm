@@ -62,7 +62,10 @@ SHELL ["mamba", "run", "-n", "streamlit-env", "/bin/bash", "-c"]
 
 # Install up-to-date cmake via mamba and packages for pyOpenMS build.
 RUN mamba install cmake
-RUN pip install --upgrade pip && python -m pip install -U setuptools nose cython "autowrap<=0.24" pandas numpy pytest
+# cython<3.3: Cython 3.3.0 (2026-08-22) removed Cython.Compiler.Nodes.CConstOrVolatileTypeNode,
+# which the pinned autowrap<=0.24 needs, breaking `make pyopenms`. Only bites on a cold build
+# cache, so a warm cache hides it. Drop the bound when the autowrap pin moves to >=0.25.
+RUN pip install --upgrade pip && python -m pip install -U setuptools nose "cython<3.3" "autowrap<=0.24" pandas numpy pytest
 
 # Clone OpenMS branch and the associcated contrib+thirdparties+pyOpenMS-doc submodules.
 RUN git clone --recursive --depth=1 -b ${OPENMS_BRANCH} --single-branch ${OPENMS_REPO} && cd /OpenMS
