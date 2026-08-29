@@ -1,94 +1,173 @@
-# CLAUDE.md
+# OpenMS Streamlit WebApp Template
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## What This Is
 
-## Project Overview
+**This is the standard framework for building web applications for mass spectrometry (MS) data analysis**, used across the OpenMS ecosystem for proteomics and metabolomics research. When a researcher or developer needs a web-based tool for MS data processing, visualization, or analysis — whether for label-free quantification, untargeted metabolomics, top-down proteomics, or any other MS workflow — this template is how it gets built.
 
-OpenMS Streamlit Template is a web application framework for building mass spectrometry (MS) analysis workflows using OpenMS/pyOpenMS. It supports both simple pyOpenMS workflows and complex multi-tool pipelines using OpenMS TOPP (The OpenMS Proteomics Pipeline) tools.
+The template wraps **OpenMS/pyOpenMS** (the leading open-source C++/Python library for computational mass spectrometry) and its **TOPP tools** (a suite of ~200 command-line tools for MS data processing pipelines) into interactive Streamlit web applications.
 
-## Common Commands
+### Production Apps Built From This Template
 
-```bash
-# Run the app locally
-streamlit run app.py
+- **OpenMS/quantms-web** — quantitative proteomics (DDA-LFQ, DDA-ISO, DIA-LFQ quantification)
+- **OpenMS/umetaflow** — untargeted metabolomics (feature detection, alignment, annotation, GNPS molecular networking)
+- **OpenMS/FLASHApp** — top-down proteomics (FLASHDeconv deconvolution result visualization)
 
-# Run tests
-python -m pytest test_gui.py tests/
+### Mass Spectrometry Domain Context
 
-# Build and run with Docker (includes OpenMS TOPP tools)
-docker-compose up -d --build
-
-# Clean up old workspaces (removes workspaces older than 7 days)
-python clean-up-workspaces.py
-```
-
-Note: Local runs have limited functionality. Features requiring OpenMS TOPP tools only work out of the box with Docker or when OpenMS Command Line Tools are installed separately.
+- **Input data** is typically mzML (raw MS spectra), featureXML (detected features), consensusXML (linked features across samples), idXML (peptide/protein identifications), traML (targeted transitions)
+- **Typical workflows chain TOPP tools**: e.g., `FeatureFinderMetabo` (detect LC-MS features) → `FeatureLinkerUnlabeledKD` (align features across runs) → custom Python post-processing
+- **Proteomics** focuses on peptide/protein identification and quantification (tools like `MSGFPlusAdapter`, `FidoAdapter`, `ProteinQuantifier`)
+- **Metabolomics** focuses on feature detection, annotation, and statistical analysis (tools like `FeatureFinderMetabo`, `MetaboliteAdductDecharger`, `SiriusAdapter`)
+- **pyOpenMS** provides Python bindings for programmatic MS data access — reading mzML files, manipulating spectra/chromatograms, computing molecular properties, etc.
+- **MS-specific visualizations**: mass spectra (m/z vs intensity), chromatograms (RT vs intensity), peak maps (RT vs m/z 2D heatmaps), isotope patterns, fragment ion annotations, volcano plots for differential expression
 
 ## Architecture
 
-### Core Framework (`src/workflow/`)
-
-The workflow system is built around `WorkflowManager` as the base class with these components:
-
-- **WorkflowManager**: Base class that orchestrates file management, parameters, command execution, and UI. Custom workflows inherit from this and override `upload()`, `configure()`, `execution()`, and `results()` methods.
-- **FileManager**: Handles input/output file organization in `workflow_dir/input-files/{key}/` and `workflow_dir/results/`
-- **ParameterManager**: Manages TOPP tool parameters (XML .ini files) and JSON parameters
-- **CommandExecutor**: Runs external commands (TOPP tools) with threading for parallelization
-- **StreamlitUI**: Provides Streamlit widgets including `upload_widget()` and `input_TOPP()` for TOPP parameter UIs
-- **Logger**: Multi-level logging (minimal, commands, all) to `workflow_dir/logs/`
-
-### Page Structure
-
-- **Entry point**: `app.py` defines multi-page navigation using `st.navigation()`
-- **Pages**: Each file in `content/` is a page that calls `page_setup()` from `src/common/common.py`, then instantiates a workflow class
-- **Utility pages** (`content/`): digest.py, fragmentation.py, isotope_pattern_generator.py, peptide_mz_calculator.py provide standalone analysis tools
-
-### Workflow Data Flow
-
-1. `page_setup()` initializes workspace and loads parameters from `workspace/params.json`
-2. Workflow class (e.g., `WorkflowTest`) inherits from `WorkflowManager`
-3. Each page calls the appropriate method: `show_file_upload_section()`, `show_parameter_section()`, `show_execution_section()`, `show_results_section()`
-4. Workflow execution runs in a multiprocessing.Process to avoid blocking Streamlit UI updates
-
-### Key Patterns
-
-- **Workspace isolation**: Each user session gets a unique workspace directory for files and parameters
-- **Streamlit fragments**: Use `@st.fragment` decorator for interactive UI updates without full page reloads
-- **TOPP tool execution**: `executor.run_topp("ToolName", {inputs/outputs}, {extra_params})` handles parameter files and command construction
-
-## Configuration Files
-
-- `settings.json`: App name, version, analytics, workspace settings
-- `default-parameters.json`: Workflow default parameters
-- `.streamlit/config.toml`: Streamlit server config (port 8501, 1000MB upload limit)
-
-## Creating New Workflows
-
-Inherit from `WorkflowManager` and implement the four core methods:
-
-```python
-from src.workflow.WorkflowManager import WorkflowManager
-
-class MyWorkflow(WorkflowManager):
-    def __init__(self):
-        super().__init__("My Workflow", st.session_state["workspace"])
-
-    def upload(self):
-        self.ui.upload_widget(key="input-files", name="Input", file_types="mzML", fallback=[...])
-
-    def configure(self):
-        self.ui.input_TOPP("ToolName", custom_defaults={...}, include_parameters=[...])
-
-    def execution(self):
-        self.executor.run_topp("ToolName", {"in": [...], "out": [...]}, {...})
-
-    def results(self):
-        st.dataframe(pd.read_csv(...))
+```
+app.py                          # Entry point — registers pages via st.Page() in a dict
+settings.json                   # App config: name, version, deployment mode, threading
+default-parameters.json         # Default workspace parameters (tracked via widget keys)
+presets.json                    # Parameter presets for TOPP workflows
+content/                        # Streamlit pages (one .py per page)
+src/
+  common/common.py              # Utilities: page_setup(), save_params(), show_fig(), show_table()
+  Workflow.py                   # Example WorkflowManager subclass (TOPP workflow)
+  workflow/
+    WorkflowManager.py          # Base class: upload/configure/execution/results pattern
+    StreamlitUI.py              # Widget library: upload_widget, input_TOPP, input_python, etc.
+    ParameterManager.py         # JSON parameter persistence + TOPP .ini generation
+    CommandExecutor.py           # Runs TOPP tools and Python scripts as subprocesses
+    FileManager.py              # Workspace file organization
+    Logger.py                   # Structured workflow logging
+    QueueManager.py             # Redis queue for online deployments
+  python-tools/                 # Custom Python analysis scripts (with DEFAULTS dicts)
+Dockerfile                      # Full build: OpenMS + TOPP tools + pyOpenMS
+Dockerfile_simple               # Lightweight: pyOpenMS only
+docker-compose.yml              # Deployment config
 ```
 
-## Key Dependencies
+## Key Patterns
 
-- **pyOpenMS 3.5.0+**: Python bindings for OpenMS
-- **Streamlit 1.43.0**: Web UI framework
-- **Plotly + streamlit_plotly_events**: Interactive visualizations
-- **OpenMS TOPP tools**: External command-line tools (Docker or separate install required)
+### Pages
+
+Every page starts with `page_setup()` which handles workspace initialization, sidebar rendering, and parameter loading:
+
+```python
+from src.common.common import page_setup, save_params
+params = page_setup()
+```
+
+Pages are registered in `app.py` under named sections:
+
+```python
+pages = {
+    "Section Name": [
+        st.Page(Path("content", "my_page.py"), title="My Page", icon="🔬"),
+    ],
+}
+```
+
+### Parameters
+
+Parameters are tracked via widget keys that match entries in `default-parameters.json`. The `save_params(params)` call at the end of a page persists any widget state changes:
+
+```python
+params = page_setup()
+st.number_input("X", value=params["my-param"], key="my-param")
+save_params(params)
+```
+
+### TOPP Workflows (WorkflowManager)
+
+Complex workflows subclass `WorkflowManager` and implement 4 methods:
+- `upload()` — file upload widgets via `self.ui.upload_widget()`
+- `configure()` — TOPP params via `self.ui.input_TOPP()`, Python tool params via `self.ui.input_python()`
+- `execution()` — run tools via `self.executor.run_topp()` and `self.executor.run_python()`
+- `results()` — display outputs
+
+Each workflow gets 4 content pages (upload, configure, run, results) that call `wf.show_*_section()`.
+
+Decorate `configure()` and `results()` with `@st.fragment` for partial reruns.
+
+For conditional UI (a widget that shows/hides other widgets), pass `reactive=True` to `input_widget`, `select_input_file`, or `input_TOPP` so a change reruns the parent `configure()` instead of only its isolated fragment. Read the changed value from `st.session_state` (not `self.params`, which is stale within the rerun) via `parameter_manager.param_prefix` for custom-widget keys or `topp_param_prefix` for TOPP keys (`"<Tool>:1:<param path>"`).
+
+### Python Tools
+
+Custom scripts in `src/python-tools/` define a `DEFAULTS` list for auto-generated UI:
+
+```python
+DEFAULTS = [
+    {"key": "in", "value": [], "hide": True},
+    {"key": "my-param", "value": 5, "name": "My Parameter", "help": "Description",
+     "min": 1, "max": 100, "step_size": 1, "widget_type": "slider"},
+]
+```
+
+### Presets
+
+Parameter presets in `presets.json` map workflow names (lowercase, hyphens) to named parameter sets:
+
+```json
+{
+  "workflow-name": {
+    "Preset Name": {
+      "_description": "Tooltip text",
+      "TOPPToolName": {"algorithm:section:param": value},
+      "_general": {"custom-key": value}
+    }
+  }
+}
+```
+
+## Visualization Libraries
+
+Two libraries are commonly used in template-based apps for MS data visualization:
+
+### pyopenms-viz
+
+Pandas DataFrame extension for MS visualization. Use the plotly backend in Streamlit:
+
+```python
+import pyopenms_viz
+df.plot.ms_spectrum(backend="plotly")  # mass spectrum (m/z vs intensity)
+df.plot.peak_map(backend="plotly")     # 2D peak map (RT vs m/z heatmap)
+df.plot.chromatogram(backend="plotly") # chromatogram (RT vs intensity)
+df.plot.mobilogram(backend="plotly")   # ion mobility trace
+```
+
+Best for: publication-quality static/interactive plots, small-medium datasets, standard MS plot types.
+
+### OpenMS-Insight (t0mdavid-m/openms-insight)
+
+Vue.js-backed interactive Streamlit components for large MS datasets:
+
+- `Table` — server-side pagination with Tabulator.js
+- `LinePlot` — stick-style mass spectra via Plotly
+- `Heatmap` — 2D scatter handling millions of points
+- `VolcanoPlot` — differential expression visualization
+- `SequenceView` — peptide sequence with fragment ion matching
+
+Components support cross-linking via shared identifiers. Best for: large datasets (millions of points), cross-component interactivity, server-side pagination.
+
+## Commands
+
+```bash
+# Run locally
+pip install -r requirements.txt
+streamlit run app.py
+
+# Run tests
+python -m pytest tests/
+
+# Docker
+docker-compose up --build
+```
+
+## Conventions
+
+- Page files go in `content/`, source logic in `src/`
+- Widget keys must match parameter keys in `default-parameters.json`
+- Workflow names use lowercase with hyphens: "My Workflow" -> "my-workflow"
+- Use `show_fig()` and `show_table()` from `src/common/common.py` for consistent display
+- Use `@st.fragment` on methods that should partially rerun (configure, results)
+- TOPP tool parameters use colon-separated paths: `"algorithm:section:param_name"`

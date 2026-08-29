@@ -3,7 +3,51 @@ import json
 import shutil
 import subprocess
 import streamlit as st
+import xml.etree.ElementTree as ET
 from pathlib import Path
+
+
+def bool_param_paths_from_param_xml_ini(ini_path: Path, tool_stem: str) -> set[str]:
+    """
+    Return short parameter paths for every ``<ITEM type="bool">`` in a ParamXML .ini file.
+
+    Paths match the suffix after ``Tool:1:`` in pyOpenMS (e.g. ``algorithm:epd:masstrace_snr_filtering``).
+    """
+    try:
+        root = ET.parse(ini_path).getroot()
+    except (ET.ParseError, OSError):
+        return set()
+
+    def local_tag(el: ET.Element) -> str:
+        t = el.tag
+        return t.rsplit("}", 1)[-1] if isinstance(t, str) and "}" in t else str(t)
+
+    out: set[str] = set()
+
+    def walk(el: ET.Element, parts: tuple[str, ...]) -> None:
+        for ch in el:
+            lt = local_tag(ch)
+            if lt == "NODE":
+                nm = ch.get("name") or ""
+                walk(ch, parts + (nm,))
+            elif lt == "ITEM" and (ch.get("type") or "").lower() == "bool":
+                nm = ch.get("name") or ""
+                segs = [p for p in parts if p]
+                if nm:
+                    segs.append(nm)
+                if not segs:
+                    continue
+                # Strip tool root NODE name and instance NODE "1" (not part of pyOpenMS short keys)
+                while segs and segs[0] in (tool_stem, "1"):
+                    segs.pop(0)
+                if segs:
+                    out.add(":".join(segs))
+
+    for ch in root:
+        if local_tag(ch) == "NODE":
+            walk(ch, ())
+    return out
+
 
 class ParameterManager:
     """
@@ -29,6 +73,29 @@ class ParameterManager:
         # Store workflow name for preset loading; default to directory stem if not provided
         self.workflow_name = workflow_name or workflow_dir.stem
 
+    def bool_pairs_session_key(self) -> str:
+        """Session state key holding a set of (tool name, param path) for bool TOPP params."""
+        return f"{self.ini_dir.parent.stem}-topp-bool-pairs"
+
+    def get_bool_param_pairs(self) -> set:
+        """Return the cached set of (tool, param path) bool params; empty set if none."""
+        return st.session_state.get(self.bool_pairs_session_key(), set())
+
+    def _merge_bool_params_from_ini(self, tool: str) -> None:
+        """Load tool.ini (XML) and merge type=bool parameter paths into session_state."""
+        ini_path = Path(self.ini_dir, f"{tool}.ini")
+        if not ini_path.exists():
+            return
+        try:
+            sk = self.bool_pairs_session_key()
+            if sk not in st.session_state:
+                st.session_state[sk] = set()
+            for short in bool_param_paths_from_param_xml_ini(ini_path, tool):
+                st.session_state[sk].add((tool, short))
+        except RuntimeError:
+            # No Streamlit session (e.g. plain `python` import)
+            pass
+
     def create_ini(self, tool: str) -> bool:
         """
         Create an ini file for a TOPP tool if it doesn't exist.
@@ -41,11 +108,14 @@ class ParameterManager:
         """
         ini_path = Path(self.ini_dir, tool + ".ini")
         if ini_path.exists():
+            self._merge_bool_params_from_ini(tool)
             return True
         try:
             subprocess.call([tool, "-write_ini", str(ini_path)])
         except FileNotFoundError:
             return False
+        if ini_path.exists():
+            self._merge_bool_params_from_ini(tool)
         return ini_path.exists()
 
     def save_parameters(self) -> None:
@@ -65,7 +135,7 @@ class ParameterManager:
         # Advanced parameters are only in session state if the view is active
         json_params = self.get_parameters_from_json() | json_params
 
-        # get a list of TOPP tools which are in session state
+        # get a list of TOPP tools (or tool instance names) which are in session state
         current_topp_tools = list(
             set(
                 [
@@ -75,12 +145,16 @@ class ParameterManager:
                 ]
             )
         )
-        # for each TOPP tool, open the ini file
+        # Retrieve the instance-name → real-tool-name mapping (set by input_TOPP)
+        tool_instance_map = st.session_state.get("_topp_tool_instance_map", {})
+        # for each TOPP tool (or instance name), open the ini file
         for tool in current_topp_tools:
-            if not self.create_ini(tool):
+            # Resolve instance name to real tool name for create_ini / ini loading
+            real_tool = tool_instance_map.get(tool, tool)
+            if not self.create_ini(real_tool):
                 # Could not create ini file - skip this tool
                 continue
-            ini_path = Path(self.ini_dir, f"{tool}.ini")
+            ini_path = Path(self.ini_dir, f"{real_tool}.ini")
             if tool not in json_params:
                 json_params[tool] = {}
             # load the param object
@@ -92,19 +166,26 @@ class ParameterManager:
                     # Skip display keys used by multiselect widgets
                     if key.endswith("_display"):
                         continue
-                    # get ini_key
-                    ini_key = key.replace(self.topp_param_prefix, "").encode()
+                    # get ini_key – map instance name back to real tool name
+                    ini_key = key.replace(self.topp_param_prefix, "")
+                    if tool != real_tool:
+                        ini_key = ini_key.replace(f"{tool}:1:", f"{real_tool}:1:", 1)
+                    ini_key = ini_key.encode()
                     # get ini (default) value by ini_key
                     ini_value = param.getValue(ini_key)
                     is_list_param = isinstance(ini_value, list)
-                    # check if value is different from default OR is an empty list parameter
+                    # Effective default: _defaults value if present, else ini value
+                    short_key = key.split(":1:")[1]
+                    defaults = json_params.get("_defaults", {}).get(tool, {})
+                    default_value = defaults.get(short_key, ini_value)
+                    # check if value is different from effective default OR is an empty list parameter
                     if (
-                        (ini_value != value)
-                        or (key.split(":1:")[1] in json_params[tool])
+                        (default_value != value)
+                        or (short_key in json_params[tool])
                         or (is_list_param and not value)  # Always save empty list params
                     ):
                         # store non-default value
-                        json_params[tool][key.split(":1:")[1]] = value
+                        json_params[tool][short_key] = value
         # Save to json file
         with open(self.params_file, "w", encoding="utf-8") as f:
             json.dump(json_params, f, indent=4)
@@ -129,7 +210,7 @@ class ParameterManager:
             except:
                 st.error("**ERROR**: Attempting to load an invalid JSON parameter file. Reset to defaults.")
                 return {}
-            
+
     def get_merged_params(self, tool_instance_name: str, ini_params: dict = None) -> dict:
         """
         Three-layer parameter merge: ini defaults < _defaults < user overrides.
@@ -154,17 +235,20 @@ class ParameterManager:
         merged.update(user)
         return merged
 
-    def get_topp_parameters(self, tool: str) -> dict:
+    def get_topp_parameters(self, tool: str, tool_instance_name: str = None) -> dict:
         """
         Get all parameters for a TOPP tool, merging defaults with user values.
 
         Args:
-            tool: Name of the TOPP tool (e.g., "CometAdapter")
+            tool: Name of the TOPP tool executable (e.g., "CometAdapter")
+            tool_instance_name: Optional instance name used for parameter storage
+                (e.g., "IDFilter_step1"). If not provided, defaults to tool name.
 
         Returns:
             Dict with parameter names as keys (without tool prefix) and their values.
             Returns empty dict if ini file doesn't exist.
         """
+        instance_name = tool_instance_name or tool
         ini_path = Path(self.ini_dir, f"{tool}.ini")
         if not ini_path.exists():
             return {}
@@ -175,18 +259,14 @@ class ParameterManager:
 
         # Build dict from ini (extract short key names)
         prefix = f"{tool}:1:"
-        full_params = {}
+        ini_params = {}
         for key in param.keys():
             key_str = key.decode() if isinstance(key, bytes) else str(key)
             if prefix in key_str:
                 short_key = key_str.split(prefix, 1)[1]
-                full_params[short_key] = param.getValue(key)
+                ini_params[short_key] = param.getValue(key)
 
-        # Override with user-modified values from JSON
-        user_params = self.get_parameters_from_json().get(tool, {})
-        full_params.update(user_params)
-
-        return full_params
+        return self.get_merged_params(instance_name, ini_params=ini_params)
 
     def reset_to_default_parameters(self) -> None:
         """

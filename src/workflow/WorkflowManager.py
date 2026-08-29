@@ -206,10 +206,9 @@ class WorkflowManager:
         return self._stop_local_workflow()
 
     def _stop_local_workflow(self) -> bool:
-        """Stop locally running workflow process - Windows Compatible"""
+        """Stop locally running workflow process"""
         import os
         import signal
-        import platform
 
         pid_dir = self.executor.pid_dir
         if not pid_dir.exists():
@@ -219,18 +218,11 @@ class WorkflowManager:
         for pid_file in pid_dir.iterdir():
             try:
                 pid = int(pid_file.name)
-                # Windows
-                if platform.system() == "Windows":
-                    os.system(f"taskkill /F /T /PID {pid}")
-                else:
-                    # Linux/macOS
-                    os.kill(pid, signal.SIGTERM)
-                
+                os.kill(pid, signal.SIGTERM)
                 pid_file.unlink()
                 stopped = True
-            except (ValueError, ProcessLookupError, PermissionError, OSError):
-                if pid_file.exists():
-                    pid_file.unlink()
+            except (ValueError, ProcessLookupError, PermissionError):
+                pid_file.unlink()  # Clean up stale PID file
 
         # Clean up the pid directory
         shutil.rmtree(pid_dir, ignore_errors=True)
