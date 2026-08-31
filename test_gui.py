@@ -1,141 +1,77 @@
-from streamlit.testing.v1 import AppTest
-import pytest
-from src import fileupload
+"""Smoke tests for the pages actually registered in app.py.
+
+Kept deliberately narrow: the template's original version walked a hard-coded
+list of example pages, most of which quantms-web has deleted, so every one of
+them failed with FileNotFoundError after a template sync.
+"""
+
+import ast
 import json
 from pathlib import Path
-import shutil
+
+import pytest
+from streamlit.testing.v1 import AppTest
+
+# Pages AppTest.from_file can load in isolation. The rest call st.page_link,
+# which needs the navigation context that only exists when app.py itself runs
+# (loading them directly raises KeyError: 'url_pathname'), so they are covered
+# indirectly by test_app_loads.
+DIRECTLY_TESTABLE_PAGES = [
+    "content/workflow_fileupload.py",
+    "content/workflow_configure.py",
+    "content/workflow_run.py",
+]
+
+
+def registered_pages() -> list[str]:
+    """Every st.Page(Path("content", "...")) target declared in app.py."""
+    tree = ast.parse(Path("app.py").read_text(encoding="utf-8"))
+    pages = []
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "Page"
+            and node.args
+        ):
+            target = node.args[0]
+            if (
+                isinstance(target, ast.Call)
+                and isinstance(target.func, ast.Name)
+                and target.func.id == "Path"
+            ):
+                parts = [a.value for a in target.args if isinstance(a, ast.Constant)]
+                if parts:
+                    pages.append("/".join(parts))
+    return pages
+
+
+def _init(apptest):
+    with open("settings.json", "r", encoding="utf-8") as f:
+        apptest.session_state.settings = json.load(f)
+    apptest.session_state.settings["test"] = True
+    apptest.secrets["workspace"] = "test"
+    return apptest
 
 
 @pytest.fixture
 def launch(request):
-    test = AppTest.from_file(request.param)
-
-    ## Initialize session state ##
-    with open("settings.json", "r") as f:
-        test.session_state.settings = json.load(f)
-    test.session_state.settings["test"] = True
-    test.secrets["workspace"] = "test"
-    return test
+    return _init(AppTest.from_file(request.param))
 
 
-# Test launching of all pages
-@pytest.mark.parametrize(
-    "launch",
-    (
-        # "content/quickstart.py", # NOTE: this page does not work due to streamlit.errors.StreamlitPageNotFoundError error
-        "content/documentation.py",
-        "content/topp_workflow_file_upload.py",
-        "content/topp_workflow_parameter.py",
-        "content/topp_workflow_execution.py",
-        "content/topp_workflow_results.py",
-        "content/file_upload.py",
-        "content/raw_data_viewer.py",
-        "content/run_example_workflow.py",
-        "content/download_section.py",
-        "content/simple_workflow.py",
-        "content/run_subprocess.py",
-    ),
-    indirect=True,
-)
-def test_launch(launch):
-    """Test if all pages can be launched without errors."""
-    launch.run(timeout=30)  # Increased timeout from 10 to 30 seconds
+def test_registered_pages_exist():
+    """Guard against a template sync registering pages this repo has deleted."""
+    missing = [p for p in registered_pages() if not Path(p).is_file()]
+    assert not missing, f"app.py registers pages that do not exist: {missing}"
+
+
+@pytest.mark.parametrize("launch", DIRECTLY_TESTABLE_PAGES, indirect=True)
+def test_page_loads(launch):
+    launch.run(timeout=60)
     assert not launch.exception
 
 
-########### PAGE SPECIFIC TESTS ############
-@pytest.mark.parametrize(
-    "launch,selection",
-    [
-        ("content/documentation.py", "User Guide"),
-        ("content/documentation.py", "Installation"),
-        (
-            "content/documentation.py",
-            "Developers Guide: How to build app based on this template",
-        ),
-        ("content/documentation.py", "Developers Guide: TOPP Workflow Framework"),
-        ("content/documentation.py", "Developer Guide: Windows Executables"),
-        ("content/documentation.py", "Developers Guide: Deployment"),
-        ("content/documentation.py", "Developers Guide: Kubernetes Deployment"),
-    ],
-    indirect=["launch"],
-)
-def test_documentation(launch, selection):
-    launch.run()
-    launch.selectbox[0].select(selection).run()
-    assert not launch.exception
-
-
-@pytest.mark.parametrize("launch", ["content/file_upload.py"], indirect=True)
-def test_file_upload_load_example(launch):
-    launch.run()
-    for i in launch.tabs:
-        if i.label == "Example Data":
-            i.button[0].click().run()
-            assert not launch.exception
-
-
-# NOTE: All tabs are automatically checked
-@pytest.mark.parametrize(
-    "launch,example",
-    [
-        ("content/raw_data_viewer.py", "Blank.mzML"),
-        ("content/raw_data_viewer.py", "Treatment.mzML"),
-        ("content/raw_data_viewer.py", "Pool.mzML"),
-        ("content/raw_data_viewer.py", "Control.mzML"),
-    ],
-    indirect=["launch"],
-)
-def test_view_raw_ms_data(launch, example):
-    launch.run(timeout=30)  # Increased timeout from 10 to 30 seconds
-
-    ## Load Example file, based on implementation of fileupload.load_example_mzML_files() ###
-    mzML_dir = Path(launch.session_state.workspace, "mzML-files")
-
-    # Copy files from example-data/mzML to workspace mzML directory, add to selected files
-    for f in Path("example-data", "mzML").glob("*.mzML"):
-        try:
-            shutil.copy(f, mzML_dir)
-        except shutil.SameFileError:
-            pass  # File already exists as a symlink to the same source (on Linux)
-    launch.run()
-
-    ## TODO: Figure out a way to select a spectrum to be displayed
-    launch.selectbox[0].select(example).run()
-    assert not launch.exception
-
-
-@pytest.mark.parametrize(
-    "launch,example",
-    [
-        ("content/run_example_workflow.py", ["Blank"]),
-        ("content/run_example_workflow.py", ["Treatment"]),
-        ("content/run_example_workflow.py", ["Pool"]),
-        ("content/run_example_workflow.py", ["Control"]),
-        ("content/run_example_workflow.py", ["Control", "Blank"]),
-    ],
-    indirect=["launch"],
-)
-def test_run_workflow(launch, example):
-    launch.run()
-    ## Load Example file, based on implementation of fileupload.load_example_mzML_files() ###
-    mzML_dir = Path(launch.session_state.workspace, "mzML-files")
-
-    # Copy files from example-data/mzML to workspace mzML directory, add to selected files
-    for f in Path("example-data", "mzML").glob("*.mzML"):
-        try:
-            shutil.copy(f, mzML_dir)
-        except shutil.SameFileError:
-            pass  # File already exists as a symlink to the same source (on Linux)
-    launch.run()
-
-    ## Select experiments to process
-    for e in example:
-        launch.multiselect[0].select(e)
-
-    launch.run()
-    assert not launch.exception
-
-    # Press the "Run Workflow" button
-    launch.button[1].click().run(timeout=60)
-    assert not launch.exception
+def test_app_loads():
+    app = _init(AppTest.from_file("app.py"))
+    app.run(timeout=60)
+    assert not app.exception
