@@ -4,7 +4,6 @@ import re
 import pandas as pd
 import plotly.express as px
 from streamlit_plotly_events import plotly_events
-from pyopenms import IdXMLFile
 from scipy.stats import ttest_ind
 import numpy as np
 import mygene
@@ -14,7 +13,7 @@ from scipy.stats import fisher_exact
 from src.workflow.WorkflowManager import WorkflowManager
 from src.common.common import page_setup
 from src.common.results_helpers import get_abundance_data
-from src.common.results_helpers import parse_idxml, build_spectra_cache
+from src.common.results_helpers import parse_idxml, build_spectra_cache, load_idxml
 from openms_insight import Table, Heatmap, LinePlot, SequenceView
 
 # params = page_setup()
@@ -1636,9 +1635,7 @@ class WorkflowTest(WorkflowManager):
             selected_file = st.selectbox("📁 Select Identification result file", comet_files)
 
             def idxml_to_df(idxml_file):
-                proteins = []
-                peptides = []
-                IdXMLFile().load(str(idxml_file), proteins, peptides)
+                proteins, peptides = load_idxml(idxml_file)
 
                 records = []
                 for pep in peptides:
