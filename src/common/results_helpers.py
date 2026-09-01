@@ -6,6 +6,10 @@ import numpy as np
 import streamlit as st
 from pathlib import Path
 from pyopenms import IdXMLFile, MSExperiment, MzMLFile
+try:  # pyOpenMS >= 3.5.0
+    from pyopenms import PeptideIdentificationList
+except ImportError:  # pyOpenMS <= 3.4.x
+    PeptideIdentificationList = None
 from src.workflow.ParameterManager import ParameterManager
 
 def get_workflow_dir(workspace):
@@ -13,11 +17,26 @@ def get_workflow_dir(workspace):
     return Path(workspace, "topp-workflow")
 
 
+def load_idxml(idxml_file):
+    """Load an idXML file, returning ``(protein_ids, peptide_ids)`` as plain lists.
+
+    pyOpenMS 3.5.0 changed the third parameter of ``IdXMLFile.load()`` from a
+    ``libcpp_vector[PeptideIdentification]``, which accepted an ordinary Python
+    list, to a dedicated ``PeptideIdentificationList`` container. A list no longer
+    matches any overload there and pyOpenMS raises
+    ``Exception: can not handle type of (<path>, [], [])``. Feature-detect the
+    container so the app runs on 3.5.0 as well as earlier releases, and hand
+    callers back an ordinary list either way.
+    """
+    proteins = []
+    peptides = PeptideIdentificationList() if PeptideIdentificationList else []
+    IdXMLFile().load(str(idxml_file), proteins, peptides)
+    return proteins, list(peptides)
+
+
 def idxml_to_df(idxml_file):
     """Parse idXML file and return DataFrame with peptide hits."""
-    proteins = []
-    peptides = []
-    IdXMLFile().load(str(idxml_file), proteins, peptides)
+    proteins, peptides = load_idxml(idxml_file)
 
     records = []
     for pep in peptides:
@@ -99,9 +118,7 @@ def parse_idxml(idxml_path: Path) -> tuple[pl.DataFrame, list[str]]:
     Returns:
         Tuple of (id_df, spectra_data list of source filenames)
     """
-    proteins = []
-    peptides = []
-    IdXMLFile().load(str(idxml_path), proteins, peptides)
+    proteins, peptides = load_idxml(idxml_path)
 
     # Derive mzML filename from idXML filename (e.g., 02COVID_filter.idXML -> 02COVID.mzML)
     spectra_data = [extract_filename_from_idxml(idxml_path)]
