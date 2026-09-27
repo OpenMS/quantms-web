@@ -5,5 +5,17 @@
     "library-use-fdr": false,
     "library-psm-fdr": 0.01,
     "library-generate-decoys": true,
-    "library-decoy-method": "shuffle"
+    "library-decoy-method": "shuffle",
+    "postproc-filter-method": "Low Repeatability",
+    "postproc-filter-abundance-percentile": 10.0,
+    "postproc-filter-max-missing": 50.0,
+    "postproc-filter-variance-percentile": 10.0,
+    "postproc-impute-class": "MNAR (Missing Not At Random)",
+    "postproc-impute-mar-strategy": "median",
+    "postproc-impute-mnar-scope": "row",
+    "postproc-transform": "log2",
+    "postproc-normalization": "median",
+    "postproc-scaling": "None",
+    "postproc-stat-test": "limma_like",
+    "postproc-fdr": "BH"
 }

@@ -4,13 +4,19 @@ from pathlib import Path
 import pandas as pd
 import polars as pl
 import streamlit as st
-from src.common.common import page_setup
-from src.common.results_helpers import get_abundance_data, get_id_column, get_sample_group_map
+from src.common.common import page_setup, save_params, show_fig
+from src.common.postprocessing_plots import pvalue_histogram
+from src.common.results_helpers import (
+    get_abundance_data,
+    get_id_column,
+    get_sample_group_map,
+    postprocessing_param,
+)
 # Import statistics engine functions from openms_insight
 from openms_insight.analysis.statistics import calculate_statistical_tests, adjust_fdr_lazy
 
 params = page_setup()
-st.title("Statistical Inference")
+st.title("Step 4 of 4: Statistics")
 
 st.markdown(
     """
@@ -68,6 +74,21 @@ else:
         "⚠️ **Raw Input Active**: No preprocessing history found. Operating on the original table."
     )
 
+# log2FC below is the difference of group means, which is only a log2 fold
+# change when the input is log2-scaled (the Normalization default).
+if st.session_state.get("normalized_df") is None:
+    st.warning(
+        "⚠️ **Input is not log-transformed**: log2FC is computed as the difference of "
+        "group means and is only a log2 fold change on log2-scaled data. Run "
+        "**Normalization** (default: log2 + median) before testing."
+    )
+elif st.session_state.get("normalized_transform", "log2") != "log2":
+    st.warning(
+        f"⚠️ Normalization used the **{st.session_state['normalized_transform']}** "
+        "transformation, so the log2FC column is not a log2 fold change. Use log2 "
+        "for fold changes that match the volcano plot axis."
+    )
+
 # 2. Extract actual active sample columns and detect unique biological groups
 sample_cols = [
     c for c in base_df.columns if c not in [id_col, "PeptideSequence", "log2FC", "p-value", "p-adj"]
@@ -113,18 +134,27 @@ with col1:
     selected_method = st.selectbox(
         "Select Statistical Test",
         options=method_options,
-        index=0,
+        index=method_options.index(
+            postprocessing_param(params, "postproc-stat-test", method_options)
+        ),
+        key="postproc-stat-test",
         help=help_text
     )
 
 with col2:
     st.markdown("### 🛡️ 2. Multiple Testing Correction (FDR)")
+    fdr_options = ["BH", "Bonferroni", "None"]
     selected_fdr = st.selectbox(
         "Select FDR Adjustment Strategy",
-        options=["BH", "Bonferroni", "None"],
-        index=0,
+        options=fdr_options,
+        index=fdr_options.index(
+            postprocessing_param(params, "postproc-fdr", fdr_options)
+        ),
+        key="postproc-fdr",
         help="'BH' (Benjamini-Hochberg) controls False Discovery Rate. 'Bonferroni' is strict Family-Wise Error Rate control."
     )
+
+save_params(params)
 
 # --- SECTION 3: Statistical Query Execution ---
 st.markdown("<br>", unsafe_allow_html=True)
@@ -164,3 +194,12 @@ if st.button("Run Statistical Analysis", type="primary"):
         st.error(f"Engine Validation Fallure: {str(val_err)}")
     except Exception as e:
         st.error(f"An unexpected pipeline error occurred: {str(e)}")
+
+# --- SECTION 4: Test diagnostics ---
+if st.session_state.get("statistics_df") is not None:
+    with st.expander("📈 Check the test result", expanded=True):
+        st.caption(
+            "Raw p-values of all proteins. A flat histogram with a peak near 0 means "
+            "the test fits and some proteins change; a peak near 1 or a U-shape points to non-log input or the wrong test, and no peak at all means few proteins differ."
+        )
+        show_fig(pvalue_histogram(st.session_state["statistics_df"]), "statistics-pvalue-histogram")

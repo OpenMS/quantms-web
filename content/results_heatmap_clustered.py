@@ -3,7 +3,14 @@ import streamlit as st
 import numpy as np
 import polars as pl
 from src.common.common import page_setup
-from src.common.results_helpers import get_abundance_data, get_id_column, get_sample_group_map
+from src.common.results_helpers import (
+    get_abundance_data,
+    get_active_table,
+    get_id_column,
+    get_sample_group_map,
+    log2_matrix,
+    show_pipeline_banner,
+)
 from openms_insight import ClusteredHeatmap
 
 params = page_setup()
@@ -30,6 +37,14 @@ if result is None:
 pivot_df, expr_df, group_map = result
 id_col = get_id_column(st.session_state["workspace"], pivot_df)
 sample_group_map = get_sample_group_map(st.session_state["workspace"], pivot_df, group_map)
+
+# Plot the same protein table as PCA and Statistics: the latest downstream
+# step's output, on a log2 scale, proteins with any missing value dropped.
+show_pipeline_banner()
+base_df, _, is_log2 = get_active_table(pivot_df)
+# expr_df from the workflow lists exactly the sample columns in both LFQ and TMT mode
+sample_cols = [c for c in expr_df.columns if c in base_df.columns]
+expr_df = log2_matrix(base_df, id_col, sample_cols, is_log2).dropna()
 
 if expr_df.empty:
     st.info("No data available for heatmap.")
@@ -76,6 +91,8 @@ group_colors = {g: group_palette[i % len(group_palette)] for i, g in enumerate(u
 
 heatmap_component = ClusteredHeatmap(
     cache_id="quantms_clustered_heatmap",
+    # Data changes whenever an upstream step reruns; rebuild rather than reuse
+    regenerate_cache=True,
     cache_path=str(st.session_state["workspace"]),
     id_col=id_col,
     data=heatmap_lazy,
@@ -97,6 +114,10 @@ state_manager = st.session_state.get("state")
 # dendrogram+heatmap composite with more than a handful of rows.
 heatmap_height = max(600, min(1400, 300 + top_n * 20))
 heatmap_component(state_manager=state_manager, height=heatmap_height)
+st.caption(
+    "Same Z-scored proteins as the heatmap, with rows and columns reordered so similar ones sit together "
+    "(dendrograms). If the sample dendrogram splits along the group color bar, the groups differ consistently."
+)
 
 st.markdown("---")
 st.markdown("**Other visualizations:**")

@@ -4,8 +4,15 @@ from pathlib import Path
 import pandas as pd
 import polars as pl
 import streamlit as st
-from src.common.common import page_setup
-from src.common.results_helpers import get_abundance_data, get_id_column, get_sample_group_map
+from src.common.common import page_setup, save_params, show_fig
+from src.common.postprocessing_plots import imputed_value_preview, missingness_vs_intensity
+from src.common.results_helpers import (
+    clear_downstream_steps,
+    get_abundance_data,
+    get_id_column,
+    get_sample_group_map,
+    postprocessing_param,
+)
 
 # Import imputation algorithms from openms_insight engine
 from openms_insight.analysis.imputation import impute_mar, impute_smallest_value
@@ -18,7 +25,7 @@ def strip_stat_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df.drop(columns=[c for c in STAT_COLUMNS if c in df.columns], errors="ignore")
 
 params = page_setup()
-st.title("Missing Value Imputation")
+st.title("Step 2 of 4: Imputation")
 
 st.markdown(
     """
@@ -83,22 +90,37 @@ metadata_pl = pl.DataFrame(
 )
 
 # User selection for core missingness assumption strategy
+# In DDA label-free data most missing values are proteins below the detection
+# limit (MNAR), so the default fills them with the protein's own smallest
+# observed intensity. The global minimum sits far below most proteins and turns
+# a single random dropout into a large false fold change; MAR group imputation
+# cannot fill a protein that is missing in a whole group.
+impute_options = ["MNAR (Missing Not At Random)", "MAR (Missing At Random)"]
 impute_category = st.selectbox(
     "Select Imputation Class",
-    options=["MAR (Missing At Random)", "MNAR (Missing Not At Random)"],
-    index=0,
-    help="MAR uses group metrics (Mean/Median). MNAR shifts values below the limit of detection.",
+    options=impute_options,
+    index=impute_options.index(
+        postprocessing_param(params, "postproc-impute-class", impute_options)
+    ),
+    key="postproc-impute-class",
+    help="MAR uses group metrics (Mean/Median). MNAR fills values below the limit of detection. "
+    "Recommended: MNAR with row scope.",
 )
 
 # Render algorithmic options sub-menus based on the parent selection
+strategy_opt = scope_opt = None  # only the selected class's option is shown
 if impute_category == "MAR (Missing At Random)":
     st.markdown(
         "**Group Character Imputation**: Fills missing metrics leveraging sample properties belonging to the same group."
     )
+    mar_options = ["median", "mean"]
     strategy_opt = st.radio(
         "Mathematical Strategy",
-        options=["median", "mean"],
-        index=0,
+        options=mar_options,
+        index=mar_options.index(
+            postprocessing_param(params, "postproc-impute-mar-strategy", mar_options)
+        ),
+        key="postproc-impute-mar-strategy",
         horizontal=True,
     )
 
@@ -106,37 +128,63 @@ elif impute_category == "MNAR (Missing Not At Random)":
     st.markdown(
         "**Smallest Value Imputation**: Replaces missing items with the minimum values detected to reflect technical dropout limits."
     )
+    scope_options = ["row", "global"]
     scope_opt = st.radio(
         "Detection Minimum Scope",
-        options=["row", "global"],
-        index=0,
+        options=scope_options,
+        index=scope_options.index(
+            postprocessing_param(params, "postproc-impute-mnar-scope", scope_options)
+        ),
+        key="postproc-impute-mnar-scope",
         horizontal=True,
         help="'row' targets current protein minimum; 'global' searches the entire mass spectrometry matrix profile.",
     )
 
-# --- SECTION 3: Imputation Execution ---
-if st.button("Apply Imputation", type="primary"):
-    # Initialize optimization pipeline graph via lazy loading conversion
-    quant_lazy = pl.from_pandas(base_df).lazy()
+save_params(params)
 
-    # Route configuration matrix parameters to designated engine function channels
+
+def run_imputation() -> pl.LazyFrame:
+    """Apply the selected openms_insight imputation to the input table."""
+    quant_lazy = pl.from_pandas(base_df).lazy()
     if impute_category == "MAR (Missing At Random)":
-        imputed_lazy = impute_mar(
+        return impute_mar(
             quantification_data=quant_lazy,
             metadata=metadata_pl,
             group_column="group",
             strategy=strategy_opt,
         )
-    else:  # "MNAR (Missing Not At Random)"
-        imputed_lazy = impute_smallest_value(
-            quantification_data=quant_lazy, metadata=metadata_pl, scope=scope_opt
+    return impute_smallest_value(
+        quantification_data=quant_lazy, metadata=metadata_pl, scope=scope_opt
+    )
+
+
+grouped_samples = metadata_pl["sample_id"].to_list()
+with st.expander("📈 Help me choose a method", expanded=True):
+    if not grouped_samples:
+        st.info("Assign sample groups in Configure to see these plots.")
+    else:
+        st.caption(
+            "Mean intensity of proteins with and without missing values. If the "
+            "orange curve sits clearly lower, values fall below the detection limit (choose MNAR); if the curves overlap, dropout is random (MAR fits)."
         )
+        show_fig(missingness_vs_intensity(base_df, grouped_samples), "imputation-missingness")
+        st.caption(
+            "Where the current setting places the filled-in values (red) relative to "
+            "observed ones (blue). They should sit at the low edge of the observed values; a separate spike far below them inflates fold changes."
+        )
+        preview_df = run_imputation().collect().to_pandas()
+        show_fig(imputed_value_preview(base_df, preview_df, grouped_samples), "imputation-preview")
+
+# --- SECTION 3: Imputation Execution ---
+if st.button("Apply Imputation", type="primary"):
+    imputed_lazy = run_imputation()
 
     # Resolve lazy graph optimization tree and push to display data frame structure
     imputed_df = strip_stat_columns(imputed_lazy.collect().to_pandas())
 
     # 💾 Save current output into Session State for down-stream processing (Normalization, Statistics)
     st.session_state["imputed_df"] = imputed_df
+    clear_downstream_steps("imputed_df")
 
     st.success(f"Successfully finalized **{impute_category}** imputation step!")
 
