@@ -2,7 +2,7 @@
 import streamlit as st
 import polars as pl
 from src.common.common import page_setup
-from src.common.results_helpers import get_abundance_data, get_id_column
+from src.common.results_helpers import get_abundance_data, get_id_column, show_pipeline_banner, table_digest
 from openms_insight import VolcanoPlot
 
 params = page_setup()
@@ -26,6 +26,7 @@ if "statistics_df" not in st.session_state or st.session_state["statistics_df"] 
     st.stop()
 
 # Retrieve the completed statistical analysis DataFrame
+show_pipeline_banner(uses="statistics")
 statistics_df = st.session_state["statistics_df"]
 
 if statistics_df.empty:
@@ -64,7 +65,7 @@ p_thresh = st.slider(
 
 # 4. Initialize the OpenMS-Insight VolcanoPlot component
 volcano_plot_component = VolcanoPlot(
-    cache_id="quantms_volcano_plot",
+    cache_id=f"quantms_volcano_plot_{table_digest(volcano_df)}",
     data=volcano_pl_lazy,
     log2fc_column="log2FC",
     pvalue_column="p-adj",

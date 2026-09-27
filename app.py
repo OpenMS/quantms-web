@@ -25,18 +25,21 @@ if __name__ == '__main__':
             st.Page(Path("content", "workflow_configure.py"), title="Configure", icon="⚙️"),
             st.Page(Path("content", "workflow_run.py"), title="Run", icon="🚀"),
         ],
-        "Results": [
+        "Workflow Results": [
             st.Page(Path("content", "results_database_search.py"), title="Database Search", icon="🔬"),
             st.Page(Path("content", "results_rescoring.py"), title="Rescoring", icon="📈"),
             st.Page(Path("content", "results_filtered.py"), title="Filtered PSMs", icon="🎯"),
-            st.Page(Path("content", "results_abundance.py"), title="Abundance", icon="📋"),
-    
+            st.Page(Path("content", "results_abundance.py"), title="Protein Abundance", icon="📋"),
         ],
-        "Differential Protein Analysis": [
-            st.Page(Path("content", "filtering.py"), title="Filtering", icon="🧹"),
-            st.Page(Path("content", "imputation.py"), title="Imputation", icon="🩹"),
-            st.Page(Path("content", "normalization.py"), title="Normalization", icon="⚖️"),
-            st.Page(Path("content", "statistical.py"), title="Statistical", icon="🔢"),
+        # Steps run in order; each one works on the previous step's output.
+        "Downstream Analysis": [
+            st.Page(Path("content", "filtering.py"), title="1. Filtering", icon="🧹"),
+            st.Page(Path("content", "imputation.py"), title="2. Imputation", icon="🩹"),
+            st.Page(Path("content", "normalization.py"), title="3. Normalization", icon="⚖️"),
+            st.Page(Path("content", "statistical.py"), title="4. Statistics", icon="🔢"),
+        ],
+        # Every plot reads the latest Downstream Analysis output.
+        "Downstream Plots": [
             st.Page(Path("content", "results_volcano.py"), title="Volcano", icon="🌋"),
             st.Page(Path("content", "results_pca.py"), title="PCA", icon="📊"),
             st.Page(Path("content", "results_heatmap.py"), title="Heatmap", icon="🔥"),

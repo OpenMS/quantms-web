@@ -4,7 +4,8 @@ from pathlib import Path
 import pandas as pd
 import polars as pl
 import streamlit as st
-from src.common.common import page_setup, save_params
+from src.common.common import page_setup, save_params, show_fig
+from src.common.postprocessing_plots import pvalue_histogram
 from src.common.results_helpers import (
     get_abundance_data,
     get_id_column,
@@ -15,7 +16,7 @@ from src.common.results_helpers import (
 from openms_insight.analysis.statistics import calculate_statistical_tests, adjust_fdr_lazy
 
 params = page_setup()
-st.title("Statistical Inference")
+st.title("Step 4 of 4: Statistics")
 
 st.markdown(
     """
@@ -193,3 +194,15 @@ if st.button("Run Statistical Analysis", type="primary"):
         st.error(f"Engine Validation Fallure: {str(val_err)}")
     except Exception as e:
         st.error(f"An unexpected pipeline error occurred: {str(e)}")
+
+# --- SECTION 4: Test diagnostics ---
+if st.session_state.get("statistics_df") is not None:
+    with st.expander("📈 Check the test result", expanded=True):
+        st.caption(
+            "A flat histogram with a peak near 0 is what a sound test looks like: "
+            "most proteins unchanged, some changed. A peak near 1 or a U-shape "
+            "means the input scale or the chosen test does not fit the data; "
+            "check that Normalization used log2. A flat histogram with no peak "
+            "means few proteins differ between groups."
+        )
+        show_fig(pvalue_histogram(st.session_state["statistics_df"]), "statistics-pvalue-histogram")

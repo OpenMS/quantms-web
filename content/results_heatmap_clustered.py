@@ -3,7 +3,15 @@ import streamlit as st
 import numpy as np
 import polars as pl
 from src.common.common import page_setup
-from src.common.results_helpers import get_abundance_data, get_id_column, get_sample_group_map
+from src.common.results_helpers import (
+    get_abundance_data,
+    get_active_table,
+    get_id_column,
+    get_sample_group_map,
+    log2_matrix,
+    show_pipeline_banner,
+    table_digest,
+)
 from openms_insight import ClusteredHeatmap
 
 params = page_setup()
@@ -30,6 +38,14 @@ if result is None:
 pivot_df, expr_df, group_map = result
 id_col = get_id_column(st.session_state["workspace"], pivot_df)
 sample_group_map = get_sample_group_map(st.session_state["workspace"], pivot_df, group_map)
+
+# Plot the same protein table as PCA and Statistics: the latest downstream
+# step's output, on a log2 scale, proteins with any missing value dropped.
+show_pipeline_banner()
+base_df, _, is_log2 = get_active_table(pivot_df)
+# expr_df from the workflow lists exactly the sample columns in both LFQ and TMT mode
+sample_cols = [c for c in expr_df.columns if c in base_df.columns]
+expr_df = log2_matrix(base_df, id_col, sample_cols, is_log2).dropna()
 
 if expr_df.empty:
     st.info("No data available for heatmap.")
@@ -75,7 +91,7 @@ unique_groups = sorted(set(sample_group_map.values()))
 group_colors = {g: group_palette[i % len(group_palette)] for i, g in enumerate(unique_groups)}
 
 heatmap_component = ClusteredHeatmap(
-    cache_id="quantms_clustered_heatmap",
+    cache_id=f"quantms_clustered_heatmap_{table_digest(heatmap_z)}",
     cache_path=str(st.session_state["workspace"]),
     id_col=id_col,
     data=heatmap_lazy,

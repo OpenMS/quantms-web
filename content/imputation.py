@@ -4,7 +4,8 @@ from pathlib import Path
 import pandas as pd
 import polars as pl
 import streamlit as st
-from src.common.common import page_setup, save_params
+from src.common.common import page_setup, save_params, show_fig
+from src.common.postprocessing_plots import imputed_value_preview, missingness_vs_intensity
 from src.common.results_helpers import (
     clear_downstream_steps,
     get_abundance_data,
@@ -24,7 +25,7 @@ def strip_stat_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df.drop(columns=[c for c in STAT_COLUMNS if c in df.columns], errors="ignore")
 
 params = page_setup()
-st.title("Missing Value Imputation")
+st.title("Step 2 of 4: Imputation")
 
 st.markdown(
     """
@@ -107,6 +108,7 @@ impute_category = st.selectbox(
 )
 
 # Render algorithmic options sub-menus based on the parent selection
+strategy_opt = scope_opt = None  # only the selected class's option is shown
 if impute_category == "MAR (Missing At Random)":
     st.markdown(
         "**Group Character Imputation**: Fills missing metrics leveraging sample properties belonging to the same group."
@@ -140,23 +142,45 @@ elif impute_category == "MNAR (Missing Not At Random)":
 
 save_params(params)
 
-# --- SECTION 3: Imputation Execution ---
-if st.button("Apply Imputation", type="primary"):
-    # Initialize optimization pipeline graph via lazy loading conversion
-    quant_lazy = pl.from_pandas(base_df).lazy()
 
-    # Route configuration matrix parameters to designated engine function channels
+def run_imputation() -> pl.LazyFrame:
+    """Apply the selected openms_insight imputation to the input table."""
+    quant_lazy = pl.from_pandas(base_df).lazy()
     if impute_category == "MAR (Missing At Random)":
-        imputed_lazy = impute_mar(
+        return impute_mar(
             quantification_data=quant_lazy,
             metadata=metadata_pl,
             group_column="group",
             strategy=strategy_opt,
         )
-    else:  # "MNAR (Missing Not At Random)"
-        imputed_lazy = impute_smallest_value(
-            quantification_data=quant_lazy, metadata=metadata_pl, scope=scope_opt
+    return impute_smallest_value(
+        quantification_data=quant_lazy, metadata=metadata_pl, scope=scope_opt
+    )
+
+
+grouped_samples = metadata_pl["sample_id"].to_list()
+with st.expander("📈 Help me choose a method", expanded=True):
+    if not grouped_samples:
+        st.info("Assign sample groups in Configure to see these plots.")
+    else:
+        st.caption(
+            "If proteins with missing values sit clearly lower than complete "
+            "ones, values are missing because they fall below the detection "
+            "limit: choose MNAR. If both curves overlap, dropout is random: "
+            "MAR is reasonable."
         )
+        show_fig(missingness_vs_intensity(base_df, grouped_samples), "imputation-missingness")
+        st.caption(
+            "Where the current setting places the filled-in values. They "
+            "should sit at the low end of the observed values for MNAR; a "
+            "separate spike far below every observed value inflates fold changes."
+        )
+        preview_df = run_imputation().collect().to_pandas()
+        show_fig(imputed_value_preview(base_df, preview_df, grouped_samples), "imputation-preview")
+
+# --- SECTION 3: Imputation Execution ---
+if st.button("Apply Imputation", type="primary"):
+    imputed_lazy = run_imputation()
 
     # Resolve lazy graph optimization tree and push to display data frame structure
     imputed_df = strip_stat_columns(imputed_lazy.collect().to_pandas())

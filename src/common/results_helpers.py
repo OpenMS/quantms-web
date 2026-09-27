@@ -1,4 +1,5 @@
 """Helper functions for results pages."""
+import hashlib
 import json
 import re
 import pandas as pd
@@ -477,3 +478,67 @@ def postprocessing_param(params: dict, key: str, options: list | None = None):
         if key in st.session_state and st.session_state[key] not in options:
             del st.session_state[key]
     return params[key]
+
+
+_STEP_LABELS = {
+    "filtered_df": "Filtering",
+    "imputed_df": "Imputation",
+    "normalized_df": "Normalization",
+    "statistics_df": "Statistics",
+}
+
+
+def get_active_table(pivot_df: pd.DataFrame) -> tuple[pd.DataFrame, str, bool]:
+    """Return the most-processed protein table of the downstream analysis.
+
+    Returns ``(table, source, is_log2)``: the output of the latest of
+    Filtering, Imputation and Normalization that has been applied (falling
+    back to the workflow's abundance table), the name of the step it came
+    from, and whether its intensities are already log2-scaled.
+    """
+    for key in ["normalized_df", "imputed_df", "filtered_df"]:
+        df = st.session_state.get(key)
+        if df is not None:
+            is_log2 = (
+                key == "normalized_df"
+                and st.session_state.get("normalized_transform", "log2") == "log2"
+            )
+            return df, _STEP_LABELS[key], is_log2
+    return pivot_df, "Workflow abundance table", False
+
+
+def show_pipeline_banner(uses: str = "table") -> None:
+    """Tell the user which downstream-analysis output a plot page is showing.
+
+    ``uses="table"`` reports the protein table from :func:`get_active_table`;
+    ``uses="statistics"`` reports the Statistics step output.
+    """
+    done = [label for key, label in _STEP_LABELS.items() if st.session_state.get(key) is not None]
+    steps = " → ".join(
+        f"{'✅' if label in done else '⬜'} {label}" for label in _STEP_LABELS.values()
+    )
+    if uses == "statistics":
+        source = "the **Statistics** step" if "Statistics" in done else "no statistics yet"
+    else:
+        applied = [label for label in done if label != "Statistics"]
+        source = f"the **{applied[-1]}** step output" if applied else "the **unprocessed** workflow abundance table"
+    st.info(f"Showing {source}.  \nDownstream analysis: {steps}")
+
+
+def table_digest(df: pd.DataFrame) -> str:
+    """Short content hash for an OpenMS-Insight ``cache_id``.
+
+    Insight components cache their data per ``cache_id``; plots of a table that
+    changes when a downstream step is re-applied need an id that changes too.
+    """
+    return hashlib.sha1(
+        pd.util.hash_pandas_object(df, index=True).values.tobytes()
+    ).hexdigest()[:10]
+
+
+def log2_matrix(df: pd.DataFrame, id_col: str, sample_cols: list, is_log2: bool) -> pd.DataFrame:
+    """Protein x sample matrix on a log2 scale, zeros treated as missing."""
+    mat = df.set_index(id_col)[sample_cols].apply(pd.to_numeric, errors="coerce")
+    if not is_log2:
+        mat = np.log2(mat.where(mat > 0))
+    return mat

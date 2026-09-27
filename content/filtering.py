@@ -4,7 +4,8 @@ from pathlib import Path
 import pandas as pd
 import polars as pl
 import streamlit as st
-from src.common.common import page_setup, save_params
+from src.common.common import page_setup, save_params, show_fig
+from src.common.postprocessing_plots import filter_threshold_curve
 from src.common.results_helpers import (
     clear_downstream_steps,
     get_abundance_data,
@@ -28,7 +29,7 @@ def strip_stat_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df.drop(columns=[c for c in STAT_COLUMNS if c in df.columns], errors="ignore")
 
 params = page_setup()
-st.title("Data Filtering")
+st.title("Step 1 of 4: Filtering")
 
 st.markdown(
     """
@@ -138,34 +139,53 @@ elif filter_method == "Low Variance":
 
 save_params(params)
 
+
+def run_filter(value: float) -> pl.LazyFrame:
+    """Apply the selected openms_insight filter at threshold ``value``."""
+    quant_lazy = pl.from_pandas(pivot_df).lazy()
+    if filter_method == "Low Abundance":
+        return filter_low_abundance(
+            quantification_data=quant_lazy,
+            metadata=metadata_pl,
+            group_column="group",
+            threshold_percentile=value,
+        )
+    if filter_method == "Low Repeatability":
+        # Convert percent slider input to ratio expected by the function (e.g., 50.0% -> 0.5)
+        return filter_low_repeatability(
+            quantification_data=quant_lazy,
+            metadata=metadata_pl,
+            group_column="group",
+            max_missing_ratio=value / 100.0,
+        )
+    return filter_low_variance(
+        quantification_data=quant_lazy,
+        metadata=metadata_pl,
+        group_column="group",
+        threshold_percentile=value,
+    )
+
+
+with st.expander("📈 Help me choose a threshold", expanded=True):
+    st.caption(
+        "How many proteins the selected filter keeps across its whole range. "
+        "Pick a threshold before the curve drops steeply, unless you want a "
+        "stricter table for a small, high-confidence result."
+    )
+    show_fig(
+        filter_threshold_curve(
+            lambda t: run_filter(t).select(pl.len()).collect().item(),
+            thresholds=[float(t) for t in range(0, 101, 5)],
+            current=threshold,
+            total=pivot_df.shape[0],
+            x_label="Max missing values per group (%)" if filter_method == "Low Repeatability" else "Threshold percentile (%)",
+        ),
+        "filter-threshold-curve",
+    )
+
 # --- SECTION 3: Filter Execution and Collected Results View ---
 if st.button("Apply Filter", type="primary"):
-    # Convert the original Pandas DataFrame into a Polars LazyFrame graph
-    quant_lazy = pl.from_pandas(pivot_df).lazy()
-
-    # Route execution to the chosen openms_insight engine function
-    if filter_method == "Low Abundance":
-        filtered_lazy = filter_low_abundance(
-            quantification_data=quant_lazy,
-            metadata=metadata_pl,
-            group_column="group",
-            threshold_percentile=threshold,
-        )
-    elif filter_method == "Low Repeatability":
-        # Convert percent slider input to ratio expected by the function (e.g., 50.0% -> 0.5)
-        filtered_lazy = filter_low_repeatability(
-            quantification_data=quant_lazy,
-            metadata=metadata_pl,
-            group_column="group",
-            max_missing_ratio=threshold / 100.0,
-        )
-    else:  # "Low Variance"
-        filtered_lazy = filter_low_variance(
-            quantification_data=quant_lazy,
-            metadata=metadata_pl,
-            group_column="group",
-            threshold_percentile=threshold,
-        )
+    filtered_lazy = run_filter(threshold)
 
     # Collect the evaluated lazy graph and convert back to Pandas for visualization
     filtered_df = strip_stat_columns(filtered_lazy.collect().to_pandas())
