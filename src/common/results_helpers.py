@@ -1,4 +1,5 @@
 """Helper functions for results pages."""
+import json
 import re
 import pandas as pd
 import polars as pl
@@ -439,3 +440,40 @@ def get_sample_group_map(workspace: Path, pivot_df: pd.DataFrame, group_map: dic
         if real_full_name:
             norm_map[real_full_name] = v if v and v.strip() else "Unassigned"
     return norm_map
+
+
+# Session-state keys of the postprocessing chain, in pipeline order.
+POSTPROCESSING_STEPS = ["filtered_df", "imputed_df", "normalized_df", "statistics_df"]
+
+
+def clear_downstream_steps(step: str) -> None:
+    """Drop the outputs of every postprocessing step after ``step``.
+
+    Re-applying a step changes the table the later steps were computed from,
+    so their stored results no longer match and must be recomputed.
+    """
+    for key in POSTPROCESSING_STEPS[POSTPROCESSING_STEPS.index(step) + 1:]:
+        st.session_state.pop(key, None)
+        if key == "normalized_df":
+            st.session_state.pop("normalized_transform", None)
+
+
+def postprocessing_param(params: dict, key: str, options: list | None = None):
+    """Return the stored value of a postprocessing widget, seeding the default.
+
+    Workspaces created before a key was added to ``default-parameters.json``
+    lack it in their ``params.json``; fall back to the shipped default and add
+    it to ``params`` so ``save_params`` persists the user's choice. When
+    ``options`` is given, a stored value that is no longer a valid option
+    (e.g. a two-group test after a third group was added) is replaced by the
+    first option.
+    """
+    if key not in params:
+        with open("default-parameters.json", "r", encoding="utf-8") as f:
+            params[key] = json.load(f)[key]
+    if options is not None:
+        if params[key] not in options:
+            params[key] = options[0]
+        if key in st.session_state and st.session_state[key] not in options:
+            del st.session_state[key]
+    return params[key]

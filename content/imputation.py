@@ -4,8 +4,14 @@ from pathlib import Path
 import pandas as pd
 import polars as pl
 import streamlit as st
-from src.common.common import page_setup
-from src.common.results_helpers import get_abundance_data, get_id_column, get_sample_group_map
+from src.common.common import page_setup, save_params
+from src.common.results_helpers import (
+    clear_downstream_steps,
+    get_abundance_data,
+    get_id_column,
+    get_sample_group_map,
+    postprocessing_param,
+)
 
 # Import imputation algorithms from openms_insight engine
 from openms_insight.analysis.imputation import impute_mar, impute_smallest_value
@@ -83,11 +89,21 @@ metadata_pl = pl.DataFrame(
 )
 
 # User selection for core missingness assumption strategy
+# In DDA label-free data most missing values are proteins below the detection
+# limit (MNAR), so the default fills them with the protein's own smallest
+# observed intensity. The global minimum sits far below most proteins and turns
+# a single random dropout into a large false fold change; MAR group imputation
+# cannot fill a protein that is missing in a whole group.
+impute_options = ["MNAR (Missing Not At Random)", "MAR (Missing At Random)"]
 impute_category = st.selectbox(
     "Select Imputation Class",
-    options=["MAR (Missing At Random)", "MNAR (Missing Not At Random)"],
-    index=0,
-    help="MAR uses group metrics (Mean/Median). MNAR shifts values below the limit of detection.",
+    options=impute_options,
+    index=impute_options.index(
+        postprocessing_param(params, "postproc-impute-class", impute_options)
+    ),
+    key="postproc-impute-class",
+    help="MAR uses group metrics (Mean/Median). MNAR fills values below the limit of detection. "
+    "Recommended: MNAR with row scope.",
 )
 
 # Render algorithmic options sub-menus based on the parent selection
@@ -95,10 +111,14 @@ if impute_category == "MAR (Missing At Random)":
     st.markdown(
         "**Group Character Imputation**: Fills missing metrics leveraging sample properties belonging to the same group."
     )
+    mar_options = ["median", "mean"]
     strategy_opt = st.radio(
         "Mathematical Strategy",
-        options=["median", "mean"],
-        index=0,
+        options=mar_options,
+        index=mar_options.index(
+            postprocessing_param(params, "postproc-impute-mar-strategy", mar_options)
+        ),
+        key="postproc-impute-mar-strategy",
         horizontal=True,
     )
 
@@ -106,13 +126,19 @@ elif impute_category == "MNAR (Missing Not At Random)":
     st.markdown(
         "**Smallest Value Imputation**: Replaces missing items with the minimum values detected to reflect technical dropout limits."
     )
+    scope_options = ["row", "global"]
     scope_opt = st.radio(
         "Detection Minimum Scope",
-        options=["row", "global"],
-        index=0,
+        options=scope_options,
+        index=scope_options.index(
+            postprocessing_param(params, "postproc-impute-mnar-scope", scope_options)
+        ),
+        key="postproc-impute-mnar-scope",
         horizontal=True,
         help="'row' targets current protein minimum; 'global' searches the entire mass spectrometry matrix profile.",
     )
+
+save_params(params)
 
 # --- SECTION 3: Imputation Execution ---
 if st.button("Apply Imputation", type="primary"):
@@ -137,6 +163,7 @@ if st.button("Apply Imputation", type="primary"):
 
     # 💾 Save current output into Session State for down-stream processing (Normalization, Statistics)
     st.session_state["imputed_df"] = imputed_df
+    clear_downstream_steps("imputed_df")
 
     st.success(f"Successfully finalized **{impute_category}** imputation step!")
 

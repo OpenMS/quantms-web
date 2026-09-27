@@ -4,8 +4,14 @@ from pathlib import Path
 import pandas as pd
 import polars as pl
 import streamlit as st
-from src.common.common import page_setup
-from src.common.results_helpers import get_abundance_data, get_id_column, get_sample_group_map
+from src.common.common import page_setup, save_params
+from src.common.results_helpers import (
+    clear_downstream_steps,
+    get_abundance_data,
+    get_id_column,
+    get_sample_group_map,
+    postprocessing_param,
+)
 # Import normalization engine functions from openms_insight
 from openms_insight.analysis.normalization import (
     normalize_samples,
@@ -145,23 +151,39 @@ metadata_pl = pl.DataFrame(
     metadata_rows, schema={"sample_id": pl.String, "group": pl.String}
 )
 
+st.caption(
+    "Recommended: log2 transformation, median normalization and no row scaling. "
+    "Statistical Inference reports the difference of group means as log2FC, so "
+    "it expects log2-scaled intensities; median normalization shifts each sample "
+    "by a constant and is only meaningful on a log scale; row scaling removes the "
+    "fold changes the volcano plot shows."
+)
+
 col1, col2, col3 = st.columns(3)
 
 with col1:
     st.markdown("### 🧬 1. Mathematical Transformation")
+    transform_options = ["None", "log2", "log10", "square_root", "cube_root"]
     transform_strategy = st.selectbox(
         "Select Transformation",
-        options=["None", "log2", "log10", "square_root", "cube_root"],
-        index=0,
+        options=transform_options,
+        index=transform_options.index(
+            postprocessing_param(params, "postproc-transform", transform_options)
+        ),
+        key="postproc-transform",
         help="Compress data dynamic range and stabilize heteroscedastic variance profiles.",
     )
 
 with col2:
     st.markdown("### 🧪 2. Sample Normalization")
+    norm_options = ["None", "sum", "median", "pqn", "reference_feature", "quantile"]
     norm_strategy = st.selectbox(
         "Select Normalization",
-        options=["None", "sum", "median", "pqn", "reference_feature", "quantile"],
-        index=0,
+        options=norm_options,
+        index=norm_options.index(
+            postprocessing_param(params, "postproc-normalization", norm_options)
+        ),
+        key="postproc-normalization",
         help="Perform column-wise corrections to account for variable sample loading concentrations.",
     )
 
@@ -177,13 +199,18 @@ with col2:
 
 with col3:
     st.markdown("### 📊 3. Row Scaling")
+    scaling_options = ["None", "mean_centering", "auto_scaling", "pareto_scaling", "range_scaling"]
     scaling_strategy = st.selectbox(
         "Select Scaling Mode",
-        options=["None", "mean_centering", "auto_scaling", "pareto_scaling", "range_scaling"],
-        index=0,
+        options=scaling_options,
+        index=scaling_options.index(
+            postprocessing_param(params, "postproc-scaling", scaling_options)
+        ),
+        key="postproc-scaling",
         help="Adjust individual feature weights to make low and high abundance proteins comparable.",
     )
 
+save_params(params)
 
 # --- SECTION 3: Normalization Pipe Sequential Execution ---
 st.markdown("<br>", unsafe_allow_html=True)
@@ -228,6 +255,8 @@ if st.button("Apply Normalization Pipelines", type="primary"):
 
         # 💾 Save processing checkpoint inside Session State for Downstream (Statistics Block)
         st.session_state["normalized_df"] = normalized_df
+        clear_downstream_steps("normalized_df")
+        st.session_state["normalized_transform"] = transform_strategy
 
         st.success("Successfully executed all selected normalization pipelines!")
 

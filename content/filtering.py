@@ -4,8 +4,14 @@ from pathlib import Path
 import pandas as pd
 import polars as pl
 import streamlit as st
-from src.common.common import page_setup
-from src.common.results_helpers import get_abundance_data, get_id_column, get_sample_group_map
+from src.common.common import page_setup, save_params
+from src.common.results_helpers import (
+    clear_downstream_steps,
+    get_abundance_data,
+    get_id_column,
+    get_sample_group_map,
+    postprocessing_param,
+)
 
 # Import filtering functions from openms_insight package
 from openms_insight.analysis.filter import (
@@ -74,12 +80,19 @@ metadata_pl = pl.DataFrame(
     metadata_rows, schema={"sample_id": pl.String, "group": pl.String}
 )
 
-# User selection for filtering strategy
+# User selection for filtering strategy. The default keeps proteins quantified
+# in at least half of the samples of one group, which removes rows that
+# imputation would otherwise have to invent most values for.
+filter_options = ["Low Repeatability", "Low Abundance", "Low Variance"]
 filter_method = st.selectbox(
     "Select Filtering Method",
-    options=["Low Abundance", "Low Repeatability", "Low Variance"],
-    index=0,
-    help="Choose the statistical criteria to prune unreliable protein entries.",
+    options=filter_options,
+    index=filter_options.index(
+        postprocessing_param(params, "postproc-filter-method", filter_options)
+    ),
+    key="postproc-filter-method",
+    help="Choose the statistical criteria to prune unreliable protein entries. "
+    "Recommended: Low Repeatability with at most 50% missing values.",
 )
 
 # Render threshold sliders dynamically based on the selected filter method
@@ -91,8 +104,9 @@ if filter_method == "Low Abundance":
         "Threshold Percentile (%)",
         min_value=0.0,
         max_value=100.0,
-        value=10.0,
+        value=float(postprocessing_param(params, "postproc-filter-abundance-percentile")),
         step=5.0,
+        key="postproc-filter-abundance-percentile",
     )
 
 elif filter_method == "Low Repeatability":
@@ -100,11 +114,12 @@ elif filter_method == "Low Repeatability":
         "**Low Repeatability Filter**: Keeps rows where at least one group has a missing value ratio within the allowed maximum."
     )
     threshold = st.slider(
-        "Max Missing Ratio",
+        "Max Missing Ratio (%)",
         min_value=0.0,
         max_value=100.0,
-        value=50.0,
+        value=float(postprocessing_param(params, "postproc-filter-max-missing")),
         step=5.0,
+        key="postproc-filter-max-missing",
         help="Allowed missing value (zero or null) ratio per group.",
     )
 
@@ -116,9 +131,12 @@ elif filter_method == "Low Variance":
         "Threshold Percentile (%)",
         min_value=0.0,
         max_value=100.0,
-        value=10.0,
+        value=float(postprocessing_param(params, "postproc-filter-variance-percentile")),
         step=5.0,
+        key="postproc-filter-variance-percentile",
     )
+
+save_params(params)
 
 # --- SECTION 3: Filter Execution and Collected Results View ---
 if st.button("Apply Filter", type="primary"):
@@ -152,6 +170,7 @@ if st.button("Apply Filter", type="primary"):
     # Collect the evaluated lazy graph and convert back to Pandas for visualization
     filtered_df = strip_stat_columns(filtered_lazy.collect().to_pandas())
     st.session_state["filtered_df"] = filtered_df
+    clear_downstream_steps("filtered_df")
 
     # Layout response metrics and the filtered matrix
     st.success(f"Successfully applied **{filter_method}** filter!")
