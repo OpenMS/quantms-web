@@ -90,8 +90,6 @@ def render_protein_table(pivot_df, is_lfq=True):
         use_container_width=True,
     )
 
-protein_tab, psm_tab = st.tabs(["Protein Table", "PSM-level Quantification Table"])
-
 try:
     df = pd.read_csv(csv_file)
 

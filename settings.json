@@ -1,8 +1,8 @@
 {
-    "app-name": "quantms-web (DDA-LFQ)",
+    "app-name": "OpenDDA",
     "github-user": "OpenMS",
     "version": "1.1",
-    "repository-name": "streamlit-template",
+    "repository-name": "quantms-web",
     "legal_links": {
         "impressum": "https://openms.de/impressum",
         "privacy": "https://openms.de/privacy",
