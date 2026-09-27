@@ -104,16 +104,39 @@ def extract_scan_number(native_id: str) -> int:
     return int(match.group(1)) if match else 0
 
 
-def extract_filename_from_idxml(idxml_path: Path) -> str:
-    """Derive mzML filename from idXML filename."""
+def extract_filename_from_idxml(idxml_path: Path, mzml_names=None) -> str:
+    """Derive the source mzML filename from an idXML filename.
+
+    The workflow names idXML files ``<mzML stem>_<step>...``, e.g.
+    ``02COVID_comet_perc_filter.idXML``. When the input mzML names are known the
+    longest one whose stem prefixes the idXML stem wins; otherwise the known
+    step suffixes are stripped from the end.
+    """
     stem = idxml_path.stem
-    for suffix in ['_comet', '_per', '_filter']:
-        stem = stem.replace(suffix, '')
-    return f"{stem}.mzML"
+    if mzml_names:
+        candidates = [
+            name for name in mzml_names
+            if stem == Path(name).stem or stem.startswith(f"{Path(name).stem}_")
+        ]
+        if candidates:
+            return max(candidates, key=len)
+    while True:
+        for suffix in ['_filter', '_perc', '_per', '_comet']:
+            if stem.endswith(suffix):
+                stem = stem[:-len(suffix)]
+                break
+        else:
+            return f"{stem}.mzML"
 
 
-def parse_idxml(idxml_path: Path) -> tuple[pl.DataFrame, list[str]]:
+def parse_idxml(idxml_path: Path, filename_to_index: dict | None = None) -> tuple[pl.DataFrame, list[str]]:
     """Parse idXML and return DataFrame for openms_insight.
+
+    Args:
+        idxml_path: idXML file of one run.
+        filename_to_index: Maps every input mzML filename to its file index in
+            the spectra cache. The PSMs get the index of their own run, so they
+            link to that run's spectra.
 
     Returns:
         Tuple of (id_df, spectra_data list of source filenames)
@@ -121,10 +144,10 @@ def parse_idxml(idxml_path: Path) -> tuple[pl.DataFrame, list[str]]:
     proteins, peptides = load_idxml(idxml_path)
 
     # Derive mzML filename from idXML filename (e.g., 02COVID_filter.idXML -> 02COVID.mzML)
-    spectra_data = [extract_filename_from_idxml(idxml_path)]
+    source = extract_filename_from_idxml(idxml_path, list(filename_to_index or []))
+    spectra_data = [source]
 
-    # Build filename to index mapping
-    filename_to_index = {Path(f).name: i for i, f in enumerate(spectra_data)}
+    run_index = (filename_to_index or {}).get(source, 0)
 
     records = []
     for pep in peptides:
@@ -136,9 +159,9 @@ def parse_idxml(idxml_path: Path) -> tuple[pl.DataFrame, list[str]]:
                 spec_ref = spec_ref.decode()
         scan_id = extract_scan_from_ref(spec_ref)
 
-        # Get file index from id_merge_index or derive from filename
-        file_index = pep.getMetaValue("id_merge_index") if pep.metaValueExists("id_merge_index") else 0
-        filename = spectra_data[file_index] if file_index < len(spectra_data) else ""
+        # One idXML holds one run, so every PSM belongs to that run's file index
+        file_index = run_index
+        filename = spectra_data[0]
 
         for h in pep.getHits():
             records.append({
@@ -157,12 +180,14 @@ def parse_idxml(idxml_path: Path) -> tuple[pl.DataFrame, list[str]]:
     return pl.DataFrame(records), spectra_data
 
 
-def build_spectra_cache(mzml_dir: Path, filename_to_index: dict) -> tuple[pl.DataFrame, dict]:
+def build_spectra_cache(mzml_dir: Path, filename_to_index: dict, mzml_files=None) -> tuple[pl.DataFrame, dict]:
     """Extract MS2 spectra from mzML files and return DataFrame.
 
     Args:
         mzml_dir: Directory containing mzML files
         filename_to_index: Dict mapping filename to file_index
+        mzml_files: mzML paths to read. Defaults to every mzML in ``mzml_dir``;
+            pass the workflow inputs so referenced (not copied) files are found.
 
     Returns:
         Tuple of (spectra_df, updated filename_to_index)
@@ -170,7 +195,8 @@ def build_spectra_cache(mzml_dir: Path, filename_to_index: dict) -> tuple[pl.Dat
     records = []
     peak_id = 0
 
-    for mzml_path in sorted(mzml_dir.glob("*.mzML")):
+    paths = [Path(f) for f in mzml_files] if mzml_files else sorted(mzml_dir.glob("*.mzML"))
+    for mzml_path in paths:
         # Get or create file index
         if mzml_path.name not in filename_to_index:
             filename_to_index[mzml_path.name] = len(filename_to_index)
@@ -196,6 +222,31 @@ def build_spectra_cache(mzml_dir: Path, filename_to_index: dict) -> tuple[pl.Dat
                 peak_id += 1
 
     return pl.DataFrame(records), filename_to_index
+
+
+def write_psm_exports(id_df: pl.DataFrame, seq_view, export_dir: Path, prefix: str) -> None:
+    """Write one run's PSM table and per-scan fragment ion table as TSV.
+
+    ``<prefix>_psms.tsv`` holds every PSM with all its columns.
+    ``<prefix>_fragment_ions.tsv`` holds, for every PSM, each fragment ion the
+    SequenceView matched in its spectrum (same ion types, losses and tolerance
+    as the view), together with the PSM's run, RT, m/z, score and proteins.
+    """
+    export_dir.mkdir(parents=True, exist_ok=True)
+    id_df.write_csv(export_dir / f"{prefix}_psms.tsv", separator="\t")
+
+    fragments = seq_view.export_fragment_ions()
+    if fragments.height and "sequence_id" in fragments.columns and "id_idx" in id_df.columns:
+        psm_info = id_df.select(
+            pl.col("id_idx").cast(fragments.schema["sequence_id"]).alias("sequence_id"),
+            "filename",
+            "rt",
+            pl.col("mz").alias("precursor_mz"),
+            "score",
+            "protein_accession",
+        )
+        fragments = fragments.join(psm_info, on="sequence_id", how="left")
+    fragments.write_csv(export_dir / f"{prefix}_fragment_ions.tsv", separator="\t")
 
 
 @st.cache_data

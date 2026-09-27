@@ -76,6 +76,8 @@ group_colors = {g: group_palette[i % len(group_palette)] for i, g in enumerate(u
 
 heatmap_component = ClusteredHeatmap(
     cache_id="quantms_clustered_heatmap",
+    # Data changes whenever an upstream step reruns; rebuild rather than reuse
+    regenerate_cache=True,
     cache_path=str(st.session_state["workspace"]),
     id_col=id_col,
     data=heatmap_lazy,

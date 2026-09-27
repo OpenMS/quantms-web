@@ -26,7 +26,7 @@ if "workspace" not in st.session_state:
     st.stop()
 
 workflow_dir = get_workflow_dir(st.session_state["workspace"])
-filter_dir = workflow_dir / "results" / "filter_results"
+filter_dir = workflow_dir / "results" / "psm_filter"
 cache_dir = workflow_dir / "results" / "insight_cache"
 
 if not filter_dir.exists():

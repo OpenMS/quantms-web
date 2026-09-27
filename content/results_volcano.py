@@ -65,6 +65,8 @@ p_thresh = st.slider(
 # 4. Initialize the OpenMS-Insight VolcanoPlot component
 volcano_plot_component = VolcanoPlot(
     cache_id="quantms_volcano_plot",
+    # Data changes whenever an upstream step reruns; rebuild rather than reuse
+    regenerate_cache=True,
     data=volcano_pl_lazy,
     log2fc_column="log2FC",
     pvalue_column="p-adj",

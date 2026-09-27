@@ -131,6 +131,8 @@ pca_lazy = pl.from_pandas(expr_df_pca).lazy()
 try:
     pca_component = PCAPlot(
         cache_id="quantms_pca_plot",
+        # Data changes whenever an upstream step reruns; rebuild rather than reuse
+        regenerate_cache=True,
         data=pca_lazy,
         metadata=metadata_pl,
         sample_id_field="sample_id",
