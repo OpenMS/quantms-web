@@ -199,10 +199,7 @@ if st.button("Run Statistical Analysis", type="primary"):
 if st.session_state.get("statistics_df") is not None:
     with st.expander("📈 Check the test result", expanded=True):
         st.caption(
-            "A flat histogram with a peak near 0 is what a sound test looks like: "
-            "most proteins unchanged, some changed. A peak near 1 or a U-shape "
-            "means the input scale or the chosen test does not fit the data; "
-            "check that Normalization used log2. A flat histogram with no peak "
-            "means few proteins differ between groups."
+            "Raw p-values of all proteins. A flat histogram with a peak near 0 means "
+            "the test fits and some proteins change; a peak near 1 or a U-shape points to non-log input or the wrong test, and no peak at all means few proteins differ."
         )
         show_fig(pvalue_histogram(st.session_state["statistics_df"]), "statistics-pvalue-histogram")

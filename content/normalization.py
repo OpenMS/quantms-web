@@ -238,9 +238,8 @@ def run_normalization() -> pl.LazyFrame:
 grouped_samples = metadata_pl["sample_id"].to_list()
 with st.expander("📈 Help me choose a method", expanded=True):
     st.caption(
-        "Each box is one sample's intensity distribution. After a good "
-        "normalization the medians line up; a sample that stays offset may "
-        "have a loading or acquisition problem."
+        "Each box is one sample's intensity distribution, before (top) and after "
+        "(bottom) the current settings. After a good normalization the medians line up; a sample that stays offset may have a loading or acquisition problem."
     )
     if not grouped_samples:
         st.info("Assign sample groups in Configure to see this plot.")

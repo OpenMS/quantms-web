@@ -1,7 +1,7 @@
 {
   "version": 3,
   "component_type": "heatmap",
-  "created_at": "2026-09-27T10:46:07.216768",
+  "created_at": "2026-09-27T10:50:12.898002",
   "config_hash": "17538bbd7c8bb0b83ef303c424c0f51e7dccd7b704b8b4d6f2f9b91555db0343",
   "config": {
     "x_column": "Sample",

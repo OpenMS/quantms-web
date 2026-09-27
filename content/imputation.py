@@ -164,16 +164,13 @@ with st.expander("📈 Help me choose a method", expanded=True):
         st.info("Assign sample groups in Configure to see these plots.")
     else:
         st.caption(
-            "If proteins with missing values sit clearly lower than complete "
-            "ones, values are missing because they fall below the detection "
-            "limit: choose MNAR. If both curves overlap, dropout is random: "
-            "MAR is reasonable."
+            "Mean intensity of proteins with and without missing values. If the "
+            "orange curve sits clearly lower, values fall below the detection limit (choose MNAR); if the curves overlap, dropout is random (MAR fits)."
         )
         show_fig(missingness_vs_intensity(base_df, grouped_samples), "imputation-missingness")
         st.caption(
-            "Where the current setting places the filled-in values. They "
-            "should sit at the low end of the observed values for MNAR; a "
-            "separate spike far below every observed value inflates fold changes."
+            "Where the current setting places the filled-in values (red) relative to "
+            "observed ones (blue). They should sit at the low edge of the observed values; a separate spike far below them inflates fold changes."
         )
         preview_df = run_imputation().collect().to_pandas()
         show_fig(imputed_value_preview(base_df, preview_df, grouped_samples), "imputation-preview")

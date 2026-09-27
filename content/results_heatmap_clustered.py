@@ -113,6 +113,10 @@ state_manager = st.session_state.get("state")
 # dendrogram+heatmap composite with more than a handful of rows.
 heatmap_height = max(600, min(1400, 300 + top_n * 20))
 heatmap_component(state_manager=state_manager, height=heatmap_height)
+st.caption(
+    "Same Z-scored proteins as the heatmap, with rows and columns reordered so similar ones sit together "
+    "(dendrograms). If the sample dendrogram splits along the group color bar, the groups differ consistently."
+)
 
 st.markdown("---")
 st.markdown("**Other visualizations:**")

@@ -138,6 +138,10 @@ pc_y = int(pc_y_label.replace("PC", ""))
 # 5. Render the component
 state_manager = st.session_state.get("state")
 pca_component(state_manager=state_manager, pc_x=pc_x, pc_y=pc_y, height=600)
+st.caption(
+    "Each point is a sample, placed by its overall protein profile. Samples of one group should "
+    "cluster together and groups should separate; an isolated sample is a candidate outlier worth checking before statistics."
+)
 
 st.markdown(
     "**Explained variance:** "

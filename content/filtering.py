@@ -97,6 +97,7 @@ filter_method = st.selectbox(
 )
 
 # Render threshold sliders dynamically based on the selected filter method
+threshold = 0.0  # set by the slider of the selected method below
 if filter_method == "Low Abundance":
     st.markdown(
         "**Low Abundance Filter**: Keeps rows where at least one group's median is above the selected percentile threshold."
@@ -168,9 +169,8 @@ def run_filter(value: float) -> pl.LazyFrame:
 
 with st.expander("📈 Help me choose a threshold", expanded=True):
     st.caption(
-        "How many proteins the selected filter keeps across its whole range. "
-        "Pick a threshold before the curve drops steeply, unless you want a "
-        "stricter table for a small, high-confidence result."
+        "How many proteins the selected filter keeps at every threshold. Pick a "
+        "value before the curve drops steeply; flat stretches mean the exact value barely matters."
     )
     show_fig(
         filter_threshold_curve(

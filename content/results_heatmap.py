@@ -105,6 +105,10 @@ if not heatmap_z.empty:
     # Render the component
     state_manager = st.session_state.get("state")
     heatmap_component(state_manager=state_manager)
+    st.caption(
+        "The most variable proteins (rows) across samples (columns), each row scaled to its own mean "
+        "(Z-score): red is above, blue below that protein's average. Blocks of color that follow the sample groups show group-specific proteins."
+    )
 else:
     st.warning("Insufficient data to generate the heatmap.")
 

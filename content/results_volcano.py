@@ -87,6 +87,10 @@ volcano_plot_component(
     max_labels=10,  # Display labels for the top N significant proteins
     height=600,
 )
+st.caption(
+    "Each point is a protein: effect size (log2 fold change) against significance (-log10 adjusted p-value). "
+    "Proteins beyond both thresholds are called up- or down-regulated; loosen the sliders to explore, tighten them for a high-confidence list."
+)
 
 # 6. Keep the existing statistical summary and bottom links
 up_count = ((volcano_df["p-adj"] <= p_thresh) & (volcano_df["log2FC"] >= fc_thresh)).sum()
