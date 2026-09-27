@@ -617,6 +617,31 @@ class WorkflowTest(WorkflowManager):
                         del self.params[k]
                     self.parameter_manager.save_parameters()
 
+    def _has_identifications(self, idxml_files: list, stage: str) -> bool:
+        """Return False, and log why, when no idXML file holds a peptide hit.
+
+        Every later step (rescoring, filtering, quantification and the result
+        views) needs at least one identification, so an empty search or an
+        FDR filter that removes everything has to stop the run with a message
+        the user can act on instead of crashing further down.
+        """
+        n_hits = sum(
+            len(pep.getHits())
+            for f in idxml_files
+            if Path(f).exists()
+            for pep in load_idxml(f)[1]
+        )
+        if n_hits > 0:
+            return True
+        self.logger.log(
+            f"❌ No peptide identifications left after {stage}. "
+            "Check that the FASTA database matches the sample species, that the "
+            "precursor and fragment tolerances and enzyme fit the data, and that "
+            "the FDR threshold is not too strict."
+        )
+        self.logger.log("Workflow stopped due to error")
+        return False
+
     def execution(self) -> bool:
         """
         Refactored TOPP workflow execution:
@@ -737,6 +762,9 @@ class WorkflowTest(WorkflowManager):
             frag_tol = comet_params.get("fragment_mass_tolerance", 0.02)
             frag_tol_is_ppm = comet_params.get("fragment_error_units", "Da") != "Da"
 
+            if not self._has_identifications(comet_results, "peptide search"):
+                return False
+
             # Build visualization cache for Comet results
             results_dir_path = Path(self.workflow_dir, "results")
             cache_dir = results_dir_path / "insight_cache"
@@ -755,6 +783,9 @@ class WorkflowTest(WorkflowManager):
 
                 # Parse idXML to DataFrame
                 id_df, spectra_data = parse_idxml(idxml_path)
+                if id_df.is_empty():
+                    self.logger.log(f"⚠️ No identifications in {idxml_path.name}, skipping its result views")
+                    continue
 
                 # Build spectra cache (only once)
                 if spectra_df is None:
@@ -847,6 +878,9 @@ class WorkflowTest(WorkflowManager):
                     self.logger.log("Workflow stopped due to error")
                     return False
 
+            if not self._has_identifications(percolator_results, "rescoring"):
+                return False
+
             # Build visualization cache for Percolator results
             for idxml_file in percolator_results:
                 idxml_path = Path(idxml_file)
@@ -854,6 +888,9 @@ class WorkflowTest(WorkflowManager):
 
                 # Parse idXML to DataFrame
                 id_df, spectra_data = parse_idxml(idxml_path)
+                if id_df.is_empty():
+                    self.logger.log(f"⚠️ No identifications in {idxml_path.name}, skipping its result views")
+                    continue
 
                 # Initialize Table component (caches itself)
                 Table(
@@ -940,6 +977,9 @@ class WorkflowTest(WorkflowManager):
                     self.logger.log("Workflow stopped due to error")
                     return False
 
+            if not self._has_identifications(filter_results, "FDR filtering"):
+                return False
+
             # Build visualization cache for Filter results
             for idxml_file in filter_results:
                 idxml_path = Path(idxml_file)
@@ -947,6 +987,9 @@ class WorkflowTest(WorkflowManager):
 
                 # Parse idXML to DataFrame
                 id_df, spectra_data = parse_idxml(idxml_path)
+                if id_df.is_empty():
+                    self.logger.log(f"⚠️ No identifications in {idxml_path.name}, skipping its result views")
+                    continue
 
                 # Initialize Table component (caches itself)
                 Table(
@@ -1238,6 +1281,9 @@ class WorkflowTest(WorkflowManager):
             frag_tol = comet_params.get("fragment_mass_tolerance", 0.02)
             frag_tol_is_ppm = comet_params.get("fragment_error_units", "Da") != "Da"
 
+            if not self._has_identifications(comet_results, "peptide search"):
+                return False
+
             # Build visualization cache for Comet results
             results_dir_path = Path(self.workflow_dir, "results")
             cache_dir = results_dir_path / "insight_cache"
@@ -1256,6 +1302,9 @@ class WorkflowTest(WorkflowManager):
 
                 # Parse idXML to DataFrame
                 id_df, spectra_data = parse_idxml(idxml_path)
+                if id_df.is_empty():
+                    self.logger.log(f"⚠️ No identifications in {idxml_path.name}, skipping its result views")
+                    continue
 
                 # Build spectra cache (only once)
                 if spectra_df is None:
@@ -1343,6 +1392,9 @@ class WorkflowTest(WorkflowManager):
                 ):
                     self.logger.log("Workflow stopped due to error")
                     return False
+            if not self._has_identifications(percolator_results, "rescoring"):
+                return False
+
             # Build visualization cache for Percolator results
             for idxml_file in percolator_results:
                 idxml_path = Path(idxml_file)
@@ -1350,6 +1402,9 @@ class WorkflowTest(WorkflowManager):
 
                 # Parse idXML to DataFrame
                 id_df, spectra_data = parse_idxml(idxml_path)
+                if id_df.is_empty():
+                    self.logger.log(f"⚠️ No identifications in {idxml_path.name}, skipping its result views")
+                    continue
 
                 # Initialize Table component (caches itself)
                 Table(
@@ -1434,6 +1489,9 @@ class WorkflowTest(WorkflowManager):
                     return False
             self.logger.log("✅ IDFilter-strict complete")
 
+            if not self._has_identifications(psm_filtered, "FDR filtering"):
+                return False
+
             # Build visualization cache for Filter results
             for idxml_file in psm_filtered:
                 idxml_path = Path(idxml_file)
@@ -1441,6 +1499,9 @@ class WorkflowTest(WorkflowManager):
 
                 # Parse idXML to DataFrame
                 id_df, spectra_data = parse_idxml(idxml_path)
+                if id_df.is_empty():
+                    self.logger.log(f"⚠️ No identifications in {idxml_path.name}, skipping its result views")
+                    continue
 
                 # Initialize Table component (caches itself)
                 Table(
