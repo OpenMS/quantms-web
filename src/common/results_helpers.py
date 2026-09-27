@@ -1,5 +1,4 @@
 """Helper functions for results pages."""
-import hashlib
 import json
 import re
 import pandas as pd
@@ -523,17 +522,6 @@ def show_pipeline_banner(uses: str = "table") -> None:
         applied = [label for label in done if label != "Statistics"]
         source = f"the **{applied[-1]}** step output" if applied else "the **unprocessed** workflow abundance table"
     st.info(f"Showing {source}.  \nDownstream analysis: {steps}")
-
-
-def table_digest(df: pd.DataFrame) -> str:
-    """Short content hash for an OpenMS-Insight ``cache_id``.
-
-    Insight components cache their data per ``cache_id``; plots of a table that
-    changes when a downstream step is re-applied need an id that changes too.
-    """
-    return hashlib.sha1(
-        pd.util.hash_pandas_object(df, index=True).values.tobytes()
-    ).hexdigest()[:10]
 
 
 def log2_matrix(df: pd.DataFrame, id_col: str, sample_cols: list, is_log2: bool) -> pd.DataFrame:

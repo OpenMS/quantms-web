@@ -2,7 +2,7 @@
 import streamlit as st
 import polars as pl
 from src.common.common import page_setup
-from src.common.results_helpers import get_abundance_data, get_id_column, show_pipeline_banner, table_digest
+from src.common.results_helpers import get_abundance_data, get_id_column, show_pipeline_banner
 from openms_insight import VolcanoPlot
 
 params = page_setup()
@@ -65,7 +65,9 @@ p_thresh = st.slider(
 
 # 4. Initialize the OpenMS-Insight VolcanoPlot component
 volcano_plot_component = VolcanoPlot(
-    cache_id=f"quantms_volcano_plot_{table_digest(volcano_df)}",
+    cache_id="quantms_volcano_plot",
+    # Data changes whenever an upstream step reruns; rebuild rather than reuse
+    regenerate_cache=True,
     data=volcano_pl_lazy,
     log2fc_column="log2FC",
     pvalue_column="p-adj",

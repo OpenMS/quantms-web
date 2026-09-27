@@ -10,7 +10,6 @@ from src.common.results_helpers import (
     get_sample_group_map,
     log2_matrix,
     show_pipeline_banner,
-    table_digest,
 )
 from openms_insight import Heatmap
 
@@ -86,7 +85,9 @@ if not heatmap_z.empty:
 
     # Initialize the OpenMS-Insight Heatmap component and map attributes
     heatmap_component = Heatmap(
-        cache_id=f"quantms_protein_heatmap_{table_digest(heatmap_z)}",
+        cache_id="quantms_protein_heatmap",
+        # Data changes whenever an upstream step reruns; rebuild rather than reuse
+        regenerate_cache=True,
         x_column="Sample",
         y_column=id_col,
         data=heatmap_pl_lazy,

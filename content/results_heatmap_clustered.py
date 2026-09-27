@@ -10,7 +10,6 @@ from src.common.results_helpers import (
     get_sample_group_map,
     log2_matrix,
     show_pipeline_banner,
-    table_digest,
 )
 from openms_insight import ClusteredHeatmap
 
@@ -91,7 +90,9 @@ unique_groups = sorted(set(sample_group_map.values()))
 group_colors = {g: group_palette[i % len(group_palette)] for i, g in enumerate(unique_groups)}
 
 heatmap_component = ClusteredHeatmap(
-    cache_id=f"quantms_clustered_heatmap_{table_digest(heatmap_z)}",
+    cache_id="quantms_clustered_heatmap",
+    # Data changes whenever an upstream step reruns; rebuild rather than reuse
+    regenerate_cache=True,
     cache_path=str(st.session_state["workspace"]),
     id_col=id_col,
     data=heatmap_lazy,

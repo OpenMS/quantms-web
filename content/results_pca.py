@@ -9,7 +9,6 @@ from src.common.results_helpers import (
     get_id_column,
     get_sample_group_map,
     show_pipeline_banner,
-    table_digest,
 )
 from openms_insight import PCAPlot
 
@@ -109,7 +108,9 @@ pca_lazy = pl.from_pandas(expr_df_pca).lazy()
 # 3. Initialize the OpenMS-Insight PCAPlot component (computes PCA internally)
 try:
     pca_component = PCAPlot(
-        cache_id=f"quantms_pca_plot_{table_digest(expr_df_pca)}",
+        cache_id="quantms_pca_plot",
+        # Data changes whenever an upstream step reruns; rebuild rather than reuse
+        regenerate_cache=True,
         data=pca_lazy,
         metadata=metadata_pl,
         sample_id_field="sample_id",
