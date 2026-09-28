@@ -1,6 +1,8 @@
 import streamlit as st
 from pathlib import Path
 import re
+import json
+import shutil
 import pandas as pd
 import plotly.express as px
 from streamlit_plotly_events import plotly_events
@@ -15,6 +17,29 @@ from src.common.common import page_setup
 from src.common.results_helpers import get_abundance_data
 from src.common.results_helpers import parse_idxml, build_spectra_cache, load_idxml
 from openms_insight import Table, Heatmap, LinePlot, SequenceView
+
+# Accession prefixes that mark decoy entries in a FASTA database.
+DECOY_PREFIXES = ("DECOY_", "decoy_", "rev_", "REV_", "XXX_", "reversed_")
+
+
+@st.cache_data(show_spinner=False)
+def detect_decoy_prefix(fasta_path: str, mtime: float) -> str | None:
+    """Return the decoy prefix used in a FASTA database, or None if it has no decoys.
+
+    `mtime` is only part of the cache key, so a replaced file is scanned again.
+    """
+    try:
+        with open(fasta_path, "r", errors="ignore") as f:
+            for line in f:
+                if line.startswith(">"):
+                    header = line[1:]
+                    for prefix in DECOY_PREFIXES:
+                        if header.startswith(prefix):
+                            return prefix
+    except OSError:
+        return None
+    return None
+
 
 # params = page_setup()
 class WorkflowTest(WorkflowManager):
@@ -45,9 +70,11 @@ class WorkflowTest(WorkflowManager):
     def configure(self) -> None:
         # reactive=True so Group Selection tab updates when selection changes
         self.ui.select_input_file("mzML-files", multiple=True, reactive=True)
-        self.ui.select_input_file("fasta-file", multiple=False)
+        # reactive=True so the decoy default below follows the selected database
+        self.ui.select_input_file("fasta-file", multiple=False, reactive=True)
 
         self.params = self.parameter_manager.get_parameters_from_json()
+        self.apply_decoy_default()
         saved_mode = self.params.get("analysis-mode", "LFQ")
 
         self.ui.input_widget(
@@ -68,6 +95,80 @@ class WorkflowTest(WorkflowManager):
         else:
             self.render_tmt_tabs()
 
+    def apply_decoy_default(self) -> None:
+        """Default decoy generation to on, unless the selected FASTA already has decoys.
+
+        Runs once per database: a user's choice is kept until another FASTA is
+        selected. When decoys are found, their prefix becomes Comet's decoy_string
+        so PeptideIndexing, Percolator and IDFilter recognise them.
+        """
+        prefix = self.parameter_manager.param_prefix
+        fasta_key = st.session_state.get(f"{prefix}fasta-file", self.params.get("fasta-file"))
+        if not fasta_key:
+            return
+        try:
+            fasta = Path(self.file_manager.get_files([fasta_key])[0])
+        except (ValueError, IndexError):
+            return
+        if not fasta.is_file():
+            return
+
+        decoy_prefix = detect_decoy_prefix(str(fasta), fasta.stat().st_mtime)
+        marker = f"{fasta.name}:{decoy_prefix or ''}"
+        if self.params.get("decoy-check") == marker:
+            return
+
+        generate = decoy_prefix is None
+        params = self.parameter_manager.get_parameters_from_json()
+        params["decoy-check"] = marker
+        params["generate-decoys"] = generate
+        if decoy_prefix:
+            for tool in ("CometAdapter", "CometAdapter-TMT"):
+                params.setdefault(tool, {})["PeptideIndexing:decoy_string"] = decoy_prefix
+                # Drop the widget's session value so it re-renders from params.json
+                st.session_state.pop(
+                    f"{self.parameter_manager.topp_param_prefix}{tool}:1:PeptideIndexing:decoy_string",
+                    None,
+                )
+        with open(self.parameter_manager.params_file, "w", encoding="utf-8") as f:
+            json.dump(params, f, indent=4)
+        st.session_state[f"{prefix}decoy-check"] = marker
+        st.session_state[f"{prefix}generate-decoys"] = generate
+        self.params = params
+        self.ui.params = params
+
+    def render_psm_fdr_widget(self) -> None:
+        self.ui.input_widget(
+            key="psm-fdr-percent",
+            default=1.0,
+            name="PSM FDR level (%)",
+            widget_type="number",
+            min_value=0.001,
+            max_value=100.0,
+            step_size=1.0,
+            help="Keep PSMs with a q-value up to this level. 100% disables FDR filtering "
+                 "and passes every PSM on unfiltered.",
+        )
+
+    def psm_fdr(self) -> float:
+        """PSM FDR threshold as a fraction (1.0 means no filtering)."""
+        return min(float(self.params.get("psm-fdr-percent", 1.0)), 100.0) / 100.0
+
+    def filter_psms(self, in_files: list, out_files: list, tool_instance_name: str = "IDFilter") -> bool:
+        """Run IDFilter at the configured PSM FDR, or pass PSMs through at 100%."""
+        fdr = self.psm_fdr()
+        if fdr >= 1.0:
+            self.logger.log("FDR level is 100%: skipping PSM FDR filtering")
+            for src, dst in zip(in_files, out_files):
+                shutil.copy(src, dst)
+            return True
+        return self.executor.run_topp(
+            "IDFilter",
+            {"in": in_files, "out": out_files},
+            {"score:type_peptide": "q-value", "score:psm": fdr},
+            tool_instance_name=tool_instance_name,
+        )
+
     def render_lfq_tabs(self):
         st.subheader("LFQ Analysis Mode")
         t = st.tabs(["**Identification**", "**Rescoring**", "**Filtering**", "**Library Generation**", "**Quantification**", "**Group Selection**"])
@@ -81,7 +182,7 @@ class WorkflowTest(WorkflowManager):
                 default=True,
                 name="Generate Decoy Database",
                 widget_type="checkbox",
-                help="Generate reversed decoy sequences for FDR calculation. Disable if your FASTA already contains decoys.",
+                help="Generate decoy sequences for FDR calculation. Switched off automatically when the selected FASTA already contains decoys (e.g. DECOY_ or rev_ accessions).",
                 reactive=True,
             )
 
@@ -186,18 +287,16 @@ class WorkflowTest(WorkflowManager):
         with t[2]:
             st.info("""
             **Filtering (IDFilter):**
-            * **score:type_peptide**: Score used for filtering. If empty, the main score is used.
-            * **score:psm**: The score which should be reached by a peptide hit to be kept. (use 'NAN' to disable this filter)
+            PSMs are filtered on their Percolator q-value at the FDR level below.
+            Set it to 100% to keep all PSMs.
             """)
+            self.render_psm_fdr_widget()
             self.ui.input_TOPP(
                 "IDFilter",
                 custom_defaults={
                     "threads": 2,
-                    "score:type_peptide": "q-value",
-                    "score:psm": 0.10,
                 },
-                # include_parameters=["type_peptide", "score:psm"]
-                exclude_parameters=["type_protein"],
+                exclude_parameters=["type_protein", "type_peptide", "score:psm"],
             )
 
         with t[3]:  # Library Generation
@@ -345,7 +444,7 @@ class WorkflowTest(WorkflowManager):
                 default=True,
                 name="Generate Decoy Database",
                 widget_type="checkbox",
-                help="Generate reversed decoy sequences for FDR calculation. Disable if your FASTA already contains decoys.",
+                help="Generate decoy sequences for FDR calculation. Switched off automatically when the selected FASTA already contains decoys (e.g. DECOY_ or rev_ accessions).",
                 reactive=True,
             )
 
@@ -465,12 +564,15 @@ class WorkflowTest(WorkflowManager):
             )
 
         with t[3]:
+            st.info("""
+            **Filtering (IDFilter):**
+            PSMs are filtered on their Percolator q-value at the FDR level below.
+            Set it to 100% to keep all PSMs.
+            """)
+            self.render_psm_fdr_widget()
             self.ui.input_TOPP(
                 "IDFilter",
-                custom_defaults={
-                    "score:type_peptide": "q-value",
-                    "score:psm": 0.10,
-                },
+                exclude_parameters=["type_peptide", "score:psm"],
                 tool_instance_name="IDFilter-strict",
             )
         with t[4]:
@@ -663,8 +765,9 @@ class WorkflowTest(WorkflowManager):
             st.success(f"Using decoy FASTA: {decoy_fasta.name}")
             database_fasta = decoy_fasta
         else:
-            # Get decoy_string from CometAdapter params
-            decoy_string = self.params.get("CometAdapter", {}).get("PeptideIndexing:decoy_string", "rev_")
+            # Get decoy_string from the active mode's CometAdapter params
+            comet_instance = "CometAdapter-TMT" if self.params.get("analysis-mode", "LFQ") == "TMT" else "CometAdapter"
+            decoy_string = self.params.get(comet_instance, {}).get("PeptideIndexing:decoy_string", "rev_")
             self.logger.log("📄 Using existing FASTA database")
             st.info(f"Using original FASTA: {fasta_path.name}")
             database_fasta = fasta_path
@@ -930,13 +1033,7 @@ class WorkflowTest(WorkflowManager):
             # --- IDFilter ---
             self.logger.log("🔧 Filtering identifications...")
             with st.spinner(f"IDFilter ({stem})"):
-                if not self.executor.run_topp(
-                    "IDFilter",
-                    {
-                        "in": percolator_results,
-                        "out": filter_results,
-                    },
-                ):
+                if not self.filter_psms(percolator_results, filter_results):
                     self.logger.log("Workflow stopped due to error")
                     return False
 
@@ -1339,6 +1436,7 @@ class WorkflowTest(WorkflowManager):
                         "in": comet_results,
                         "out": percolator_results,
                     },
+                    {"decoy_pattern": decoy_string},  # Always propagated from upstream
                     tool_instance_name="PercolatorAdapter-TMT",
                 ):
                     self.logger.log("Workflow stopped due to error")
@@ -1422,14 +1520,7 @@ class WorkflowTest(WorkflowManager):
             # --- IDFilter ---
             self.logger.log("🔧 Filtering identifications...")
             with st.spinner(f"IDFilter"):
-                if not self.executor.run_topp(
-                    "IDFilter",
-                    {
-                        "in": percolator_results,
-                        "out": psm_filtered,
-                    },
-                    tool_instance_name="IDFilter-strict"
-                ):
+                if not self.filter_psms(percolator_results, psm_filtered, "IDFilter-strict"):
                     self.logger.log("Workflow stopped due to error")
                     return False
             self.logger.log("✅ IDFilter-strict complete")
@@ -1550,6 +1641,7 @@ class WorkflowTest(WorkflowManager):
                         "in": [merged_id],
                         "out": [protein_id],
                     },
+                    {"picked_decoy_string": decoy_string},  # Always propagated from upstream
                     tool_instance_name="ProteinInference-TMT",
                 ):
                     self.logger.log("Workflow stopped due to error")

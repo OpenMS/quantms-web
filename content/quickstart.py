@@ -1,8 +1,8 @@
 """
-DDA Label-Free Quantification Quickstart Page.
+OpenDDA Quickstart Page.
 
-This page provides an overview of the DDA-LFQ workflow and guidance
-for getting started with the analysis pipeline.
+This page provides an overview of the DDA quantification workflows (label-free
+and TMT) and guidance for getting started with the analysis pipeline.
 """
 
 from pathlib import Path
@@ -27,7 +27,7 @@ def render_windows_download_box(app_bytes: bytes) -> None:
     st.markdown(
         """
         <h4 style="color: #6c757d; margin-bottom: 1rem; font-size: 1.3rem; font-weight: 600; text-align: center;">
-            Want to run free and open DDA analysis offline?
+            Want to run free and open DDA analysis (LFQ and TMT) offline?
         </h4>
         """,
         unsafe_allow_html=True,
@@ -93,7 +93,7 @@ def render_windows_download_box(app_bytes: bytes) -> None:
 
 page_setup(page="main")
 
-st.markdown("# DDA Label-Free Quantification")
+st.markdown("# OpenDDA: DDA Quantitative Proteomics")
 
 windows_app_bytes = load_windows_app_bytes()
 if windows_app_bytes is not None:
@@ -101,32 +101,56 @@ if windows_app_bytes is not None:
 
 st.markdown(
     """
-This application provides a complete **Data-Dependent Acquisition (DDA) Label-Free Quantification**
-workflow for proteomics data analysis. The pipeline enables identification and quantification of
-proteins from mass spectrometry data.
+This application provides complete **Data-Dependent Acquisition (DDA)** quantification
+workflows for proteomics data analysis. The pipeline identifies and quantifies proteins
+from mass spectrometry data and supports two quantification strategies:
+
+- **Label-free quantification (LFQ)**: compares precursor intensities across separately measured samples.
+- **Tandem Mass Tag (TMT) quantification**: compares reporter-ion intensities of multiplexed samples measured in one run.
+
+Choose the **Analysis Mode** (LFQ or TMT) on the Configure page.
 """
 )
 
 st.info(
-    "This workflow mirrors the **dda-lfq branch of the quantms Nextflow workflow** "
-    "for DDA-based label-free quantification."
+    "These workflows mirror the **DDA-LFQ and DDA-ISO (TMT) branches of the quantms Nextflow workflow**."
 )
 
 st.markdown("## Workflow Overview")
 
-st.markdown(
-    """
-The analysis pipeline consists of five main stages:
+lfq_col, tmt_col = st.columns(2)
 
-| Stage | Tool | Description |
-|-------|------|-------------|
-| **1. Identification** | Comet | Peptide-spectrum matching using a protein database |
-| **2. Rescoring** | Percolator | Statistical validation using machine learning |
-| **3. Filtering** | IDFilter | FDR-controlled filtering of identifications |
-| **4. Quantification** | ProteomicsLFQ | Label-free quantification across samples |
-| **5. Statistical Analysis** | Built-in | Volcano plots, PCA, and heatmaps |
+with lfq_col:
+    st.markdown(
+        """
+### Label-free (LFQ)
+
+| Stage | Tool |
+|-------|------|
+| **1. Identification** | Comet |
+| **2. Rescoring** | Percolator |
+| **3. Filtering** | IDFilter |
+| **4. Quantification** | ProteomicsLFQ |
+| **5. Statistical Analysis** | Built-in |
 """
-)
+    )
+
+with tmt_col:
+    st.markdown(
+        """
+### TMT
+
+| Stage | Tool |
+|-------|------|
+| **1. Reporter extraction** | IsobaricAnalyzer |
+| **2. Identification** | Comet |
+| **3. Rescoring** | Percolator |
+| **4. Filtering** | IDFilter |
+| **5. Protein inference** | ProteinInference |
+| **6. Quantification** | ProteinQuantifier |
+| **7. Statistical Analysis** | Built-in |
+"""
+    )
 
 st.markdown("## Getting Started")
 
@@ -143,7 +167,7 @@ st.page_link("content/workflow_fileupload.py", label="Go to File Upload", icon="
 st.markdown(
     """
 ### 2. Configure Parameters
-Set up search parameters, sample groups, and analysis settings.
+Choose LFQ or TMT, then set up search parameters, sample groups (or TMT channels), and analysis settings.
 """
 )
 st.page_link("content/workflow_configure.py", label="Go to Configure", icon="⚙️")
