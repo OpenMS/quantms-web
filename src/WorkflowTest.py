@@ -140,7 +140,7 @@ class WorkflowTest(WorkflowManager):
     def render_psm_fdr_widget(self) -> None:
         self.ui.input_widget(
             key="psm-fdr-percent",
-            default=10.0,
+            default=1.0,
             name="PSM FDR level (%)",
             widget_type="number",
             min_value=0.001,
@@ -152,7 +152,7 @@ class WorkflowTest(WorkflowManager):
 
     def psm_fdr(self) -> float:
         """PSM FDR threshold as a fraction (1.0 means no filtering)."""
-        return min(float(self.params.get("psm-fdr-percent", 10.0)), 100.0) / 100.0
+        return min(float(self.params.get("psm-fdr-percent", 1.0)), 100.0) / 100.0
 
     def filter_psms(self, in_files: list, out_files: list, tool_instance_name: str = "IDFilter") -> bool:
         """Run IDFilter at the configured PSM FDR, or pass PSMs through at 100%."""
