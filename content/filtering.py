@@ -152,6 +152,8 @@ if st.button("Apply Filter", type="primary"):
     # Collect the evaluated lazy graph and convert back to Pandas for visualization
     filtered_df = strip_stat_columns(filtered_lazy.collect().to_pandas())
     st.session_state["filtered_df"] = filtered_df
+    for key in ("imputed_df", "normalized_df", "statistics_df"):
+        st.session_state.pop(key, None)
 
     # Layout response metrics and the filtered matrix
     st.success(f"Successfully applied **{filter_method}** filter!")

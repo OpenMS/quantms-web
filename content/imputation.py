@@ -137,6 +137,8 @@ if st.button("Apply Imputation", type="primary"):
 
     # 💾 Save current output into Session State for down-stream processing (Normalization, Statistics)
     st.session_state["imputed_df"] = imputed_df
+    for key in ("normalized_df", "statistics_df"):
+        st.session_state.pop(key, None)
 
     st.success(f"Successfully finalized **{impute_category}** imputation step!")
 
