@@ -228,6 +228,7 @@ if st.button("Apply Normalization Pipelines", type="primary"):
 
         # 💾 Save processing checkpoint inside Session State for Downstream (Statistics Block)
         st.session_state["normalized_df"] = normalized_df
+        st.session_state.pop("statistics_df", None)
 
         st.success("Successfully executed all selected normalization pipelines!")
 
