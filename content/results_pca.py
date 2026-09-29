@@ -2,7 +2,7 @@
 import pandas as pd
 import polars as pl
 import streamlit as st
-from src.common.common import page_setup
+from src.common.common import page_setup, show_insight_table
 from src.common.results_helpers import get_abundance_data, get_id_column, get_sample_group_map
 from openms_insight import PCAPlot
 
@@ -86,7 +86,7 @@ st.markdown(
     f"Currently analyzing **{base_df.shape[0]}** rows across **{len(sample_cols)}** samples "
     f"belonging to **{len(unique_groups)} groups** ({', '.join(unique_groups)})."
 )
-st.dataframe(base_df, use_container_width=True)
+show_insight_table(base_df, key="pca-input")
 
 st.markdown("---")
 

@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas as pd
 import polars as pl
 import streamlit as st
-from src.common.common import page_setup
+from src.common.common import page_setup, show_insight_table
 from src.common.results_helpers import get_abundance_data, get_id_column, get_sample_group_map
 # Import statistics engine functions from openms_insight
 from openms_insight.analysis.statistics import calculate_statistical_tests, adjust_fdr_lazy
@@ -80,7 +80,7 @@ st.subheader("Input Table Overview")
 st.markdown(
     f"Currently analyzing **{base_df.shape[0]}** rows across **{len(sample_cols)}** samples belonging to **{group_count} groups** ({', '.join(unique_groups)})."
 )
-st.dataframe(base_df, use_container_width=True)
+show_insight_table(base_df, key="statistical-input")
 
 st.markdown("---")
 
@@ -154,13 +154,18 @@ if st.button("Run Statistical Analysis", type="primary"):
         st.session_state["statistics_df"] = statistics_df
         
         st.success(f"Successfully calculated **{selected_method}** test with **{selected_fdr}** FDR correction!")
-        
-        # Display the finalized statistics table view
-        st.subheader("Statistical Analysis Results")
-        st.markdown(f"Generated framework containing columns: `{id_col}`, `log2FC`, `stat`, `p-value`, `p-adj`")
-        st.dataframe(statistics_df, use_container_width=True)
-        
+
     except ValueError as val_err:
         st.error(f"Engine Validation Fallure: {str(val_err)}")
     except Exception as e:
         st.error(f"An unexpected pipeline error occurred: {str(e)}")
+
+# Results are rendered from session state, outside the button block: the Insight
+# table triggers a rerun the first time it is drawn, which would reset the button
+# and wipe anything shown only while it is pressed.
+statistics_df = st.session_state.get("statistics_df")
+if statistics_df is not None:
+    # Display the finalized statistics table view
+    st.subheader("Statistical Analysis Results")
+    st.markdown(f"Generated framework containing columns: `{id_col}`, `log2FC`, `stat`, `p-value`, `p-adj`")
+    show_insight_table(statistics_df, key="statistical-result")

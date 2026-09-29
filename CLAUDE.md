@@ -169,5 +169,7 @@ docker-compose up --build
 - Widget keys must match parameter keys in `default-parameters.json`
 - Workflow names use lowercase with hyphens: "My Workflow" -> "my-workflow"
 - Use `show_fig()` and `show_table()` from `src/common/common.py` for consistent display
+- Show DataFrames with `show_insight_table(df, key=...)` (or `show_table()`), not `st.dataframe()`: it uses OpenMS-Insight's server-side-paginated `Table`, so only the visible page is sent to the browser. `st.dataframe` serializes the whole frame and is extremely slow on full-scale datasets. Only use it for tiny fixed-size previews (e.g. `.head(10)`)
+- Insight components request a rerun the first time they render, so never draw them only inside `if st.button(...):`. Store the result in `st.session_state` and render it outside the button block
 - Use `@st.fragment` on methods that should partially rerun (configure, results)
 - TOPP tool parameters use colon-separated paths: `"algorithm:section:param_name"`

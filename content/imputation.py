@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas as pd
 import polars as pl
 import streamlit as st
-from src.common.common import page_setup
+from src.common.common import page_setup, show_insight_table
 from src.common.results_helpers import get_abundance_data, get_id_column, get_sample_group_map
 
 # Import imputation algorithms from openms_insight engine
@@ -69,7 +69,7 @@ st.subheader("Input Matrix Overview")
 st.markdown(
     f"Currently analyzing **{base_df.shape[0]}** rows across **{len(sample_cols)}** samples before imputation."
 )
-st.dataframe(base_df, use_container_width=True)
+show_insight_table(base_df, key="imputation-input")
 
 st.markdown("---")
 
@@ -140,6 +140,10 @@ if st.button("Apply Imputation", type="primary"):
 
     st.success(f"Successfully finalized **{impute_category}** imputation step!")
 
-    # Calculate and display a quick performance matrix check
+# Results are rendered from session state, outside the button block: the Insight
+# table triggers a rerun the first time it is drawn, which would reset the button
+# and wipe anything shown only while it is pressed.
+imputed_df = st.session_state.get("imputed_df")
+if imputed_df is not None:
     st.subheader("Imputed Result Table")
-    st.dataframe(imputed_df, use_container_width=True)
+    show_insight_table(imputed_df, key="imputation-result")
