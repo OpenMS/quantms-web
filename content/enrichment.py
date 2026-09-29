@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas as pd
 import polars as pl
 import streamlit as st
-from src.common.common import page_setup
+from src.common.common import page_setup, show_insight_table
 from src.common.results_helpers import get_abundance_data, get_id_column
 # Import GO Enrichment modules from openms_insight engine
 from openms_insight.analysis.enrichment import calculate_go_enrichment
@@ -136,6 +136,6 @@ if st.button("🚀 Run GO Enrichment Analysis", type="primary", key="run_go_anal
                     st.plotly_chart(fig, use_container_width=True)
                     
                     st.subheader(f"📊 {go_type} Results Dataframe")
-                    st.dataframe(df_go, use_container_width=True)
+                    show_insight_table(df_go, key=f"enrichment-go-{go_type}", height=350)
                 else:
                     st.info(f"No statistically overrepresented terms identified for Category: **{go_type}**")

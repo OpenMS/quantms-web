@@ -1,10 +1,13 @@
 import os
+import re
 import sys
 import uuid
 import json
 import time
 import psutil
 import shutil
+import hashlib
+import tempfile
 
 import pandas as pd
 import streamlit as st
@@ -885,20 +888,155 @@ def display_large_dataframe(
         return base_index + rows[0]
 
 
-def show_table(df: pd.DataFrame, download_name: str = "") -> None:
+# Name of the hidden unique row-id column used as the Insight Table index field.
+_INSIGHT_ROW_ID = "__row_id__"
+# Rows sampled when fingerprinting a dataframe for cache invalidation.
+_FINGERPRINT_SAMPLE_ROWS = 2000
+# Bump when the generated Table configuration changes so old caches are rebuilt.
+_INSIGHT_TABLE_VERSION = 1
+
+
+def _insight_table_cache_dir() -> Path:
+    """Directory holding OpenMS-Insight table caches for the active workspace."""
+    workspace = st.session_state.get("workspace")
+    base = Path(workspace) if workspace else Path(tempfile.gettempdir(), "quantms-web")
+    return base / "insight_tables"
+
+
+def _fingerprint_dataframe(df: pd.DataFrame) -> str:
+    """Cheap content hash of a dataframe, used to detect when a table must be re-cached.
+
+    Hashing every cell on every Streamlit rerun would defeat the purpose for
+    large tables, so this combines the shape/schema, the column sums and an
+    evenly spaced sample of rows (always including the first and last row).
     """
-    Displays a pandas dataframe using Streamlit's `dataframe` function and
-    provides a download button for the same table.
+    digest = hashlib.sha256(str(_INSIGHT_TABLE_VERSION).encode())
+    digest.update(repr((df.shape, [str(c) for c in df.columns], [str(t) for t in df.dtypes])).encode())
+    digest.update(df.select_dtypes(include="number").sum().to_numpy(dtype="float64").tobytes())
+    if len(df):
+        step = max(len(df) // _FINGERPRINT_SAMPLE_ROWS, 1)
+        rows = df.iloc[::step].astype(str)
+        digest.update(pd.util.hash_pandas_object(rows, index=False).values.tobytes())
+        digest.update(df.iloc[[-1]].astype(str).to_csv(index=False).encode())
+    return digest.hexdigest()[:16]
+
+
+def _to_insight_frame(df: pd.DataFrame):
+    """Convert a pandas dataframe into a Polars frame plus Tabulator column definitions.
+
+    - a named/non-default index becomes a regular column (it usually holds the IDs)
+    - column names are stringified and made unique; Tabulator treats "." in a
+      field name as a nested path, so it is replaced in the field (the title
+      keeps the original name)
+    - object columns with mixed types are stringified so Arrow can store them
+    - a hidden unique row-id column is added as the Table's index field
+    """
+    import polars as pl
+
+    if not isinstance(df.index, pd.RangeIndex):
+        df = df.reset_index()
+
+    titles = [str(c) for c in df.columns]
+    fields, seen = [], set()
+    for title in titles:
+        field = title.replace(".", "_")
+        while field in seen or field == _INSIGHT_ROW_ID:
+            field += "_"
+        seen.add(field)
+        fields.append(field)
+    df = df.set_axis(fields, axis=1)
+
+    try:
+        pl_df = pl.from_pandas(df)
+    except Exception:
+        object_cols = df.select_dtypes(include="object").columns
+        pl_df = pl.from_pandas(df.astype({c: str for c in object_cols}))
+
+    column_definitions = []
+    for title, field, dtype in zip(titles, fields, pl_df.dtypes):
+        definition = {"field": field, "title": title, "headerTooltip": True}
+        if dtype.is_numeric():
+            definition.update(sorter="number", hozAlign="right")
+        else:
+            definition.update(sorter="string", hozAlign="left")
+        column_definitions.append(definition)
+
+    return pl_df.with_row_index(_INSIGHT_ROW_ID), column_definitions
+
+
+
+def show_insight_table(
+    df: pd.DataFrame,
+    key: str,
+    height: int = 480,
+    page_size: int = 100,
+    cache_dir: Path | None = None,
+) -> None:
+    """
+    Displays a pandas dataframe with the OpenMS-Insight `Table` component.
+
+    `st.dataframe` serializes the whole dataframe to the browser on every
+    rerun, which gets extremely slow for full-scale datasets. This component
+    caches the data on disk as parquet and only sends the requested page to the
+    browser (server-side pagination, sorting and filtering).
+
+    The on-disk cache is keyed on the table's content: it is written once per
+    distinct dataframe and reused on every rerun, and caches of older versions
+    of the same table are removed when the data changes.
+
+    Args:
+        df: The pandas dataframe to display.
+        key: Stable name for this table (unique per table on the app, e.g.
+            "filtering-original"). Must not contain "--".
+        height: Component height in pixels.
+        page_size: Rows fetched per page.
+        cache_dir: Cache location. Defaults to the active workspace.
+    """
+    from openms_insight import Table
+    from openms_insight.core.cache import get_cache_dir
+
+    cache_dir = Path(cache_dir) if cache_dir else _insight_table_cache_dir()
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    safe_key = re.sub(r"[^A-Za-z0-9_-]", "_", key)
+    cache_id = f"{safe_key}--{_fingerprint_dataframe(df)}"
+
+    if (get_cache_dir(str(cache_dir), cache_id) / "manifest.json").exists():
+        # Unchanged data: restore from the cache, no preprocessing.
+        table = Table(cache_id=cache_id, cache_path=str(cache_dir))
+    else:
+        pl_df, column_definitions = _to_insight_frame(df)
+        table = Table(
+            cache_id=cache_id,
+            data=pl_df.lazy(),
+            cache_path=str(cache_dir),
+            column_definitions=column_definitions,
+            index_field=_INSIGHT_ROW_ID,
+            page_size=page_size,
+        )
+        # Drop caches of previous versions of this table.
+        for stale in cache_dir.glob(f"{safe_key}--*"):
+            if stale.name != cache_id and stale.is_dir():
+                shutil.rmtree(stale, ignore_errors=True)
+
+    table(height=height)
+
+
+def show_table(df: pd.DataFrame, download_name: str = "", key: str | None = None) -> None:
+    """
+    Displays a pandas dataframe with the OpenMS-Insight `Table` component
+    (server-side pagination, see `show_insight_table`) and provides a download
+    button for the same table.
 
     Args:
         df (pd.DataFrame): The pandas dataframe to display.
         download_name (str): The name to give to the downloaded file. Defaults to empty string.
+        key (str): Unique name of the table. Defaults to `download_name`.
 
     Returns:
-        df (pd.DataFrame): The possibly edited dataframe.
+        df (pd.DataFrame): The dataframe.
     """
-    # Show dataframe using container width
-    st.dataframe(df, use_container_width=True)
+    show_insight_table(df, key=key or download_name or "table")
     # Show download button with the given download name for the table if name is given
     if download_name:
         st.download_button(
