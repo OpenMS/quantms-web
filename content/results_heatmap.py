@@ -3,7 +3,14 @@ import streamlit as st
 import numpy as np
 import polars as pl
 from src.common.common import page_setup
-from src.common.results_helpers import get_abundance_data, get_id_column, get_sample_group_map
+from src.common.results_helpers import (
+    get_abundance_data,
+    get_active_table,
+    get_id_column,
+    get_sample_group_map,
+    log2_matrix,
+    show_pipeline_banner,
+)
 from openms_insight import Heatmap
 
 params = page_setup()
@@ -29,6 +36,14 @@ if result is None:
 pivot_df, expr_df, group_map = result
 id_col = get_id_column(st.session_state["workspace"], pivot_df)
 sample_group_map = get_sample_group_map(st.session_state["workspace"], pivot_df, group_map)
+
+# Plot the same protein table as PCA and Statistics: the latest downstream
+# step's output, on a log2 scale, proteins with any missing value dropped.
+show_pipeline_banner()
+base_df, _, is_log2 = get_active_table(pivot_df)
+# expr_df from the workflow lists exactly the sample columns in both LFQ and TMT mode
+sample_cols = [c for c in expr_df.columns if c in base_df.columns]
+expr_df = log2_matrix(base_df, id_col, sample_cols, is_log2).dropna()
 
 if expr_df.empty:
     st.info("No data available for heatmap.")
@@ -71,6 +86,8 @@ if not heatmap_z.empty:
     # Initialize the OpenMS-Insight Heatmap component and map attributes
     heatmap_component = Heatmap(
         cache_id="quantms_protein_heatmap",
+        # Data changes whenever an upstream step reruns; rebuild rather than reuse
+        regenerate_cache=True,
         x_column="Sample",
         y_column=id_col,
         data=heatmap_pl_lazy,
@@ -89,6 +106,10 @@ if not heatmap_z.empty:
     # Render the component
     state_manager = st.session_state.get("state")
     heatmap_component(state_manager=state_manager)
+    st.caption(
+        "The most variable proteins (rows) across samples (columns), each row scaled to its own mean "
+        "(Z-score): red is above, blue below that protein's average. Blocks of color that follow the sample groups show group-specific proteins."
+    )
 else:
     st.warning("Insufficient data to generate the heatmap.")
 

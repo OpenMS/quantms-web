@@ -3,7 +3,13 @@ import pandas as pd
 import polars as pl
 import streamlit as st
 from src.common.common import page_setup
-from src.common.results_helpers import get_abundance_data, get_id_column, get_sample_group_map
+from src.common.results_helpers import (
+    get_abundance_data,
+    get_active_table,
+    get_id_column,
+    get_sample_group_map,
+    show_pipeline_banner,
+)
 from openms_insight import PCAPlot
 
 params = page_setup()
@@ -31,37 +37,9 @@ pivot_df, expr_df, group_map = result
 id_col = get_id_column(st.session_state["workspace"], pivot_df)
 sample_group_map = get_sample_group_map(st.session_state["workspace"], pivot_df, group_map)
 
-# --- STEP 1: Upstream Pipeline Tracker (Fallback Architecture) ---
-# Mirrors statistical.py: PCA should run on the most-processed data available.
-if (
-    "normalized_df" in st.session_state
-    and st.session_state["normalized_df"] is not None
-):
-    base_df = st.session_state["normalized_df"]
-    st.info(
-        "🔄 **Upstream Pipeline Detected**: Using data processed from the **Normalization** step."
-    )
-elif (
-    "imputed_df" in st.session_state
-    and st.session_state["imputed_df"] is not None
-):
-    base_df = st.session_state["imputed_df"]
-    st.warning(
-        "⚠️ **Normalization Skipped**: Using data processed from the **Imputation** step."
-    )
-elif (
-    "filtered_df" in st.session_state
-    and st.session_state["filtered_df"] is not None
-):
-    base_df = st.session_state["filtered_df"]
-    st.warning(
-        "⚠️ **Preprocessing Skipped**: Using data processed from the **Filtering** step."
-    )
-else:
-    base_df = pivot_df
-    st.warning(
-        "⚠️ **Raw Input Active**: No preprocessing history found. Operating on the original table."
-    )
+# --- STEP 1: Use the latest downstream step's output (same table as Statistics) ---
+show_pipeline_banner()
+base_df, _, _ = get_active_table(pivot_df)
 
 # 2. Extract active sample columns and detect unique biological groups
 sample_cols = [
@@ -131,6 +109,8 @@ pca_lazy = pl.from_pandas(expr_df_pca).lazy()
 try:
     pca_component = PCAPlot(
         cache_id="quantms_pca_plot",
+        # Data changes whenever an upstream step reruns; rebuild rather than reuse
+        regenerate_cache=True,
         data=pca_lazy,
         metadata=metadata_pl,
         sample_id_field="sample_id",
@@ -159,6 +139,10 @@ pc_y = int(pc_y_label.replace("PC", ""))
 # 5. Render the component
 state_manager = st.session_state.get("state")
 pca_component(state_manager=state_manager, pc_x=pc_x, pc_y=pc_y, height=600)
+st.caption(
+    "Each point is a sample, placed by its overall protein profile. Samples of one group should "
+    "cluster together and groups should separate; an isolated sample is a candidate outlier worth checking before statistics."
+)
 
 st.markdown(
     "**Explained variance:** "

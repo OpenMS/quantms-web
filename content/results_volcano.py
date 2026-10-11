@@ -2,7 +2,7 @@
 import streamlit as st
 import polars as pl
 from src.common.common import page_setup
-from src.common.results_helpers import get_abundance_data, get_id_column
+from src.common.results_helpers import get_abundance_data, get_id_column, show_pipeline_banner
 from openms_insight import VolcanoPlot
 
 params = page_setup()
@@ -26,6 +26,7 @@ if "statistics_df" not in st.session_state or st.session_state["statistics_df"] 
     st.stop()
 
 # Retrieve the completed statistical analysis DataFrame
+show_pipeline_banner(uses="statistics")
 statistics_df = st.session_state["statistics_df"]
 
 if statistics_df.empty:
@@ -65,6 +66,8 @@ p_thresh = st.slider(
 # 4. Initialize the OpenMS-Insight VolcanoPlot component
 volcano_plot_component = VolcanoPlot(
     cache_id="quantms_volcano_plot",
+    # Data changes whenever an upstream step reruns; rebuild rather than reuse
+    regenerate_cache=True,
     data=volcano_pl_lazy,
     log2fc_column="log2FC",
     pvalue_column="p-adj",
@@ -85,6 +88,10 @@ volcano_plot_component(
     p_threshold=p_thresh,
     max_labels=10,  # Display labels for the top N significant proteins
     height=600,
+)
+st.caption(
+    "Each point is a protein: effect size (log2 fold change) against significance (-log10 adjusted p-value). "
+    "Proteins beyond both thresholds are called up- or down-regulated; loosen the sliders to explore, tighten them for a high-confidence list."
 )
 
 # 6. Keep the existing statistical summary and bottom links
