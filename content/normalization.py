@@ -4,8 +4,15 @@ from pathlib import Path
 import pandas as pd
 import polars as pl
 import streamlit as st
-from src.common.common import page_setup
-from src.common.results_helpers import get_abundance_data, get_id_column, get_sample_group_map
+from src.common.common import page_setup, save_params, show_fig
+from src.common.postprocessing_plots import sample_distributions
+from src.common.results_helpers import (
+    clear_downstream_steps,
+    get_abundance_data,
+    get_id_column,
+    get_sample_group_map,
+    postprocessing_param,
+)
 # Import normalization engine functions from openms_insight
 from openms_insight.analysis.normalization import (
     normalize_samples,
@@ -23,7 +30,7 @@ def strip_stat_columns(df: pd.DataFrame | None) -> pd.DataFrame | None:
     return df.drop(columns=[c for c in STAT_COLUMNS if c in df.columns], errors="ignore")
 
 params = page_setup()
-st.title("Data Normalization & Scaling")
+st.title("Step 3 of 4: Normalization")
 
 st.markdown(
     """
@@ -145,23 +152,39 @@ metadata_pl = pl.DataFrame(
     metadata_rows, schema={"sample_id": pl.String, "group": pl.String}
 )
 
+st.caption(
+    "Recommended: log2 transformation, median normalization and no row scaling. "
+    "Statistical Inference reports the difference of group means as log2FC, so "
+    "it expects log2-scaled intensities; median normalization shifts each sample "
+    "by a constant and is only meaningful on a log scale; row scaling removes the "
+    "fold changes the volcano plot shows."
+)
+
 col1, col2, col3 = st.columns(3)
 
 with col1:
     st.markdown("### 🧬 1. Mathematical Transformation")
+    transform_options = ["None", "log2", "log10", "square_root", "cube_root"]
     transform_strategy = st.selectbox(
         "Select Transformation",
-        options=["None", "log2", "log10", "square_root", "cube_root"],
-        index=0,
+        options=transform_options,
+        index=transform_options.index(
+            postprocessing_param(params, "postproc-transform", transform_options)
+        ),
+        key="postproc-transform",
         help="Compress data dynamic range and stabilize heteroscedastic variance profiles.",
     )
 
 with col2:
     st.markdown("### 🧪 2. Sample Normalization")
+    norm_options = ["None", "sum", "median", "pqn", "reference_feature", "quantile"]
     norm_strategy = st.selectbox(
         "Select Normalization",
-        options=["None", "sum", "median", "pqn", "reference_feature", "quantile"],
-        index=0,
+        options=norm_options,
+        index=norm_options.index(
+            postprocessing_param(params, "postproc-normalization", norm_options)
+        ),
+        key="postproc-normalization",
         help="Perform column-wise corrections to account for variable sample loading concentrations.",
     )
 
@@ -177,13 +200,64 @@ with col2:
 
 with col3:
     st.markdown("### 📊 3. Row Scaling")
+    scaling_options = ["None", "mean_centering", "auto_scaling", "pareto_scaling", "range_scaling"]
     scaling_strategy = st.selectbox(
         "Select Scaling Mode",
-        options=["None", "mean_centering", "auto_scaling", "pareto_scaling", "range_scaling"],
-        index=0,
+        options=scaling_options,
+        index=scaling_options.index(
+            postprocessing_param(params, "postproc-scaling", scaling_options)
+        ),
+        key="postproc-scaling",
         help="Adjust individual feature weights to make low and high abundance proteins comparable.",
     )
 
+save_params(params)
+
+
+def run_normalization() -> pl.LazyFrame:
+    """Chain the selected transformation, sample normalization and row scaling."""
+    processing_lazy = transform_data(
+        quantification_data=pl.from_pandas(base_df).lazy(),
+        metadata=metadata_pl,
+        strategy=transform_strategy,
+    )
+    processing_lazy = normalize_samples(
+        quantification_data=processing_lazy,
+        metadata=metadata_pl,
+        strategy=norm_strategy,
+        id_col=id_col,
+        reference_feature=ref_feature_input if norm_strategy == "reference_feature" else None,
+    )
+    return scale_data(
+        quantification_data=processing_lazy,
+        metadata=metadata_pl,
+        strategy=scaling_strategy,
+    )
+
+
+grouped_samples = metadata_pl["sample_id"].to_list()
+with st.expander("📈 Help me choose a method", expanded=True):
+    st.caption(
+        "Each box is one sample's intensity distribution, before (top) and after "
+        "(bottom) the current settings. After a good normalization the medians line up; a sample that stays offset may have a loading or acquisition problem."
+    )
+    if not grouped_samples:
+        st.info("Assign sample groups in Configure to see this plot.")
+    else:
+        try:
+            preview_df = run_normalization().collect().to_pandas()
+            show_fig(
+                sample_distributions(
+                    base_df,
+                    preview_df,
+                    grouped_samples,
+                    sample_group_map,
+                    after_is_log=transform_strategy in ("log2", "log10"),
+                ),
+                "normalization-preview",
+            )
+        except ValueError as preview_err:
+            st.info(f"Preview unavailable: {preview_err}")
 
 # --- SECTION 3: Normalization Pipe Sequential Execution ---
 st.markdown("<br>", unsafe_allow_html=True)
@@ -196,38 +270,16 @@ if st.button("Apply Normalization Pipelines", type="primary"):
         )
         st.stop()
 
-    # Convert pandas memory buffer into optimization lazy dataframe tree graph
-    processing_lazy = pl.from_pandas(base_df).lazy()
-
-    # Execute Chain 1: Transform Matrix Data
     try:
-        processing_lazy = transform_data(
-            quantification_data=processing_lazy,
-            metadata=metadata_pl,
-            strategy=transform_strategy,
-        )
-
-        # Execute Chain 2: Normalize Sample Intensities (Columns)
-        processing_lazy = normalize_samples(
-            quantification_data=processing_lazy,
-            metadata=metadata_pl,
-            strategy=norm_strategy,
-            id_col=id_col,
-            reference_feature=ref_feature_input if norm_strategy == "reference_feature" else None,
-        )
-
-        # Execute Chain 3: Scale Individual Features (Rows)
-        processing_lazy = scale_data(
-            quantification_data=processing_lazy,
-            metadata=metadata_pl,
-            strategy=scaling_strategy,
-        )
+        processing_lazy = run_normalization()
 
         # Finalize and collect pipeline query graph optimizations
         normalized_df = strip_stat_columns(processing_lazy.collect().to_pandas())
 
         # 💾 Save processing checkpoint inside Session State for Downstream (Statistics Block)
         st.session_state["normalized_df"] = normalized_df
+        clear_downstream_steps("normalized_df")
+        st.session_state["normalized_transform"] = transform_strategy
 
         st.success("Successfully executed all selected normalization pipelines!")
 
