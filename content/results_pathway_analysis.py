@@ -8,7 +8,8 @@ import plotly.io as pio
 from collections import defaultdict        
 from scipy.stats import fisher_exact
 from pathlib import Path
-from src.common.common import page_setup, show_insight_table
+from src.common.common import page_setup
+from src.common.insight_tables import show_insight_table
 from src.common.results_helpers import get_abundance_data
 
 # ================================
@@ -216,7 +217,7 @@ with protein_tab:
         st.info("No protein-level data available.")
     else:
         st.session_state["pivot_df"] = pivot_df
-        show_insight_table(pivot_df.sort_values("p-value"), key="pathway-protein")
+        show_insight_table(pivot_df.sort_values("p-value"), name="pathway-protein")
 
 # ======================================================
 # GO Enrichment Results 
@@ -255,4 +256,4 @@ else:
                 st.plotly_chart(fig, width="stretch")
                 
                 st.markdown(f"#### {go_type} Enrichment Results")
-                show_insight_table(df_go, key=f"pathway-go-{go_type}", height=350)
+                show_insight_table(df_go, name=f"pathway-go-{go_type}", height=350)

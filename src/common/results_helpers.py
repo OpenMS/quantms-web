@@ -1,4 +1,5 @@
 """Helper functions for results pages."""
+import json
 import re
 import pandas as pd
 import polars as pl
@@ -104,16 +105,53 @@ def extract_scan_number(native_id: str) -> int:
     return int(match.group(1)) if match else 0
 
 
-def extract_filename_from_idxml(idxml_path: Path) -> str:
-    """Derive mzML filename from idXML filename."""
+def extract_filename_from_idxml(idxml_path: Path, mzml_names=None) -> str:
+    """Derive the source mzML filename from an idXML filename.
+
+    The workflow names idXML files ``<mzML stem>_<step>...``, e.g.
+    ``02COVID_comet_perc_filter.idXML``. When the input mzML names are known the
+    longest one whose stem prefixes the idXML stem wins; otherwise the known
+    step suffixes are stripped from the end.
+    """
     stem = idxml_path.stem
-    for suffix in ['_comet', '_per', '_filter']:
-        stem = stem.replace(suffix, '')
-    return f"{stem}.mzML"
+    if mzml_names:
+        candidates = [
+            name for name in mzml_names
+            if stem == Path(name).stem or stem.startswith(f"{Path(name).stem}_")
+        ]
+        if candidates:
+            return max(candidates, key=len)
+    while True:
+        for suffix in ['_filter', '_perc', '_per', '_comet']:
+            if stem.endswith(suffix):
+                stem = stem[:-len(suffix)]
+                break
+        else:
+            return f"{stem}.mzML"
 
 
-def parse_idxml(idxml_path: Path) -> tuple[pl.DataFrame, list[str]]:
+ID_DF_SCHEMA = {
+    "id_idx": pl.Int64,
+    "scan_id": pl.Int64,
+    "file_index": pl.Int64,
+    "filename": pl.Utf8,
+    "sequence": pl.Utf8,
+    "charge": pl.Int64,
+    "mz": pl.Float64,
+    "rt": pl.Float64,
+    "score": pl.Float64,
+    "protein_accession": pl.Utf8,
+}
+
+
+def parse_idxml(idxml_path: Path, filename_to_index: dict | None = None) -> tuple[pl.DataFrame, list[str]]:
     """Parse idXML and return DataFrame for openms_insight.
+
+    Args:
+        idxml_path: idXML file of one run.
+        filename_to_index: Maps every input mzML filename to its file index in
+            the spectra cache. The PSMs get the index of their own run, so they
+            link to that run's spectra.
 
     Returns:
         Tuple of (id_df, spectra_data list of source filenames)
@@ -121,10 +159,10 @@ def parse_idxml(idxml_path: Path) -> tuple[pl.DataFrame, list[str]]:
     proteins, peptides = load_idxml(idxml_path)
 
     # Derive mzML filename from idXML filename (e.g., 02COVID_filter.idXML -> 02COVID.mzML)
-    spectra_data = [extract_filename_from_idxml(idxml_path)]
+    source = extract_filename_from_idxml(idxml_path, list(filename_to_index or []))
+    spectra_data = [source]
 
-    # Build filename to index mapping
-    filename_to_index = {Path(f).name: i for i, f in enumerate(spectra_data)}
+    run_index = (filename_to_index or {}).get(source, 0)
 
     records = []
     for pep in peptides:
@@ -136,9 +174,9 @@ def parse_idxml(idxml_path: Path) -> tuple[pl.DataFrame, list[str]]:
                 spec_ref = spec_ref.decode()
         scan_id = extract_scan_from_ref(spec_ref)
 
-        # Get file index from id_merge_index or derive from filename
-        file_index = pep.getMetaValue("id_merge_index") if pep.metaValueExists("id_merge_index") else 0
-        filename = spectra_data[file_index] if file_index < len(spectra_data) else ""
+        # One idXML holds one run, so every PSM belongs to that run's file index
+        file_index = run_index
+        filename = spectra_data[0]
 
         for h in pep.getHits():
             records.append({
@@ -154,15 +192,19 @@ def parse_idxml(idxml_path: Path) -> tuple[pl.DataFrame, list[str]]:
                 "protein_accession": ";".join([ev.getProteinAccession() for ev in h.getPeptideEvidences()]),
             })
 
-    return pl.DataFrame(records), spectra_data
+    # Keep the columns when nothing was identified, so callers selecting
+    # them get an empty table rather than a ColumnNotFoundError.
+    return pl.DataFrame(records, schema=ID_DF_SCHEMA), spectra_data
 
 
-def build_spectra_cache(mzml_dir: Path, filename_to_index: dict) -> tuple[pl.DataFrame, dict]:
+def build_spectra_cache(mzml_dir: Path, filename_to_index: dict, mzml_files=None) -> tuple[pl.DataFrame, dict]:
     """Extract MS2 spectra from mzML files and return DataFrame.
 
     Args:
         mzml_dir: Directory containing mzML files
         filename_to_index: Dict mapping filename to file_index
+        mzml_files: mzML paths to read. Defaults to every mzML in ``mzml_dir``;
+            pass the workflow inputs so referenced (not copied) files are found.
 
     Returns:
         Tuple of (spectra_df, updated filename_to_index)
@@ -170,7 +212,8 @@ def build_spectra_cache(mzml_dir: Path, filename_to_index: dict) -> tuple[pl.Dat
     records = []
     peak_id = 0
 
-    for mzml_path in sorted(mzml_dir.glob("*.mzML")):
+    paths = [Path(f) for f in mzml_files] if mzml_files else sorted(mzml_dir.glob("*.mzML"))
+    for mzml_path in paths:
         # Get or create file index
         if mzml_path.name not in filename_to_index:
             filename_to_index[mzml_path.name] = len(filename_to_index)
@@ -196,6 +239,31 @@ def build_spectra_cache(mzml_dir: Path, filename_to_index: dict) -> tuple[pl.Dat
                 peak_id += 1
 
     return pl.DataFrame(records), filename_to_index
+
+
+def write_psm_exports(id_df: pl.DataFrame, seq_view, export_dir: Path, prefix: str) -> None:
+    """Write one run's PSM table and per-scan fragment ion table as TSV.
+
+    ``<prefix>_psms.tsv`` holds every PSM with all its columns.
+    ``<prefix>_fragment_ions.tsv`` holds, for every PSM, each fragment ion the
+    SequenceView matched in its spectrum (same ion types, losses and tolerance
+    as the view), together with the PSM's run, RT, m/z, score and proteins.
+    """
+    export_dir.mkdir(parents=True, exist_ok=True)
+    id_df.write_csv(export_dir / f"{prefix}_psms.tsv", separator="\t")
+
+    fragments = seq_view.export_fragment_ions()
+    if fragments.height and "sequence_id" in fragments.columns and "id_idx" in id_df.columns:
+        psm_info = id_df.select(
+            pl.col("id_idx").cast(fragments.schema["sequence_id"]).alias("sequence_id"),
+            "filename",
+            "rt",
+            pl.col("mz").alias("precursor_mz"),
+            "score",
+            "protein_accession",
+        )
+        fragments = fragments.join(psm_info, on="sequence_id", how="left")
+    fragments.write_csv(export_dir / f"{prefix}_fragment_ions.tsv", separator="\t")
 
 
 @st.cache_data
@@ -439,3 +507,93 @@ def get_sample_group_map(workspace: Path, pivot_df: pd.DataFrame, group_map: dic
         if real_full_name:
             norm_map[real_full_name] = v if v and v.strip() else "Unassigned"
     return norm_map
+
+
+# Session-state keys of the postprocessing chain, in pipeline order.
+POSTPROCESSING_STEPS = ["filtered_df", "imputed_df", "normalized_df", "statistics_df"]
+
+
+def clear_downstream_steps(step: str) -> None:
+    """Drop the outputs of every postprocessing step after ``step``.
+
+    Re-applying a step changes the table the later steps were computed from,
+    so their stored results no longer match and must be recomputed.
+    """
+    for key in POSTPROCESSING_STEPS[POSTPROCESSING_STEPS.index(step) + 1:]:
+        st.session_state.pop(key, None)
+        if key == "normalized_df":
+            st.session_state.pop("normalized_transform", None)
+
+
+def postprocessing_param(params: dict, key: str, options: list | None = None):
+    """Return the stored value of a postprocessing widget, seeding the default.
+
+    Workspaces created before a key was added to ``default-parameters.json``
+    lack it in their ``params.json``; fall back to the shipped default and add
+    it to ``params`` so ``save_params`` persists the user's choice. When
+    ``options`` is given, a stored value that is no longer a valid option
+    (e.g. a two-group test after a third group was added) is replaced by the
+    first option.
+    """
+    if key not in params:
+        with open("default-parameters.json", "r", encoding="utf-8") as f:
+            params[key] = json.load(f)[key]
+    if options is not None:
+        if params[key] not in options:
+            params[key] = options[0]
+        if key in st.session_state and st.session_state[key] not in options:
+            del st.session_state[key]
+    return params[key]
+
+
+_STEP_LABELS = {
+    "filtered_df": "Filtering",
+    "imputed_df": "Imputation",
+    "normalized_df": "Normalization",
+    "statistics_df": "Statistics",
+}
+
+
+def get_active_table(pivot_df: pd.DataFrame) -> tuple[pd.DataFrame, str, bool]:
+    """Return the most-processed protein table of the downstream analysis.
+
+    Returns ``(table, source, is_log2)``: the output of the latest of
+    Filtering, Imputation and Normalization that has been applied (falling
+    back to the workflow's abundance table), the name of the step it came
+    from, and whether its intensities are already log2-scaled.
+    """
+    for key in ["normalized_df", "imputed_df", "filtered_df"]:
+        df = st.session_state.get(key)
+        if df is not None:
+            is_log2 = (
+                key == "normalized_df"
+                and st.session_state.get("normalized_transform", "log2") == "log2"
+            )
+            return df, _STEP_LABELS[key], is_log2
+    return pivot_df, "Workflow abundance table", False
+
+
+def show_pipeline_banner(uses: str = "table") -> None:
+    """Tell the user which downstream-analysis output a plot page is showing.
+
+    ``uses="table"`` reports the protein table from :func:`get_active_table`;
+    ``uses="statistics"`` reports the Statistics step output.
+    """
+    done = [label for key, label in _STEP_LABELS.items() if st.session_state.get(key) is not None]
+    steps = " → ".join(
+        f"{'✅' if label in done else '⬜'} {label}" for label in _STEP_LABELS.values()
+    )
+    if uses == "statistics":
+        source = "the **Statistics** step" if "Statistics" in done else "no statistics yet"
+    else:
+        applied = [label for label in done if label != "Statistics"]
+        source = f"the **{applied[-1]}** step output" if applied else "the **unprocessed** workflow abundance table"
+    st.info(f"Showing {source}.  \nDownstream analysis: {steps}")
+
+
+def log2_matrix(df: pd.DataFrame, id_col: str, sample_cols: list, is_log2: bool) -> pd.DataFrame:
+    """Protein x sample matrix on a log2 scale, zeros treated as missing."""
+    mat = df.set_index(id_col)[sample_cols].apply(pd.to_numeric, errors="coerce")
+    if not is_log2:
+        mat = np.log2(mat.where(mat > 0))
+    return mat

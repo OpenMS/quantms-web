@@ -1,0 +1,3 @@
+# MS data files carry byte offsets (indexed mzML); never convert line endings.
+*.mzML -text
+*.fasta -text
