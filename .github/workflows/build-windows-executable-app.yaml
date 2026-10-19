@@ -336,7 +336,7 @@ jobs:
 
         Reach out to us:
         - Join our Discord server for support and community discussions: https://discord.com/invite/4TAGhqJ7s5
-        - Contribute or stay updated with the latest OpenMS web app developments on GitHub: https://github.com/OpenMS/streamlit-template
+        - Contribute or stay updated with the latest OpenDDA developments on GitHub: https://github.com/OpenMS/quantms-web
         - Visit our website for more information: https://openms.de/
         
         Thank you for using ${{ env.APP_NAME }}!

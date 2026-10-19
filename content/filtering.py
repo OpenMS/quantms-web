@@ -4,8 +4,15 @@ from pathlib import Path
 import pandas as pd
 import polars as pl
 import streamlit as st
-from src.common.common import page_setup
-from src.common.results_helpers import get_abundance_data, get_id_column, get_sample_group_map
+from src.common.common import page_setup, save_params, show_fig
+from src.common.postprocessing_plots import filter_threshold_curve
+from src.common.results_helpers import (
+    clear_downstream_steps,
+    get_abundance_data,
+    get_id_column,
+    get_sample_group_map,
+    postprocessing_param,
+)
 
 # Import filtering functions from openms_insight package
 from openms_insight.analysis.filter import (
@@ -22,7 +29,7 @@ def strip_stat_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df.drop(columns=[c for c in STAT_COLUMNS if c in df.columns], errors="ignore")
 
 params = page_setup()
-st.title("Data Filtering")
+st.title("Step 1 of 4: Filtering")
 
 st.markdown(
     """
@@ -74,15 +81,23 @@ metadata_pl = pl.DataFrame(
     metadata_rows, schema={"sample_id": pl.String, "group": pl.String}
 )
 
-# User selection for filtering strategy
+# User selection for filtering strategy. The default keeps proteins quantified
+# in at least half of the samples of one group, which removes rows that
+# imputation would otherwise have to invent most values for.
+filter_options = ["Low Repeatability", "Low Abundance", "Low Variance"]
 filter_method = st.selectbox(
     "Select Filtering Method",
-    options=["Low Abundance", "Low Repeatability", "Low Variance"],
-    index=0,
-    help="Choose the statistical criteria to prune unreliable protein entries.",
+    options=filter_options,
+    index=filter_options.index(
+        postprocessing_param(params, "postproc-filter-method", filter_options)
+    ),
+    key="postproc-filter-method",
+    help="Choose the statistical criteria to prune unreliable protein entries. "
+    "Recommended: Low Repeatability with at most 50% missing values.",
 )
 
 # Render threshold sliders dynamically based on the selected filter method
+threshold = 0.0  # set by the slider of the selected method below
 if filter_method == "Low Abundance":
     st.markdown(
         "**Low Abundance Filter**: Keeps rows where at least one group's median is above the selected percentile threshold."
@@ -91,8 +106,9 @@ if filter_method == "Low Abundance":
         "Threshold Percentile (%)",
         min_value=0.0,
         max_value=100.0,
-        value=10.0,
+        value=float(postprocessing_param(params, "postproc-filter-abundance-percentile")),
         step=5.0,
+        key="postproc-filter-abundance-percentile",
     )
 
 elif filter_method == "Low Repeatability":
@@ -100,11 +116,12 @@ elif filter_method == "Low Repeatability":
         "**Low Repeatability Filter**: Keeps rows where at least one group has a missing value ratio within the allowed maximum."
     )
     threshold = st.slider(
-        "Max Missing Ratio",
+        "Max Missing Ratio (%)",
         min_value=0.0,
         max_value=100.0,
-        value=50.0,
+        value=float(postprocessing_param(params, "postproc-filter-max-missing")),
         step=5.0,
+        key="postproc-filter-max-missing",
         help="Allowed missing value (zero or null) ratio per group.",
     )
 
@@ -116,42 +133,64 @@ elif filter_method == "Low Variance":
         "Threshold Percentile (%)",
         min_value=0.0,
         max_value=100.0,
-        value=10.0,
+        value=float(postprocessing_param(params, "postproc-filter-variance-percentile")),
         step=5.0,
+        key="postproc-filter-variance-percentile",
+    )
+
+save_params(params)
+
+
+def run_filter(value: float) -> pl.LazyFrame:
+    """Apply the selected openms_insight filter at threshold ``value``."""
+    quant_lazy = pl.from_pandas(pivot_df).lazy()
+    if filter_method == "Low Abundance":
+        return filter_low_abundance(
+            quantification_data=quant_lazy,
+            metadata=metadata_pl,
+            group_column="group",
+            threshold_percentile=value,
+        )
+    if filter_method == "Low Repeatability":
+        # Convert percent slider input to ratio expected by the function (e.g., 50.0% -> 0.5)
+        return filter_low_repeatability(
+            quantification_data=quant_lazy,
+            metadata=metadata_pl,
+            group_column="group",
+            max_missing_ratio=value / 100.0,
+        )
+    return filter_low_variance(
+        quantification_data=quant_lazy,
+        metadata=metadata_pl,
+        group_column="group",
+        threshold_percentile=value,
+    )
+
+
+with st.expander("📈 Help me choose a threshold", expanded=True):
+    st.caption(
+        "How many proteins the selected filter keeps at every threshold. Pick a "
+        "value before the curve drops steeply; flat stretches mean the exact value barely matters."
+    )
+    show_fig(
+        filter_threshold_curve(
+            lambda t: run_filter(t).select(pl.len()).collect().item(),
+            thresholds=[float(t) for t in range(0, 101, 5)],
+            current=threshold,
+            total=pivot_df.shape[0],
+            x_label="Max missing values per group (%)" if filter_method == "Low Repeatability" else "Threshold percentile (%)",
+        ),
+        "filter-threshold-curve",
     )
 
 # --- SECTION 3: Filter Execution and Collected Results View ---
 if st.button("Apply Filter", type="primary"):
-    # Convert the original Pandas DataFrame into a Polars LazyFrame graph
-    quant_lazy = pl.from_pandas(pivot_df).lazy()
-
-    # Route execution to the chosen openms_insight engine function
-    if filter_method == "Low Abundance":
-        filtered_lazy = filter_low_abundance(
-            quantification_data=quant_lazy,
-            metadata=metadata_pl,
-            group_column="group",
-            threshold_percentile=threshold,
-        )
-    elif filter_method == "Low Repeatability":
-        # Convert percent slider input to ratio expected by the function (e.g., 50.0% -> 0.5)
-        filtered_lazy = filter_low_repeatability(
-            quantification_data=quant_lazy,
-            metadata=metadata_pl,
-            group_column="group",
-            max_missing_ratio=threshold / 100.0,
-        )
-    else:  # "Low Variance"
-        filtered_lazy = filter_low_variance(
-            quantification_data=quant_lazy,
-            metadata=metadata_pl,
-            group_column="group",
-            threshold_percentile=threshold,
-        )
+    filtered_lazy = run_filter(threshold)
 
     # Collect the evaluated lazy graph and convert back to Pandas for visualization
     filtered_df = strip_stat_columns(filtered_lazy.collect().to_pandas())
     st.session_state["filtered_df"] = filtered_df
+    clear_downstream_steps("filtered_df")
 
     # Layout response metrics and the filtered matrix
     st.success(f"Successfully applied **{filter_method}** filter!")

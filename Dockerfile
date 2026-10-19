@@ -14,7 +14,7 @@ ARG PORT=8501
 # Streamlit app GitHub user name (to download artifact from).
 ARG GITHUB_USER=OpenMS
 # Streamlit app GitHub repository name (to download artifact from).
-ARG GITHUB_REPO=streamlit-template
+ARG GITHUB_REPO=quantms-web
 
 USER root
 
