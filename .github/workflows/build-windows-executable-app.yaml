@@ -23,7 +23,7 @@ env:
   # Define unique GUID for UpgradeCode
   APP_UpgradeCode: "8d28e8c7-45dc-446c-b889-99a6aea2f1a5"
   # Define needed TOPP tools here
-  TOPP_TOOLS: "DecoyDatabase CometAdapter PercolatorAdapter IDFilter ProteomicsLFQ"
+  TOPP_TOOLS: "DecoyDatabase CometAdapter PercolatorAdapter IDFilter ProteomicsLFQ IsobaricAnalyzer IDMapper FileMerger ProteinInference IDConflictResolver ProteinQuantifier"
 
 jobs:
   build-openms:
