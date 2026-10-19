@@ -129,6 +129,20 @@ def extract_filename_from_idxml(idxml_path: Path, mzml_names=None) -> str:
             return f"{stem}.mzML"
 
 
+ID_DF_SCHEMA = {
+    "id_idx": pl.Int64,
+    "scan_id": pl.Int64,
+    "file_index": pl.Int64,
+    "filename": pl.Utf8,
+    "sequence": pl.Utf8,
+    "charge": pl.Int64,
+    "mz": pl.Float64,
+    "rt": pl.Float64,
+    "score": pl.Float64,
+    "protein_accession": pl.Utf8,
+}
+
+
 def parse_idxml(idxml_path: Path, filename_to_index: dict | None = None) -> tuple[pl.DataFrame, list[str]]:
     """Parse idXML and return DataFrame for openms_insight.
 
@@ -177,7 +191,9 @@ def parse_idxml(idxml_path: Path, filename_to_index: dict | None = None) -> tupl
                 "protein_accession": ";".join([ev.getProteinAccession() for ev in h.getPeptideEvidences()]),
             })
 
-    return pl.DataFrame(records), spectra_data
+    # Keep the columns when nothing was identified, so callers selecting
+    # them get an empty table rather than a ColumnNotFoundError.
+    return pl.DataFrame(records, schema=ID_DF_SCHEMA), spectra_data
 
 
 def build_spectra_cache(mzml_dir: Path, filename_to_index: dict, mzml_files=None) -> tuple[pl.DataFrame, dict]:
