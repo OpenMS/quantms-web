@@ -885,20 +885,23 @@ def display_large_dataframe(
         return base_index + rows[0]
 
 
-def show_table(df: pd.DataFrame, download_name: str = "") -> None:
+def show_table(df: pd.DataFrame, download_name: str = "", key: str | None = None) -> None:
     """
-    Displays a pandas dataframe using Streamlit's `dataframe` function and
-    provides a download button for the same table.
+    Displays a pandas dataframe with the OpenMS-Insight `Table` component
+    (server-side pagination, see `src.common.insight_tables.show_insight_table`)
+    and provides a download button for the same table.
 
     Args:
         df (pd.DataFrame): The pandas dataframe to display.
         download_name (str): The name to give to the downloaded file. Defaults to empty string.
+        key (str): Unique name of the table. Defaults to `download_name`.
 
     Returns:
-        df (pd.DataFrame): The possibly edited dataframe.
+        df (pd.DataFrame): The dataframe.
     """
-    # Show dataframe using container width
-    st.dataframe(df, use_container_width=True)
+    from src.common.insight_tables import show_insight_table
+
+    show_insight_table(df, name=key or download_name.replace(" ", "-") or "table")
     # Show download button with the given download name for the table if name is given
     if download_name:
         st.download_button(

@@ -6,6 +6,7 @@ import polars as pl
 import streamlit as st
 from src.common.common import page_setup, save_params, show_fig
 from src.common.postprocessing_plots import imputed_value_preview, missingness_vs_intensity
+from src.common.insight_tables import show_insight_table
 from src.common.results_helpers import (
     clear_downstream_steps,
     get_abundance_data,
@@ -76,7 +77,7 @@ st.subheader("Input Matrix Overview")
 st.markdown(
     f"Currently analyzing **{base_df.shape[0]}** rows across **{len(sample_cols)}** samples before imputation."
 )
-st.dataframe(base_df, use_container_width=True)
+show_insight_table(base_df, name="imputation-input")
 
 st.markdown("---")
 
@@ -188,6 +189,10 @@ if st.button("Apply Imputation", type="primary"):
 
     st.success(f"Successfully finalized **{impute_category}** imputation step!")
 
-    # Calculate and display a quick performance matrix check
+# Results are rendered from session state, outside the button block: the Insight
+# table triggers a rerun the first time it is drawn, which would reset the button
+# and wipe anything shown only while it is pressed.
+imputed_df = st.session_state.get("imputed_df")
+if imputed_df is not None:
     st.subheader("Imputed Result Table")
-    st.dataframe(imputed_df, use_container_width=True)
+    show_insight_table(imputed_df, name="imputation-result")

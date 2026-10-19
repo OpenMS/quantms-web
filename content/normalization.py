@@ -6,6 +6,7 @@ import polars as pl
 import streamlit as st
 from src.common.common import page_setup, save_params, show_fig
 from src.common.postprocessing_plots import sample_distributions
+from src.common.insight_tables import show_insight_table
 from src.common.results_helpers import (
     clear_downstream_steps,
     get_abundance_data,
@@ -101,7 +102,7 @@ st.subheader("Input Table Overview")
 st.markdown(
     f"Currently displaying **{base_df.shape[0]}** rows and **{len(sample_cols)}** samples entering the normalization block."
 )
-st.dataframe(base_df, use_container_width=True)
+show_insight_table(base_df, name="normalization-input")
 
 st.markdown("### Pipeline Overview")
 st.caption("Data flows in order: Filtering -> Imputation -> Normalization")
@@ -283,12 +284,17 @@ if st.button("Apply Normalization Pipelines", type="primary"):
 
         st.success("Successfully executed all selected normalization pipelines!")
 
-        # Display the finalized transformation matrix view
-        st.subheader("Normalized Abundance Table")
-        st.dataframe(normalized_df, use_container_width=True)
-
     except ValueError as val_err:
         # Gracefully handle validation failures raised from the engine layers (e.g., missing reference protein)
         st.error(f"Engine Configuration Error: {str(val_err)}")
     except Exception as e:
         st.error(f"An unexpected pipeline error occurred: {str(e)}")
+
+# Results are rendered from session state, outside the button block: the Insight
+# table triggers a rerun the first time it is drawn, which would reset the button
+# and wipe anything shown only while it is pressed.
+normalized_df = st.session_state.get("normalized_df")
+if normalized_df is not None:
+    # Display the finalized transformation matrix view
+    st.subheader("Normalized Abundance Table")
+    show_insight_table(normalized_df, name="normalization-result")

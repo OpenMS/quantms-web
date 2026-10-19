@@ -5,6 +5,7 @@ import numpy as np
 import plotly.express as px
 
 from src.common.common import page_setup
+from src.common.insight_tables import show_insight_table
 from src.common.results_helpers import get_abundance_data
 
 # ================================
@@ -52,7 +53,7 @@ with protein_tab:
         st.info("No protein-level data available.")
     else:
         st.session_state["pivot_df"] = pivot_df
-        st.dataframe(pivot_df, use_container_width=True)
+        show_insight_table(pivot_df, name="proteomicslfq-protein")
 
 # ======================================================
 # GO Enrichment Results 
@@ -97,4 +98,4 @@ else:
                 st.plotly_chart(fig, use_container_width=True)
                 
                 st.markdown(f"#### {go_type} Enrichment Results")
-                st.dataframe(df_go, use_container_width=True)
+                show_insight_table(df_go, name=f"proteomicslfq-go-{go_type}", height=350)

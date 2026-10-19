@@ -6,6 +6,7 @@ import polars as pl
 import streamlit as st
 from src.common.common import page_setup, save_params, show_fig
 from src.common.postprocessing_plots import filter_threshold_curve
+from src.common.insight_tables import show_insight_table
 from src.common.results_helpers import (
     clear_downstream_steps,
     get_abundance_data,
@@ -68,7 +69,7 @@ st.subheader("Original Abundance Table")
 st.markdown(
     f"Currently displaying **{pivot_df.shape[0]}** proteins and **{len(sample_cols)}** samples before filtering."
 )
-st.dataframe(pivot_df, use_container_width=True)
+show_insight_table(pivot_df, name="filtering-original")
 
 st.markdown("---")
 
@@ -192,9 +193,13 @@ if st.button("Apply Filter", type="primary"):
     st.session_state["filtered_df"] = filtered_df
     clear_downstream_steps("filtered_df")
 
-    # Layout response metrics and the filtered matrix
     st.success(f"Successfully applied **{filter_method}** filter!")
 
+# Results are rendered from session state, outside the button block: the Insight
+# table triggers a rerun the first time it is drawn, which would reset the button
+# and wipe anything shown only while it is pressed.
+filtered_df = st.session_state.get("filtered_df")
+if filtered_df is not None:
     # Display dataset scale compression stats
     col1, col2, col3 = st.columns(3)
     col1.metric("Original Proteins", pivot_df.shape[0])
@@ -209,4 +214,4 @@ if st.button("Apply Filter", type="primary"):
             "The filtered table is empty. Try relaxing the threshold constraints."
         )
     else:
-        st.dataframe(filtered_df, use_container_width=True)
+        show_insight_table(filtered_df, name="filtering-filtered")

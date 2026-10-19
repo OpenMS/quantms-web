@@ -6,13 +6,42 @@ sends one page at a time; its download button exports every row and column.
 """
 import hashlib
 import shutil
+import tempfile
 from pathlib import Path
 
 import pandas as pd
 import polars as pl
+import streamlit as st
 from openms_insight import Table
 
 ROW_FIELD = "row"
+# Rows sampled when fingerprinting a dataframe that has no source files.
+_FINGERPRINT_SAMPLE_ROWS = 2000
+
+
+def _fingerprint_dataframe(df: pd.DataFrame) -> str:
+    """Cheap content hash of a dataframe, for tables computed in the session.
+
+    Hashing every cell on every Streamlit rerun would defeat the purpose for
+    large tables, so this combines the shape/schema, the column sums and an
+    evenly spaced sample of rows (always including the first and last row).
+    """
+    digest = hashlib.sha256()
+    digest.update(repr((df.shape, [str(c) for c in df.columns], [str(t) for t in df.dtypes])).encode())
+    digest.update(df.select_dtypes(include="number").sum().to_numpy(dtype="float64").tobytes())
+    if len(df):
+        step = max(len(df) // _FINGERPRINT_SAMPLE_ROWS, 1)
+        rows = df.iloc[::step].astype(str)
+        digest.update(pd.util.hash_pandas_object(rows, index=False).values.tobytes())
+        digest.update(df.iloc[[-1]].astype(str).to_csv(index=False).encode())
+    return digest.hexdigest()
+
+
+def _default_cache_dir() -> Path:
+    """Cache location for tables that are not tied to a workflow result directory."""
+    workspace = st.session_state.get("workspace")
+    base = Path(workspace) if workspace else Path(tempfile.gettempdir(), "quantms-web")
+    return base / "insight_tables"
 
 
 def _cache_key(source_files, extra: str) -> str:
@@ -31,7 +60,8 @@ def _to_polars(df: pd.DataFrame) -> tuple[pl.DataFrame, list[dict]]:
     Tabulator reads a "." in a field name as a nested lookup, so such columns get
     a safe field name and keep their original name as the column title.
     """
-    df = df.reset_index(drop=True)
+    # A named index usually holds the IDs, so keep it as a column
+    df = df.reset_index(drop=all(n is None for n in df.index.names))
     renames, column_definitions, used = {}, [], {ROW_FIELD}
     for column in df.columns:
         field = str(column).replace(".", "_")
@@ -55,7 +85,7 @@ def _to_polars(df: pd.DataFrame) -> tuple[pl.DataFrame, list[dict]]:
 def show_insight_table(
     df: pd.DataFrame,
     name: str,
-    cache_dir,
+    cache_dir=None,
     source_files=(),
     extra_key: str = "",
     title: str | None = None,
@@ -67,12 +97,19 @@ def show_insight_table(
 
     The cache is keyed on ``source_files`` (path and mtime) and ``extra_key``;
     when either changes (a rerun, new group assignments) a new cache replaces the
-    old one, so the page never shows a previous run's rows.
+    old one, so the page never shows a previous run's rows. Without
+    ``source_files`` (a table computed in the session, e.g. a downstream
+    analysis step) it is keyed on a fingerprint of the table's content instead.
+
+    Insight components request a rerun the first time they render, so don't
+    draw one only inside ``if st.button(...):``; keep the result in session
+    state and render it outside the button block.
 
     Args:
         df: Table to show.
         name: Stable name for this table; must be unique per page.
-        cache_dir: Directory holding openms-insight caches.
+        cache_dir: Directory holding openms-insight caches. Defaults to
+            ``<workspace>/insight_tables``.
         source_files: Files the table is derived from.
         extra_key: Anything else the table depends on (e.g. parameters).
         title: Title, also used as the CSV download's file name.
@@ -80,7 +117,9 @@ def show_insight_table(
         page_size: Rows per page.
         **table_kwargs: Passed on to ``Table`` (e.g. ``initial_sort``).
     """
-    cache_dir = Path(cache_dir)
+    cache_dir = Path(cache_dir) if cache_dir else _default_cache_dir()
+    if not source_files:
+        extra_key = f"{extra_key}|{_fingerprint_dataframe(df)}"
     cache_id = f"{name}_{_cache_key(source_files, extra_key)}"
 
     if not (cache_dir / cache_id).is_dir():
