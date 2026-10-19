@@ -1,4 +1,9 @@
-"""Quickstart page for the DDA LFQ and TMT proteomics workflows."""
+"""
+OpenDDA Quickstart Page.
+
+This page provides an overview of the DDA quantification workflows (label-free
+and TMT) and guidance for getting started with the analysis pipeline.
+"""
 
 from pathlib import Path
 
@@ -22,7 +27,7 @@ def render_windows_download_box(app_bytes: bytes) -> None:
     st.markdown(
         """
         <h4 style="color: #6c757d; margin-bottom: 1rem; font-size: 1.3rem; font-weight: 600; text-align: center;">
-            Want to run free and open DDA proteomics analysis offline?
+            Want to run free and open DDA analysis (LFQ and TMT) offline?
         </h4>
         """,
         unsafe_allow_html=True,
@@ -88,7 +93,7 @@ def render_windows_download_box(app_bytes: bytes) -> None:
 
 page_setup(page="main")
 
-st.markdown("# DDA Quantitative Proteomics: LFQ & TMT")
+st.markdown("# OpenDDA: DDA Quantitative Proteomics")
 
 windows_app_bytes = load_windows_app_bytes()
 if windows_app_bytes is not None:
@@ -96,68 +101,56 @@ if windows_app_bytes is not None:
 
 st.markdown(
     """
-This application supports two complete **Data-Dependent Acquisition (DDA) quantitative
-proteomics workflows**:
+This application provides complete **Data-Dependent Acquisition (DDA)** quantification
+workflows for proteomics data analysis. The pipeline identifies and quantifies proteins
+from mass spectrometry data and supports two quantification strategies:
 
-- **LFQ (Label-Free Quantification)** for comparing protein abundance across independently
-  acquired samples without isobaric labels.
-- **TMT (Tandem Mass Tag)** for reporter-ion-based multiplexed quantification across channels
-  within an isobarically labeled experiment.
+- **Label-free quantification (LFQ)**: compares precursor intensities across separately measured samples.
+- **Tandem Mass Tag (TMT) quantification**: compares reporter-ion intensities of multiplexed samples measured in one run.
 
-Both workflows start from **mzML files and a protein FASTA database**, perform peptide and
-protein identification and quantification, and feed a shared downstream analysis workflow for
-filtering, missing-value imputation, normalization, statistical inference, and visualization.
+Choose the **Analysis Mode** (LFQ or TMT) on the Configure page.
 """
 )
 
 st.info(
-    "Select **LFQ** or **TMT** from Analysis Mode on the Configure page. "
-    "The available parameters and execution pipeline change automatically for the selected mode."
+    "These workflows mirror the **DDA-LFQ and DDA-ISO (TMT) branches of the quantms Nextflow workflow**."
 )
 
-st.markdown("## LFQ Workflow")
+st.markdown("## Workflow Overview")
 
-st.markdown(
-    """
-Use LFQ when each biological sample was acquired as a separate, unlabeled LC-MS/MS run.
+lfq_col, tmt_col = st.columns(2)
 
-| Stage | Tool | Description |
-|-------|------|-------------|
-| **1. Decoy preparation** | DecoyDatabase | Generates a target-decoy FASTA when the uploaded database does not already contain decoys |
-| **2. Identification** | CometAdapter | Searches each mzML file against the protein database |
-| **3. Rescoring** | PercolatorAdapter | Improves PSM confidence and assigns statistical scores |
-| **4. Identification filtering** | IDFilter | Retains identifications according to the configured score/FDR threshold |
-| **5. Spectral library (optional)** | EasyPQP | Builds a spectral library for downstream DIA/SWATH use |
-| **6. Label-free quantification** | ProteomicsLFQ | Aligns and quantifies peptide/protein signals across mzML runs |
+with lfq_col:
+    st.markdown(
+        """
+### Label-free (LFQ)
 
-On the **Group Selection** tab, assign each mzML file to a biological group such as
-`control` or `case`. These assignments are used by the downstream statistical pages.
+| Stage | Tool |
+|-------|------|
+| **1. Identification** | Comet |
+| **2. Rescoring** | Percolator |
+| **3. Filtering** | IDFilter |
+| **4. Quantification** | ProteomicsLFQ |
+| **5. Statistical Analysis** | Built-in |
 """
-)
+    )
 
-st.markdown("## TMT Workflow")
+with tmt_col:
+    st.markdown(
+        """
+### TMT
 
-st.markdown(
-    """
-Use TMT when samples were labeled with tandem mass tags and combined into a multiplexed run.
-
-| Stage | Tool | Description |
-|-------|------|-------------|
-| **1. Reporter-ion extraction** | IsobaricAnalyzer | Extracts and quantifies reporter-ion signals for the selected TMT plex |
-| **2. Identification** | CometAdapter | Searches MS/MS spectra against the protein database with TMT modifications |
-| **3. Rescoring** | PercolatorAdapter | Rescores peptide-spectrum matches and estimates confidence |
-| **4. PSM filtering** | IDFilter | Applies the configured identification threshold |
-| **5. ID mapping** | IDMapper | Maps filtered peptide identifications to isobaric consensus features |
-| **6. Run merging** | FileMerger | Combines mapped consensus results across input runs |
-| **7. Protein inference** | ProteinInference | Infers protein groups from identified peptides |
-| **8. Protein filtering** | IDFilter | Applies protein/peptide-level filtering and removes decoys |
-| **9. Conflict resolution** | IDConflictResolver | Resolves conflicting peptide-to-protein assignments |
-| **10. Protein quantification** | ProteinQuantifier | Produces the final channel-level protein abundance matrix |
-
-Choose the isobaric type in **IsobaricAnalyzer**, then assign each TMT channel to a biological
-group on the **Group Selection** tab. Enter `skip` for an unused channel.
+| Stage | Tool |
+|-------|------|
+| **1. Reporter extraction** | IsobaricAnalyzer |
+| **2. Identification** | Comet |
+| **3. Rescoring** | Percolator |
+| **4. Filtering** | IDFilter |
+| **5. Protein inference** | ProteinInference |
+| **6. Quantification** | ProteinQuantifier |
+| **7. Statistical Analysis** | Built-in |
 """
-)
+    )
 
 st.markdown("## Getting Started")
 
@@ -166,8 +159,7 @@ st.markdown(
 Follow these steps to run your analysis:
 
 ### 1. Upload Files
-Upload one or more mzML mass spectrometry files and a protein FASTA database. The same upload
-page is used for LFQ and TMT analyses.
+Upload your mzML mass spectrometry files and a protein FASTA database.
 """
 )
 st.page_link("content/workflow_fileupload.py", label="Go to File Upload", icon="📁")
@@ -175,8 +167,7 @@ st.page_link("content/workflow_fileupload.py", label="Go to File Upload", icon="
 st.markdown(
     """
 ### 2. Configure Parameters
-Select **LFQ** or **TMT** as the Analysis Mode. Configure the tools shown for that workflow,
-then assign mzML files (LFQ) or reporter channels (TMT) to biological groups.
+Choose LFQ or TMT, then set up search parameters, sample groups (or TMT channels), and analysis settings.
 """
 )
 st.page_link("content/workflow_configure.py", label="Go to Configure", icon="⚙️")
@@ -184,27 +175,25 @@ st.page_link("content/workflow_configure.py", label="Go to Configure", icon="⚙
 st.markdown(
     """
 ### 3. Run Workflow
-Execute the selected workflow and monitor each processing stage. Results are written to the
-current workspace so they remain available after the run finishes.
+Execute the analysis pipeline and monitor progress.
 """
 )
 st.page_link("content/workflow_run.py", label="Go to Run", icon="🚀")
 
-st.markdown("### 4. Review Identification and Quantification Results")
-
 st.markdown(
     """
-The **Results** section exposes the main outputs from either workflow:
-
-- **Database Search**: inspect Comet peptide-spectrum matches, peptide sequences, and MS2 spectra.
-- **Rescoring**: review Percolator-rescored identifications.
-- **Filtered PSMs**: inspect identifications retained after score/FDR filtering.
-- **Abundance**: review the final protein abundance matrix. LFQ displays run-level intensities;
-  TMT displays reporter-channel-level protein intensities.
+### 4. Explore Results
+View identification results, quantification tables, and statistical visualizations.
+- **Database Search**: View Comet PSM identification results
+- **Rescoring**: Examine Percolator statistical validation output
+- **Filtered PSMs**: Inspect FDR-controlled peptide identifications
+- **Abundance**: Protein and PSM quantification tables with statistics
+- **Volcano Plot**: Differential expression analysis visualization
+- **PCA**: Principal component analysis of sample relationships
+- **Heatmap**: Hierarchically clustered expression patterns
+- **Spectral Library**: Download the generated spectral library for DIA/SWATH analysis
 """
 )
-
-st.page_link("content/results_abundance.py", label="Go to Abundance", icon="📊")
 
 st.markdown("### 5. Run Differential Protein Analysis")
 
@@ -214,10 +203,10 @@ After quantification, continue through the downstream analysis pages in order:
 
 | Step | Available analysis |
 |------|--------------------|
-| **Filtering** | Remove proteins with low abundance, low repeatability, or low variance |
-| **Imputation** | Handle missing values using MAR mean/median strategies or MNAR small-value replacement |
-| **Normalization** | Apply mathematical transformation, sample normalization, and optional row scaling |
-| **Statistical** | Test group differences and apply BH, Bonferroni, or no multiple-testing correction |
+| **1. Filtering** | Remove proteins with low abundance, low repeatability, or low variance |
+| **2. Imputation** | Handle missing values using MAR mean/median strategies or MNAR small-value replacement |
+| **3. Normalization** | Apply mathematical transformation, sample normalization, and optional row scaling |
+| **4. Statistics** | Test group differences and apply BH, Bonferroni, or no multiple-testing correction |
 | **Volcano** | Explore effect size and adjusted-significance thresholds |
 | **PCA** | Inspect sample separation using high-variance proteins |
 | **Heatmap** | View abundance patterns across proteins and samples |
@@ -225,19 +214,19 @@ After quantification, continue through the downstream analysis pages in order:
 | **Pathway Analysis** | Run GO enrichment on statistically significant proteins |
 
 Each preprocessing page uses the output of the preceding step when available. The recommended
-order is **Filtering → Imputation → Normalization → Statistical → Visualization/Pathway Analysis**.
+order is **Filtering → Imputation → Normalization → Statistics → Plots/Pathway Analysis**.
 """
 )
 
 analysis_links = st.columns(4)
 with analysis_links[0]:
-    st.page_link("content/filtering.py", label="Filtering", icon="🔍")
+    st.page_link("content/filtering.py", label="Filtering", icon="🧹")
 with analysis_links[1]:
-    st.page_link("content/imputation.py", label="Imputation", icon="🧩")
+    st.page_link("content/imputation.py", label="Imputation", icon="🩹")
 with analysis_links[2]:
-    st.page_link("content/normalization.py", label="Normalization", icon="📐")
+    st.page_link("content/normalization.py", label="Normalization", icon="⚖️")
 with analysis_links[3]:
-    st.page_link("content/statistical.py", label="Statistical", icon="🧪")
+    st.page_link("content/statistical.py", label="Statistics", icon="🔢")
 
 st.markdown("## Workspaces")
 

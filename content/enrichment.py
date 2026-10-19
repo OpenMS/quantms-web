@@ -5,7 +5,7 @@ import pandas as pd
 import polars as pl
 import streamlit as st
 from src.common.common import page_setup
-from src.common.results_helpers import get_abundance_data, get_id_column
+from src.common.results_helpers import get_abundance_data, get_id_column, show_pipeline_banner
 # Import GO Enrichment modules from openms_insight engine
 from openms_insight.analysis.enrichment import calculate_go_enrichment
 
@@ -36,9 +36,7 @@ if (
     st.stop()
 
 final_statistics_report = st.session_state["statistics_df"]
-st.info(
-    "🔄 **Upstream Pipeline Detected**: Using analyzed matrices from the **Statistical Inference** step."
-)
+show_pipeline_banner(uses="statistics")
 
 # --- STEP 2: Preprocessing Mapping Key Configuration ---
 # Identify target identifier columns dynamically
