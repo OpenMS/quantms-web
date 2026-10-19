@@ -195,6 +195,39 @@ View identification results, quantification tables, and statistical visualizatio
 """
 )
 
+st.markdown("### 5. Run Differential Protein Analysis")
+
+st.markdown(
+    """
+After quantification, continue through the downstream analysis pages in order:
+
+| Step | Available analysis |
+|------|--------------------|
+| **1. Filtering** | Remove proteins with low abundance, low repeatability, or low variance |
+| **2. Imputation** | Handle missing values using MAR mean/median strategies or MNAR small-value replacement |
+| **3. Normalization** | Apply mathematical transformation, sample normalization, and optional row scaling |
+| **4. Statistics** | Test group differences and apply BH, Bonferroni, or no multiple-testing correction |
+| **Volcano** | Explore effect size and adjusted-significance thresholds |
+| **PCA** | Inspect sample separation using high-variance proteins |
+| **Heatmap** | View abundance patterns across proteins and samples |
+| **Clustered Heatmap** | Explore hierarchically clustered proteins and samples |
+| **Pathway Analysis** | Run GO enrichment on statistically significant proteins |
+
+Each preprocessing page uses the output of the preceding step when available. The recommended
+order is **Filtering → Imputation → Normalization → Statistics → Plots/Pathway Analysis**.
+"""
+)
+
+analysis_links = st.columns(4)
+with analysis_links[0]:
+    st.page_link("content/filtering.py", label="Filtering", icon="🧹")
+with analysis_links[1]:
+    st.page_link("content/imputation.py", label="Imputation", icon="🩹")
+with analysis_links[2]:
+    st.page_link("content/normalization.py", label="Normalization", icon="⚖️")
+with analysis_links[3]:
+    st.page_link("content/statistical.py", label="Statistics", icon="🔢")
+
 st.markdown("## Workspaces")
 
 st.markdown(
