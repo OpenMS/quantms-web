@@ -15,7 +15,7 @@ from scipy.stats import fisher_exact
 from src.workflow.WorkflowManager import WorkflowManager
 from src.common.common import page_setup
 from src.common.results_helpers import get_abundance_data
-from src.common.results_helpers import parse_idxml, build_spectra_cache, load_idxml
+from src.common.results_helpers import parse_idxml, build_spectra_cache, load_idxml, write_psm_exports
 from openms_insight import Table, Heatmap, LinePlot, SequenceView
 
 # Accession prefixes that mark decoy entries in a FASTA database.
@@ -876,24 +876,20 @@ class WorkflowTest(WorkflowManager):
             # Get mzML directory
             mzml_dir = Path(in_mzML[0]).parent
 
-            # Build spectra cache (once, shared by all stages)
-            spectra_df = None
-            filename_to_index = {}
+            # Build spectra cache (once, shared by all stages). Every input mzML
+            # gets a fixed file index, so each PSM links to its own run's spectra.
+            filename_to_index = {Path(m).name: i for i, m in enumerate(in_mzML)}
+            spectra_df, filename_to_index = build_spectra_cache(mzml_dir, filename_to_index, in_mzML)
 
             for idxml_file in comet_results:
                 idxml_path = Path(idxml_file)
                 cache_id_prefix = idxml_path.stem
 
                 # Parse idXML to DataFrame
-                id_df, spectra_data = parse_idxml(idxml_path)
+                id_df, spectra_data = parse_idxml(idxml_path, filename_to_index)
                 if id_df.is_empty():
                     self.logger.log(f"⚠️ No identifications in {idxml_path.name}, skipping its result views")
                     continue
-
-                # Build spectra cache (only once)
-                if spectra_df is None:
-                    filename_to_index = {Path(f).name: i for i, f in enumerate(spectra_data)}
-                    spectra_df, filename_to_index = build_spectra_cache(mzml_dir, filename_to_index)
 
                 # Initialize Table component (caches itself)
                 Table(
@@ -990,7 +986,7 @@ class WorkflowTest(WorkflowManager):
                 cache_id_prefix = idxml_path.stem
 
                 # Parse idXML to DataFrame
-                id_df, spectra_data = parse_idxml(idxml_path)
+                id_df, spectra_data = parse_idxml(idxml_path, filename_to_index)
                 if id_df.is_empty():
                     self.logger.log(f"⚠️ No identifications in {idxml_path.name}, skipping its result views")
                     continue
@@ -1083,7 +1079,7 @@ class WorkflowTest(WorkflowManager):
                 cache_id_prefix = idxml_path.stem
 
                 # Parse idXML to DataFrame
-                id_df, spectra_data = parse_idxml(idxml_path)
+                id_df, spectra_data = parse_idxml(idxml_path, filename_to_index)
                 if id_df.is_empty():
                     self.logger.log(f"⚠️ No identifications in {idxml_path.name}, skipping its result views")
                     continue
@@ -1153,6 +1149,10 @@ class WorkflowTest(WorkflowManager):
                         "selectedColor": "#F3A712",
                     },
                 )
+
+                # Downloadable exports: every PSM, and every PSM's matched
+                # fragment ions against its own spectrum
+                write_psm_exports(id_df, seq_view, results_dir_path / "exports", cache_id_prefix)
 
             self.logger.log("✅ Filtering complete")
 
@@ -1389,24 +1389,20 @@ class WorkflowTest(WorkflowManager):
             # Get mzML directory
             mzml_dir = Path(in_mzML[0]).parent
 
-            # Build spectra cache (once, shared by all stages)
-            spectra_df = None
-            filename_to_index = {}
+            # Build spectra cache (once, shared by all stages). Every input mzML
+            # gets a fixed file index, so each PSM links to its own run's spectra.
+            filename_to_index = {Path(m).name: i for i, m in enumerate(in_mzML)}
+            spectra_df, filename_to_index = build_spectra_cache(mzml_dir, filename_to_index, in_mzML)
 
             for idxml_file in comet_results:
                 idxml_path = Path(idxml_file)
                 cache_id_prefix = idxml_path.stem
 
                 # Parse idXML to DataFrame
-                id_df, spectra_data = parse_idxml(idxml_path)
+                id_df, spectra_data = parse_idxml(idxml_path, filename_to_index)
                 if id_df.is_empty():
                     self.logger.log(f"⚠️ No identifications in {idxml_path.name}, skipping its result views")
                     continue
-
-                # Build spectra cache (only once)
-                if spectra_df is None:
-                    filename_to_index = {Path(f).name: i for i, f in enumerate(spectra_data)}
-                    spectra_df, filename_to_index = build_spectra_cache(mzml_dir, filename_to_index)
 
                 # Initialize Table component (caches itself)
                 Table(
@@ -1499,7 +1495,7 @@ class WorkflowTest(WorkflowManager):
                 cache_id_prefix = idxml_path.stem
 
                 # Parse idXML to DataFrame
-                id_df, spectra_data = parse_idxml(idxml_path)
+                id_df, spectra_data = parse_idxml(idxml_path, filename_to_index)
                 if id_df.is_empty():
                     self.logger.log(f"⚠️ No identifications in {idxml_path.name}, skipping its result views")
                     continue
@@ -1589,7 +1585,7 @@ class WorkflowTest(WorkflowManager):
                 cache_id_prefix = idxml_path.stem
 
                 # Parse idXML to DataFrame
-                id_df, spectra_data = parse_idxml(idxml_path)
+                id_df, spectra_data = parse_idxml(idxml_path, filename_to_index)
                 if id_df.is_empty():
                     self.logger.log(f"⚠️ No identifications in {idxml_path.name}, skipping its result views")
                     continue
@@ -1659,6 +1655,10 @@ class WorkflowTest(WorkflowManager):
                         "selectedColor": "#F3A712",
                     },
                 )
+
+                # Downloadable exports: every PSM, and every PSM's matched
+                # fragment ions against its own spectrum
+                write_psm_exports(id_df, seq_view, results_dir_path / "exports", cache_id_prefix)
 
             # --- IDMapper ---
             self.logger.log("🗺️ Mapping IDs to isobaric consensus features...")
@@ -1910,7 +1910,7 @@ class WorkflowTest(WorkflowManager):
         # ================================
         with filter_tab:
 
-            filter_dir = Path(self.workflow_dir, "results", "filter_results")
+            filter_dir = Path(self.workflow_dir, "results", "psm_filter")
             filter_files = sorted(filter_dir.glob("*.idXML"))
 
             if not filter_files:

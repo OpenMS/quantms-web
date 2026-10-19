@@ -8,6 +8,7 @@ from src.common.results_helpers import (
     extract_scan_number,
     get_workflow_dir,
     load_idxml,
+    parse_idxml,
 )
 
 
@@ -28,6 +29,17 @@ def test_extract_filename_from_idxml_strips_suffixes():
     assert extract_filename_from_idxml(Path("02COVID_filter.idXML")) == "02COVID.mzML"
     assert extract_filename_from_idxml(Path("sample_comet.idXML")) == "sample.mzML"
     assert extract_filename_from_idxml(Path("run_per.idXML")) == "run.mzML"
+    # TMT names its Percolator/IDFilter output <stem>_comet_perc[_filter]
+    assert extract_filename_from_idxml(Path("S1_comet_perc_filter.idXML")) == "S1.mzML"
+    assert extract_filename_from_idxml(Path("S1_comet_perc.idXML")) == "S1.mzML"
+
+
+def test_extract_filename_from_idxml_prefers_input_names():
+    names = ["run_a.mzML", "run_a_percent.mzML", "sample.mzML"]
+    # A stem that itself ends like a step suffix still resolves to its input
+    assert extract_filename_from_idxml(Path("run_a_percent_comet.idXML"), names) == "run_a_percent.mzML"
+    assert extract_filename_from_idxml(Path("run_a_per.idXML"), names) == "run_a.mzML"
+    assert extract_filename_from_idxml(Path("sample_comet_perc_filter.idXML"), names) == "sample.mzML"
 
 
 def _write_idxml(path):
@@ -98,3 +110,17 @@ def test_load_idxml_accepts_str_path(tmp_path):
     _write_idxml(idxml)
 
     assert len(load_idxml(str(idxml))[1]) == 2
+
+
+def test_parse_idxml_assigns_each_run_its_own_file_index(tmp_path):
+    """PSMs link to their own run's spectra, not always to the first run's."""
+    filename_to_index = {"A.mzML": 0, "B.mzML": 1}
+    idxml = tmp_path / "B_comet_perc_filter.idXML"
+    _write_idxml(idxml)
+
+    id_df, spectra_data = parse_idxml(idxml, filename_to_index)
+
+    assert spectra_data == ["B.mzML"]
+    assert id_df["file_index"].to_list() == [1, 1]
+    assert id_df["filename"].to_list() == ["B.mzML", "B.mzML"]
+    assert id_df["scan_id"].to_list() == [1, 2]

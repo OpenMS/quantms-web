@@ -30,6 +30,7 @@ if __name__ == '__main__':
             st.Page(Path("content", "results_rescoring.py"), title="Rescoring", icon="📈"),
             st.Page(Path("content", "results_filtered.py"), title="Filtered PSMs", icon="🎯"),
             st.Page(Path("content", "results_abundance.py"), title="Protein Abundance", icon="📋"),
+            st.Page(Path("content", "results_download.py"), title="Download", icon="⬇️"),
         ],
         # Steps run in order; each one works on the previous step's output.
         "Downstream Analysis": [

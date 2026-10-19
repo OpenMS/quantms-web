@@ -1,11 +1,11 @@
 """Abundance (ProteomicsLFQ) Results Page."""
 import streamlit as st
 import pandas as pd
-import numpy as np
 from pathlib import Path
 from src.common.common import page_setup
 from src.common.results_helpers import get_workflow_dir, get_abundance_data
 from src.workflow.ParameterManager import ParameterManager
+from src.common.insight_tables import show_insight_table
 
 params = page_setup()
 st.title("Abundance Quantification")
@@ -40,6 +40,8 @@ if not csv_files:
     st.stop()
 
 csv_file = csv_files[0]
+cache_dir = workflow_dir / "results" / "insight_cache"
+table_sources = [csv_file, workflow_dir / "params.json"]
 
 def render_protein_table(pivot_df, is_lfq=True):
     """Common function to render the protein-level abundance table"""
@@ -56,41 +58,26 @@ def render_protein_table(pivot_df, is_lfq=True):
         exclude_cols = [id_col, "PeptideSequence"]
         sample_cols = [c for c in pivot_df.columns if c not in exclude_cols]
 
-        pivot_df["Intensity"] = pivot_df[sample_cols].apply(list, axis=1)
-        display_cols = [id_col, "Intensity"] + sample_cols + ["PeptideSequence"]
-        help_text = "Raw sample intensities"
-        y_min = None
+        display_cols = [id_col] + sample_cols + ["PeptideSequence"]
     else:
         # Handle non-LFQ mode columns (Log2-transformed Intensity)
         id_col = "protein"
         exclude_cols = [id_col, "n_proteins", "n_peptides", "protein_score"]
         sample_cols = [c for c in pivot_df.columns if c not in exclude_cols and "ratio" not in c.lower()]
 
-        pivot_df["Intensity"] = pivot_df[sample_cols].apply(
-            lambda row: [np.log2(v + 1) for v in row], axis=1
-        )
-        display_cols = [id_col, "Intensity"] + sample_cols
-        help_text = "Sample intensities (log2 scale)"
-        y_min = 0
+        display_cols = [id_col] + sample_cols
 
     # Filter to available columns, then sort and display
     available_cols = [c for c in display_cols if c in pivot_df.columns]
     view_df = pivot_df[available_cols]
 
-    st.dataframe(
+    show_insight_table(
         view_df,
-        column_config={
-            "Intensity": st.column_config.BarChartColumn(
-                "Intensity",
-                help=help_text,
-                width="small",
-                y_min=y_min,
-            ),
-        },
-        use_container_width=True,
+        name="abundance_protein",
+        cache_dir=cache_dir,
+        source_files=table_sources,
+        title="protein_abundance",
     )
-
-protein_tab, psm_tab = st.tabs(["Protein Table", "PSM-level Quantification Table"])
 
 try:
     df = pd.read_csv(csv_file)
@@ -119,7 +106,13 @@ try:
                 "peptide sequences, charge states, and intensities across samples. "
                 "Each row represents one peptide-spectrum match detected from the MS/MS analysis."
             )
-            st.dataframe(df, use_container_width=True)
+            show_insight_table(
+                df,
+                name="abundance_psm",
+                cache_dir=cache_dir,
+                source_files=table_sources,
+                title="psm_quantification",
+            )
 
     else:
         pre_processing_tab, protein_tab = st.tabs(["Pre-processing", "Protein Table"])
@@ -132,7 +125,13 @@ try:
 
         with pre_processing_tab:
             st.write("### Final Results (Intensity matrix)")
-            st.dataframe(pivot_df.head(10))
+            show_insight_table(
+                pivot_df,
+                name="abundance_intensity_matrix",
+                cache_dir=cache_dir,
+                source_files=table_sources,
+                title="intensity_matrix",
+            )
 
         with protein_tab:
             render_protein_table(pivot_df, is_lfq=False)
