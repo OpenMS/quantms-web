@@ -4,6 +4,9 @@ from pathlib import Path
 from src.common.common import page_setup
 from src.common.results_helpers import get_workflow_dir
 from openms_insight import Table, Heatmap, LinePlot, SequenceView, StateManager
+from src.common.common import show_fig
+from src.common.fragment_plots import fragment_error_plot, ion_table, ion_table_html, load_psm_fragments
+from src.workflow.ParameterManager import ParameterManager
 
 params = page_setup()
 st.title("Filtered PSMs")
@@ -74,6 +77,35 @@ seq_view(key=f"seqview_{cache_id_prefix}", state_manager=state_manager, height=5
 
 st.subheader("MS2 Spectrum")
 line_plot(key=f"lineplot_{cache_id_prefix}", state_manager=state_manager, height=450, sequence_view_key=f"seqview_{cache_id_prefix}")
+
+st.subheader("Fragment ions")
+fragments_tsv = workflow_dir / "results" / "exports" / f"{cache_id_prefix}_fragment_ions.tsv"
+psm_id = state_manager.get_selection("identification")
+if not fragments_tsv.is_file():
+    st.info("No fragment ion export for this run. Re-run the workflow to create it.")
+elif psm_id is None:
+    st.info("Select a PSM in the table to see its fragment mass errors and ion table.")
+else:
+    fragments = load_psm_fragments(fragments_tsv, int(psm_id))
+    if fragments.empty:
+        st.info("No fragment ion of this PSM matched a peak within the tolerance.")
+    else:
+        # The search's fragment tolerance: user value, else the workflow's default for it
+        workflow_params = ParameterManager(workflow_dir, "TOPP Workflow").get_parameters_from_json()
+        comet = "CometAdapter-TMT" if workflow_params.get("analysis-mode", "LFQ") == "TMT" else "CometAdapter"
+        comet_params = {**workflow_params.get("_defaults", {}).get(comet, {}), **workflow_params.get(comet, {})}
+        tolerance = float(comet_params.get("fragment_mass_tolerance", 0.02))
+        tolerance_ppm = comet_params.get("fragment_error_units", "Da") != "Da"
+
+        first = fragments.iloc[0]
+        st.caption(
+            f"{first['sequence']}, charge {int(first['precursor_charge'])}. Matched with the search's fragment "
+            f"tolerance (±{tolerance:g} {'ppm' if tolerance_ppm else 'Da'}, shaded)."
+        )
+        show_fig(fragment_error_plot(fragments, tolerance, tolerance_ppm), f"fragment-errors-{cache_id_prefix}-{psm_id}")
+        values, matched = ion_table(first["sequence"], int(first["precursor_charge"]), fragments)
+        st.markdown("**b/y ions** (theoretical m/z; matched ions highlighted, neutral losses not counted)")
+        st.html(ion_table_html(values, matched))
 
 st.markdown("---")
 st.markdown("**Next step:** View abundance quantification")
