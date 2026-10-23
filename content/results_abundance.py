@@ -6,6 +6,7 @@ from src.common.common import page_setup
 from src.common.results_helpers import get_workflow_dir, get_abundance_data
 from src.workflow.ParameterManager import ParameterManager
 from src.common.insight_tables import show_insight_table
+from src.common.contaminants import CONTAMINANT_PREFIX, contaminant_mask
 
 params = page_setup()
 st.title("Abundance Quantification")
@@ -43,6 +44,16 @@ csv_file = csv_files[0]
 cache_dir = workflow_dir / "results" / "insight_cache"
 table_sources = [csv_file, workflow_dir / "params.json"]
 
+show_contaminants = st.toggle(
+    "Show contaminants",
+    value=False,
+    key="abundance-show-contaminants",
+    help=f"Proteins with {CONTAMINANT_PREFIX} accessions come from the cRAP contaminants added to the "
+    "search database. They are hidden here and left out of the downstream analysis.",
+)
+# The tables differ with the toggle, so it is part of their cache key
+contaminant_key = f"contaminants={show_contaminants}"
+
 def render_protein_table(pivot_df, is_lfq=True):
     """Common function to render the protein-level abundance table"""
     pivot_df = pivot_df.copy()
@@ -69,13 +80,15 @@ def render_protein_table(pivot_df, is_lfq=True):
 
     # Filter to available columns, then sort and display
     available_cols = [c for c in display_cols if c in pivot_df.columns]
-    view_df = pivot_df[available_cols]
+    view_df = pivot_df[available_cols].copy()
+    view_df.insert(1, "Contaminant", contaminant_mask(view_df[id_col]).to_numpy())
 
     show_insight_table(
         view_df,
         name="abundance_protein",
         cache_dir=cache_dir,
         source_files=table_sources,
+        extra_key=contaminant_key,
         title="protein_abundance",
     )
 
@@ -86,7 +99,13 @@ try:
         st.info("No data found in this file.")
         st.stop()
 
-    result = get_abundance_data(st.session_state["workspace"])
+    result = get_abundance_data(st.session_state["workspace"], include_contaminants=show_contaminants)
+    if not show_contaminants:
+        all_proteins = get_abundance_data(st.session_state["workspace"], include_contaminants=True)
+        if all_proteins is not None and result is not None:
+            hidden = len(all_proteins[0]) - len(result[0])
+            if hidden:
+                st.caption(f"{hidden} contaminant protein(s) hidden.")
 
     if analysis_mode == "LFQ":
         protein_tab, psm_tab = st.tabs(["Protein Table", "PSM-level Quantification Table"])
@@ -106,11 +125,18 @@ try:
                 "peptide sequences, charge states, and intensities across samples. "
                 "Each row represents one peptide-spectrum match detected from the MS/MS analysis."
             )
+            psm_df = df.copy()
+            if "ProteinName" in psm_df.columns:
+                is_con = contaminant_mask(psm_df["ProteinName"]).to_numpy()
+                psm_df.insert(1, "Contaminant", is_con)
+                if not show_contaminants:
+                    psm_df = psm_df[~is_con]
             show_insight_table(
-                df,
+                psm_df,
                 name="abundance_psm",
                 cache_dir=cache_dir,
                 source_files=table_sources,
+                extra_key=contaminant_key,
                 title="psm_quantification",
             )
 
@@ -130,6 +156,7 @@ try:
                 name="abundance_intensity_matrix",
                 cache_dir=cache_dir,
                 source_files=table_sources,
+                extra_key=contaminant_key,
                 title="intensity_matrix",
             )
 
