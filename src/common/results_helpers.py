@@ -12,6 +12,7 @@ try:  # pyOpenMS >= 3.5.0
 except ImportError:  # pyOpenMS <= 3.4.x
     PeptideIdentificationList = None
 from src.workflow.ParameterManager import ParameterManager
+from src.common.contaminants import drop_contaminants, is_contaminant
 
 def get_workflow_dir(workspace):
     """Get the workflow directory path."""
@@ -141,6 +142,7 @@ ID_DF_SCHEMA = {
     "rt": pl.Float64,
     "score": pl.Float64,
     "protein_accession": pl.Utf8,
+    "contaminant": pl.Boolean,
 }
 
 
@@ -179,6 +181,7 @@ def parse_idxml(idxml_path: Path, filename_to_index: dict | None = None) -> tupl
         filename = spectra_data[0]
 
         for h in pep.getHits():
+            accessions = ";".join([ev.getProteinAccession() for ev in h.getPeptideEvidences()])
             records.append({
                 "id_idx": len(records),
                 "scan_id": scan_id,
@@ -189,7 +192,8 @@ def parse_idxml(idxml_path: Path, filename_to_index: dict | None = None) -> tupl
                 "mz": pep.getMZ(),
                 "rt": pep.getRT(),
                 "score": h.getScore(),
-                "protein_accession": ";".join([ev.getProteinAccession() for ev in h.getPeptideEvidences()]),
+                "protein_accession": accessions,
+                "contaminant": is_contaminant(accessions),
             })
 
     # Keep the columns when nothing was identified, so callers selecting
@@ -441,11 +445,13 @@ def load_abundance_data(workspace_path: str, csv_mtime: float, params_mtime: flo
         return pivot_df, expr_df, group_map
 
 
-def get_abundance_data(workspace: Path) -> tuple | None:
+def get_abundance_data(workspace: Path, include_contaminants: bool = False) -> tuple | None:
     """Wrapper that handles cache key (workspace + CSV mtime + params mtime).
 
     Args:
         workspace: Path to the workspace directory
+        include_contaminants: Keep the proteins with CON__ accessions (cRAP).
+            They are left out by default, so downstream analysis never sees them.
 
     Returns:
         Tuple of (pivot_df, expr_df, group_map) or None if data unavailable
@@ -465,7 +471,16 @@ def get_abundance_data(workspace: Path) -> tuple | None:
     params_file = workflow_dir / "params.json"
     params_mtime = params_file.stat().st_mtime if params_file.exists() else 0.0
 
-    return load_abundance_data(str(workspace), csv_mtime, params_mtime)
+    result = load_abundance_data(str(workspace), csv_mtime, params_mtime)
+    if result is None or include_contaminants:
+        return result
+    pivot_df, expr_df, group_map = result
+    id_col = pivot_df.columns[0]
+    return (
+        drop_contaminants(pivot_df, id_col),
+        expr_df[~expr_df.index.to_series().map(is_contaminant).to_numpy(dtype=bool)],
+        group_map,
+    )
 
 
 def get_id_column(workspace: Path, pivot_df: pd.DataFrame) -> str:
