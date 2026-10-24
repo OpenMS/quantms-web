@@ -26,6 +26,7 @@ if __name__ == '__main__':
             st.Page(Path("content", "workflow_run.py"), title="Run", icon="🚀"),
         ],
         "Workflow Results": [
+            st.Page(Path("content", "results_overview.py"), title="Overview", icon="🧾"),
             st.Page(Path("content", "results_database_search.py"), title="Database Search", icon="🔬"),
             st.Page(Path("content", "results_rescoring.py"), title="Rescoring", icon="📈"),
             st.Page(Path("content", "results_filtered.py"), title="Filtered PSMs", icon="🎯"),
