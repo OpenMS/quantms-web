@@ -12,6 +12,7 @@ try:  # pyOpenMS >= 3.5.0
 except ImportError:  # pyOpenMS <= 3.4.x
     PeptideIdentificationList = None
 from src.workflow.ParameterManager import ParameterManager
+from src.common.peptide_format import to_proforma
 
 def get_workflow_dir(workspace):
     """Get the workflow directory path."""
@@ -250,6 +251,11 @@ def write_psm_exports(id_df: pl.DataFrame, seq_view, export_dir: Path, prefix: s
     as the view), together with the PSM's run, RT, m/z, score and proteins.
     """
     export_dir.mkdir(parents=True, exist_ok=True)
+    # Exports carry the ProForma form next to the OpenMS string, for other tools
+    if "sequence" in id_df.columns:
+        id_df = id_df.with_columns(
+            pl.col("sequence").map_elements(to_proforma, return_dtype=pl.Utf8).alias("proforma")
+        )
     id_df.write_csv(export_dir / f"{prefix}_psms.tsv", separator="\t")
 
     fragments = seq_view.export_fragment_ions()
@@ -258,6 +264,7 @@ def write_psm_exports(id_df: pl.DataFrame, seq_view, export_dir: Path, prefix: s
             pl.col("id_idx").cast(fragments.schema["sequence_id"]).alias("sequence_id"),
             "filename",
             "rt",
+            "proforma",
             pl.col("mz").alias("precursor_mz"),
             "score",
             "protein_accession",
