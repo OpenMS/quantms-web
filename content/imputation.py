@@ -13,6 +13,8 @@ from src.common.results_helpers import (
     get_abundance_data,
     get_id_column,
     get_sample_group_map,
+    group_metadata,
+    sample_columns,
     postprocessing_param,
 )
 
@@ -33,8 +35,9 @@ page_intro(
     'Fill in the values of proteins that were not detected in some samples, so every protein can be tested.'
     "\n\n" + 'You do not need this page for a standard analysis: **Compare groups** runs all four steps with the recommended settings. Use it to inspect this step or change it; the plots follow your choice.',
     background="""
-- **Why values are missing.** In label-free data a protein is usually missing because it was too
-  faint to detect in that sample (*missing not at random*, MNAR), not by chance.
+- **Why values are missing.** A protein is usually missing because it was too faint to detect
+  in that sample (*missing not at random*, MNAR), not by chance. Label-free data has many such
+  gaps; TMT data has fewer, because all channels of a run are measured in the same spectrum.
 - **Recommended: MNAR, row.** A missing value becomes the protein's own lowest measured value,
   i.e. "at most as much as the faintest time we saw it". A protein switched off in one group
   then comes out as clearly lower there, as it should.
@@ -70,9 +73,7 @@ else:
     st.warning("Step 1 (Filter proteins) has not been applied: working on the unfiltered table.")
 
 # 2. Identify actual sample columns dynamically based on the current active matrix
-sample_cols = [
-    c for c in base_df.columns if c not in [id_col, "PeptideSequence", "log2FC", "p-value", "p-adj"]
-]
+sample_cols = sample_columns(base_df, sample_group_map)
 
 with st.expander(f"Input: {base_df.shape[0]:,} proteins in {len(sample_cols)} samples"):
     show_insight_table(base_df, name="imputation-input")
@@ -81,13 +82,10 @@ with st.expander(f"Input: {base_df.shape[0]:,} proteins in {len(sample_cols)} sa
 st.subheader("Settings")
 
 # Build Polars structural metadata DataFrame
-metadata_rows = [{"sample_id": s, "group": sample_group_map[s]} for s in sample_cols if s in sample_group_map]
-metadata_pl = pl.DataFrame(
-    metadata_rows, schema={"sample_id": pl.String, "group": pl.String}
-)
+metadata_pl = group_metadata(sample_group_map, sample_cols)
 
 # User selection for core missingness assumption strategy
-# In DDA label-free data most missing values are proteins below the detection
+# In DDA data (label-free in particular) most missing values are proteins below the detection
 # limit (MNAR), so the default fills them with the protein's own smallest
 # observed intensity. The global minimum sits far below most proteins and turns
 # a single random dropout into a large false fold change; MAR group imputation

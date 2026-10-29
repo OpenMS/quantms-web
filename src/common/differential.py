@@ -105,16 +105,19 @@ def run_differential(
     Raises ValueError when the samples do not form at least two groups.
     """
     done = {k: v for k, v in (done or {}).items() if k in STEPS and v is not None}
-    sample_cols = [c for c in pivot_df.columns if c in sample_group_map]
+    # Samples without a group stay in the tables but take no part in the comparison
+    sample_cols = [
+        c for c in pivot_df.columns if sample_group_map.get(c, "Unassigned") != "Unassigned"
+    ]
     metadata = pl.DataFrame(
         [{"sample_id": s, "group": sample_group_map[s]} for s in sample_cols],
         schema={"sample_id": pl.String, "group": pl.String},
     )
-    groups = sorted({sample_group_map[s] for s in sample_cols if sample_group_map[s] != "Unassigned"})
+    groups = sorted({sample_group_map[s] for s in sample_cols})
     if len(groups) < 2:
         raise ValueError(
             "Comparing groups needs at least two groups. Assign a group (e.g. control, treated) "
-            "to every file on the Configure page and run the workflow again."
+            "to every sample on the Describe experiment page and run the workflow again."
         )
 
     out = dict(done)
@@ -196,9 +199,13 @@ def comparison_groups(sample_group_map: dict, sample_cols: list) -> tuple[str, s
     """(reference, compared) groups behind the sign of log2FC.
 
     openms_insight subtracts the alphabetically first group's mean from the
-    last one's, so a positive log2FC means higher in the last group.
+    last one's, so a positive log2FC means higher in the last group. Samples
+    without a group are not part of the comparison.
     """
-    groups = sorted({sample_group_map[s] for s in sample_cols if s in sample_group_map})
+    groups = sorted({
+        sample_group_map[s] for s in sample_cols
+        if sample_group_map.get(s, "Unassigned") != "Unassigned"
+    })
     if len(groups) < 2:
         return None
     return groups[0], groups[-1]

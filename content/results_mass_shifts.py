@@ -63,7 +63,7 @@ if units == "Da" and tolerance and float(tolerance) >= 100:
 else:
     st.caption(
         "This run used a closed search, so only shifts within the precursor tolerance appear "
-        "(0 Da and isotope picks). Apply the **Open Search** preset on the Configure page to "
+        "(0 Da and isotope picks). Apply the **Open Search** preset on the Describe experiment page to "
         "look for unexpected modifications."
     )
     page_link("configure")

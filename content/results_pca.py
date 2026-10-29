@@ -10,6 +10,7 @@ from src.common.results_helpers import (
     get_active_table,
     get_id_column,
     get_sample_group_map,
+    sample_columns,
 )
 from openms_insight import PCAPlot
 
@@ -50,10 +51,7 @@ ensure_group_comparison(params, show_errors=False)
 base_df, _, _ = get_active_table(pivot_df)
 
 # 2. Extract active sample columns and detect unique biological groups
-sample_cols = [
-    c for c in base_df.columns
-    if c not in [id_col, "PeptideSequence", "log2FC", "p-adj", "stat", "p-value"]
-]
+sample_cols = sample_columns(base_df, sample_group_map)
 unique_groups = sorted({sample_group_map[s] for s in sample_cols if s in sample_group_map})
 
 if len(sample_cols) < 2:

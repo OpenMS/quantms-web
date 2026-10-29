@@ -21,7 +21,7 @@ st.title("Compare groups")
 
 page_intro(
     "Which proteins are more or less abundant in one group of samples than in the other? "
-    "The comparison runs automatically with settings that suit most label-free experiments.",
+    "The comparison runs automatically with settings that suit most experiments, label-free and TMT alike.",
     background="""
 The comparison runs four steps on the protein abundance table:
 
@@ -65,11 +65,12 @@ for s in sample_cols:
     groups.setdefault(sample_group_map[s], []).append(s)
 cols = st.columns(max(len(groups), 1))
 for col, (group, members) in zip(cols, sorted(groups.items())):
-    col.metric(group, f"{len(members)} samples")
+    col.metric(group, f"{len(members)} sample{'' if len(members) == 1 else 's'}")
 if "Unassigned" in groups:
     st.warning(
-        "Some samples have no group. Give every file a group on the **Describe experiment** "
-        "page and run the analysis again."
+        "Some samples have no group, so they are left out of the comparison. Give each a group on "
+        "the **Describe experiment** page (for TMT, type **skip** for channels you do not want "
+        "compared). The comparison updates without running the analysis again."
     )
     page_link("configure")
 

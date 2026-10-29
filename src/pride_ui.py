@@ -339,11 +339,11 @@ def _setup_section(wf, job_dir: Path, status: dict) -> None:
         summary += f" and {Path(fasta_files[0]).name}"
     if settings:
         summary += ", and applies the SDRF settings above"
-    st.caption(summary + ". Review them on the Configure page before running.")
+    st.caption(summary + ". Review them on the Describe experiment page before running.")
     if st.button("Use for the workflow", type="primary", use_container_width=True,
                  key="pride-apply"):
         apply_to_workflow(wf, mzml_files, fasta_files, settings)
-        st.success("Done. Open the Configure page to review the settings.")
+        st.success("Done. Open the Describe experiment page to review the settings.")
 
 
 def pride_import_section(wf, fallback: dict = None) -> None:

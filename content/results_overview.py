@@ -92,7 +92,7 @@ row2[0].metric(
 )
 row2[1].metric("Files", _show(figures["Files"]))
 row2[2].metric("Samples", _show(samples), help="Sample columns of the quantification result.")
-row2[3].metric("Conditions", _show(conditions), help="Distinct groups set on the Configure page.")
+row2[3].metric("Conditions", _show(conditions), help="Distinct groups set on the Describe experiment page.")
 
 st.subheader("Files")
 st.caption(

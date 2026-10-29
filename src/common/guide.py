@@ -86,15 +86,22 @@ def ensure_group_comparison(params: dict, show_errors: bool = True):
     only the missing ones run. Returns the statistics table, or None when there
     is no abundance data or the samples do not form two groups.
     """
-    if st.session_state.get("statistics_df") is not None:
-        return st.session_state["statistics_df"]
     workspace = st.session_state.get("workspace")
     result = get_abundance_data(workspace) if workspace else None
     if result is None:
-        return None
+        return st.session_state.get("statistics_df")
     pivot_df, _, group_map = result
     id_col = get_id_column(workspace, pivot_df)
     sample_group_map = get_sample_group_map(workspace, pivot_df, group_map)
+    # Groups edited on Describe experiment apply without a new run, so a
+    # comparison made with other groups is out of date
+    previous = st.session_state.get("comparison_group_map")
+    if previous is not None and previous != sample_group_map:
+        for key in [*STEPS, "normalized_transform", "comparison_settings"]:
+            st.session_state.pop(key, None)
+    st.session_state["comparison_group_map"] = sample_group_map
+    if st.session_state.get("statistics_df") is not None:
+        return st.session_state["statistics_df"]
     settings = resolve_settings(params)
     try:
         with st.spinner("Comparing groups with the recommended settings..."):

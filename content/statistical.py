@@ -12,6 +12,8 @@ from src.common.results_helpers import (
     get_abundance_data,
     get_id_column,
     get_sample_group_map,
+    group_metadata,
+    sample_columns,
     postprocessing_param,
 )
 # Import statistics engine functions from openms_insight
@@ -91,10 +93,9 @@ elif st.session_state.get("normalized_transform", "log2") != "log2":
     )
 
 # 2. Extract actual active sample columns and detect unique biological groups
-sample_cols = [
-    c for c in base_df.columns if c not in [id_col, "PeptideSequence", "log2FC", "p-value", "p-adj"]
-]
-unique_groups = sorted(list(set([sample_group_map[s] for s in sample_cols if s in sample_group_map])))
+sample_cols = sample_columns(base_df, sample_group_map)
+metadata_pl = group_metadata(sample_group_map, sample_cols)
+unique_groups = sorted(set(metadata_pl["group"].to_list()))
 group_count = len(unique_groups)
 
 with st.expander(f"Input: {base_df.shape[0]:,} proteins in {len(sample_cols)} samples from {group_count} groups ({', '.join(unique_groups)})"):
@@ -102,12 +103,6 @@ with st.expander(f"Input: {base_df.shape[0]:,} proteins in {len(sample_cols)} sa
 
 # --- SECTION 2: Dynamic Statistical Parameter Configuration ---
 st.subheader("Settings")
-
-# Prepare structural Polars metadata DataFrame required by backend functions
-metadata_rows = [{"sample_id": s, "group": sample_group_map[s]} for s in sample_cols if s in sample_group_map]
-metadata_pl = pl.DataFrame(
-    metadata_rows, schema={"sample_id": pl.String, "group": pl.String}
-)
 
 col1, col2 = st.columns(2)
 

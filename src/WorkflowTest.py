@@ -17,6 +17,7 @@ from src.common.common import page_setup
 from src.common.results_helpers import get_abundance_data
 from src.common.results_helpers import parse_idxml, build_spectra_cache, load_idxml, write_psm_exports
 from src.common.contaminants import CONTAMINANT_PREFIX, append_fasta, write_contaminants
+from src.common.isobaric import ISOBARIC_CHANNELS
 from src.pride_ui import pride_import_section
 from openms_insight import Table, Heatmap, LinePlot, SequenceView
 
@@ -755,6 +756,10 @@ class WorkflowTest(WorkflowManager):
         else:
             num_plex = int(m.group())
             channels = [f"sample{i+1}" for i in range(num_plex)]
+            reporter = ISOBARIC_CHANNELS.get(selected_type, [])
+
+            def tags(idx):
+                return f" ({reporter[idx]})" if idx < len(reporter) else ""
             st.caption(f"Isobaric type: **{selected_type}** - {num_plex} channels")
 
             for row_start in range(0, num_plex, 2):
@@ -766,7 +771,7 @@ class WorkflowTest(WorkflowManager):
                     self.ui.input_widget(
                         key=f"TMT-group-{left_channel}",
                         default="",
-                        name=f"Group for channel {left_idx + 1}",
+                        name=f"Group for channel {left_idx + 1}{tags(left_idx)}",
                         widget_type="text",
                         help="e.g. control, case, skip",
                     )
@@ -778,7 +783,7 @@ class WorkflowTest(WorkflowManager):
                         self.ui.input_widget(
                             key=f"TMT-group-{right_channel}",
                             default="",
-                            name=f"Group for channel {right_idx + 1}",
+                            name=f"Group for channel {right_idx + 1}{tags(right_idx)}",
                             widget_type="text",
                             help="e.g. control, case, skip",
                         )

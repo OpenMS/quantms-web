@@ -13,6 +13,8 @@ from src.common.results_helpers import (
     get_abundance_data,
     get_id_column,
     get_sample_group_map,
+    group_metadata,
+    sample_columns,
     postprocessing_param,
 )
 # Import normalization engine functions from openms_insight
@@ -92,9 +94,7 @@ else:
     st.warning("Steps 1 and 2 have not been applied: working on the unprocessed table.")
 
 # 2. Extract actual active sample columns dynamically
-sample_cols = [
-    c for c in base_df.columns if c not in [id_col, "PeptideSequence", "log2FC", "p-value", "p-adj"]
-]
+sample_cols = sample_columns(base_df, sample_group_map)
 
 with st.expander(f"Input: {base_df.shape[0]:,} proteins in {len(sample_cols)} samples"):
     show_insight_table(base_df, name="normalization-input")
@@ -143,10 +143,7 @@ st.markdown("---")
 st.subheader("Settings")
 
 # Prepare structural Polars metadata DataFrame required by backend functions
-metadata_rows = [{"sample_id": s, "group": sample_group_map[s]} for s in sample_cols if s in sample_group_map]
-metadata_pl = pl.DataFrame(
-    metadata_rows, schema={"sample_id": pl.String, "group": pl.String}
-)
+metadata_pl = group_metadata(sample_group_map, sample_cols)
 
 st.caption(
     "Recommended: log2 transformation, median normalization and no row scaling. "

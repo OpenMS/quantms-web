@@ -64,7 +64,14 @@ contaminant_key = f"contaminants={show_contaminants}"
 def render_protein_table(pivot_df, is_lfq=True):
     """Common function to render the protein-level abundance table"""
     pivot_df = pivot_df.copy()
-    st.caption("Each protein's intensity is the sum of its peptides' intensities in that sample.")
+    if is_lfq:
+        st.caption("Each protein's intensity is the sum of its peptides' intensities in that sample.")
+    else:
+        st.caption(
+            "One column per label channel, named by its reporter ion. Each value is the protein's "
+            "reporter-ion intensity in that channel, from its most intense peptides; n_peptides "
+            "counts the peptides behind it."
+        )
 
     if is_lfq:
         # Handle LFQ mode columns (Raw Intensity)
@@ -76,10 +83,11 @@ def render_protein_table(pivot_df, is_lfq=True):
     else:
         # Handle non-LFQ mode columns (Log2-transformed Intensity)
         id_col = "protein"
+        id_col = pivot_df.columns[0]
         exclude_cols = [id_col, "n_proteins", "n_peptides", "protein_score"]
         sample_cols = [c for c in pivot_df.columns if c not in exclude_cols and "ratio" not in c.lower()]
 
-        display_cols = [id_col] + sample_cols
+        display_cols = [id_col, "n_peptides"] + sample_cols
 
     # Filter to available columns, then sort and display
     available_cols = [c for c in display_cols if c in pivot_df.columns]
@@ -91,8 +99,15 @@ def render_protein_table(pivot_df, is_lfq=True):
         name="abundance_protein",
         cache_dir=cache_dir,
         source_files=table_sources,
-        extra_key=contaminant_key,
+        # The cache follows the source files, so name the columns shown as well
+        extra_key=f"{contaminant_key};{available_cols}",
         title="protein_abundance",
+        # Intensities as whole numbers (the table stores float32)
+        column_overrides={
+            c: {"formatter": "money", "formatterParams": {"thousand": ",", "precision": 0}, "minWidth": 110}
+            for c in sample_cols
+        },
+        **({} if is_lfq else {"layout": "fitColumns"}),
     )
 
 try:
@@ -142,26 +157,9 @@ try:
             )
 
     else:
-        pre_processing_tab, protein_tab = st.tabs(["Intensity matrix", "Proteins"])
-
         if result is None:
-            st.info("💡 Please run the workflow first to see results.")
-            st.stop()
-
-        pivot_df, expr_df, group_map = result
-
-        with pre_processing_tab:
-            show_insight_table(
-                pivot_df,
-                name="abundance_intensity_matrix",
-                cache_dir=cache_dir,
-                source_files=table_sources,
-                extra_key=contaminant_key,
-                title="intensity_matrix",
-            )
-
-        with protein_tab:
-            render_protein_table(pivot_df, is_lfq=False)
+            needs_results()
+        render_protein_table(result[0], is_lfq=False)
 
 except Exception as e:
     st.error(f"Failed to load {csv_file.name}: {e}")

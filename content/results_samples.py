@@ -77,7 +77,7 @@ else:
     sources = sorted((results_dir / "quant_results").glob("*.csv"))
     st.caption(
         "Each sample is an isobaric channel. Quantified proteins have an intensity above 0 in the "
-        "channel. Identifications are made per file, not per channel: see the Overview page."
+        "channel. Identifications are made per file, not per channel: see the Run summary page."
     )
 
 if samples.empty:

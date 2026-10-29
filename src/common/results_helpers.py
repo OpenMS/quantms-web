@@ -14,6 +14,11 @@ except ImportError:  # pyOpenMS <= 3.4.x
 from src.workflow.ParameterManager import ParameterManager
 from src.common.contaminants import drop_contaminants, is_contaminant
 from src.common.peptide_format import to_proforma
+from src.common.isobaric import channel_column_names, label_type
+
+UNASSIGNED = "Unassigned"
+# Columns the group comparison adds to a protein table
+STAT_COLUMNS = ("log2FC", "p-value", "p-adj", "stat")
 
 def get_workflow_dir(workspace):
     """Get the workflow directory path."""
@@ -393,6 +398,8 @@ def load_abundance_data(workspace_path: str, csv_mtime: float, params_mtime: flo
 
         # ratio column removal
         df = df.loc[:, ~df.columns.str.contains('ratio', case=False)]
+        # "abundance_sample3[unknown]" -> "sample3[127C]"
+        df = df.rename(columns=channel_column_names(df.columns, label_type(workflow_params)))
 
         # exclude_indices = st.session_state.get("tmt_exclude_indices", [])
         # group_map = st.session_state.get("tmt_group_map", {})
@@ -512,9 +519,15 @@ def get_sample_group_map(workspace: Path, pivot_df: pd.DataFrame, group_map: dic
     analysis_mode = ParameterManager(workflow_dir, "TOPP Workflow").get_parameters_from_json().get("analysis-mode", "LFQ")
 
     if analysis_mode == "LFQ":
-        return {
+        grouped = {
             k[:-5] if k.endswith(".mzML") else k: v
             for k, v in group_map.items()
+        }
+        # Every sample column is listed, those without a group as "Unassigned"
+        return {
+            c: grouped.get(c) or UNASSIGNED
+            for c in pivot_df.columns
+            if c not in ("ProteinName", "PeptideSequence", *STAT_COLUMNS)
         }
 
     actual_sample_names = pivot_df.columns.tolist()
@@ -527,8 +540,29 @@ def get_sample_group_map(workspace: Path, pivot_df: pd.DataFrame, group_map: dic
         target_substring = f"sample{sample_idx}["
         real_full_name = next((name for name in actual_sample_names if target_substring in name), None)
         if real_full_name:
-            norm_map[real_full_name] = v if v and v.strip() else "Unassigned"
+            norm_map[real_full_name] = v if v and v.strip() else UNASSIGNED
+    # Channels left without a group (not skipped) count as "Unassigned"
+    for name in actual_sample_names:
+        if re.search(r"sample\d+\[", str(name)) and name not in norm_map:
+            norm_map[name] = UNASSIGNED
     return norm_map
+
+
+def sample_columns(df: pd.DataFrame, sample_group_map: dict) -> list:
+    """The sample columns of ``df``, in table order (no id or summary columns)."""
+    return [c for c in df.columns if c in sample_group_map]
+
+
+def group_metadata(sample_group_map: dict, columns) -> pl.DataFrame:
+    """Sample-to-group table for the statistics, leaving out unassigned samples."""
+    return pl.DataFrame(
+        [
+            {"sample_id": s, "group": sample_group_map[s]}
+            for s in columns
+            if sample_group_map.get(s, UNASSIGNED) != UNASSIGNED
+        ],
+        schema={"sample_id": pl.String, "group": pl.String},
+    )
 
 
 # Session-state keys of the postprocessing chain, in pipeline order.

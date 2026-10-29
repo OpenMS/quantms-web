@@ -13,6 +13,8 @@ from src.common.results_helpers import (
     get_abundance_data,
     get_id_column,
     get_sample_group_map,
+    group_metadata,
+    sample_columns,
     postprocessing_param,
 )
 
@@ -62,11 +64,7 @@ id_col = get_id_column(st.session_state["workspace"], pivot_df)
 sample_group_map = get_sample_group_map(st.session_state["workspace"], pivot_df, group_map)
 
 # 1. Identify actual sample columns dynamically
-sample_cols = [
-    c
-    for c in pivot_df.columns
-    if c not in [id_col, "PeptideSequence", "log2FC", "p-value", "p-adj"]
-]
+sample_cols = sample_columns(pivot_df, sample_group_map)
 
 with st.expander(f"Input: {pivot_df.shape[0]:,} proteins in {len(sample_cols)} samples"):
     show_insight_table(pivot_df, name="filtering-original")
@@ -75,10 +73,7 @@ with st.expander(f"Input: {pivot_df.shape[0]:,} proteins in {len(sample_cols)} s
 st.subheader("Settings")
 
 # Prepare Polars Metadata DataFrame required by openms_insight functions
-metadata_rows = [{"sample_id": s, "group": sample_group_map[s]} for s in sample_cols if s in sample_group_map]
-metadata_pl = pl.DataFrame(
-    metadata_rows, schema={"sample_id": pl.String, "group": pl.String}
-)
+metadata_pl = group_metadata(sample_group_map, sample_cols)
 
 # User selection for filtering strategy. The default keeps proteins quantified
 # in at least half of the samples of one group, which removes rows that

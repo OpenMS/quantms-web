@@ -12,6 +12,8 @@ page_intro(
 You need two kinds of files:
 
 - **MS data (mzML)**: one file per measured run. Convert vendor raw files to mzML first.
+  For a TMT experiment, upload every run (fraction) of the labelled pool; the groups are
+  then set per label channel, not per file.
 - **Protein database (FASTA)**: the protein sequences of your organism. Decoys and common
   contaminants are added automatically.
 

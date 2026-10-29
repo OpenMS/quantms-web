@@ -79,3 +79,47 @@ def test_comparison_direction_matches_the_sign_of_log2fc():
     stats = run_differential(df, groups, "ProteinName", default_settings())["statistics_df"]
     # The planted proteins are higher in g1, so they must come out positive
     assert (stats.set_index("ProteinName").loc[[f"P{i:05d}" for i in range(10)], "log2FC"] > 0).all()
+
+
+def test_unassigned_samples_and_tmt_summary_columns_stay_out_of_the_comparison():
+    df, groups = _table()
+    df.insert(1, "n_peptides", 3)
+    df.insert(2, "protein_score", 0.9)
+    df["sample7[file7]"] = df["sample1[file1]"] * 100  # a channel nobody grouped
+    groups["sample7[file7]"] = "Unassigned"
+    out = run_differential(df, groups, "ProteinName", default_settings())
+    reference = run_differential(*_table(), "ProteinName", default_settings())
+    merged = out["statistics_df"].merge(reference["statistics_df"], on="ProteinName")
+    np.testing.assert_allclose(merged["log2FC_x"], merged["log2FC_y"], rtol=1e-5)
+    assert (out["normalized_df"]["n_peptides"] == 3).all()
+
+
+def test_comparison_groups_ignore_unassigned():
+    from src.common.differential import comparison_groups
+
+    groups = {"a": "control", "b": "treated", "c": "Unassigned"}
+    assert comparison_groups(groups, list(groups)) == ("control", "treated")
+
+
+def test_tmt_group_map_marks_ungrouped_channels(tmp_path):
+    import json
+
+    from src.common.results_helpers import (
+        get_sample_group_map,
+        group_metadata,
+        sample_columns,
+    )
+
+    workflow_dir = tmp_path / "topp-workflow"
+    workflow_dir.mkdir()
+    (workflow_dir / "params.json").write_text(json.dumps({"analysis-mode": "TMT"}))
+    pivot = pd.DataFrame(columns=[
+        "protein", "n_proteins", "protein_score", "n_peptides",
+        "sample1[126]", "sample2[127N]", "sample3[127C]",
+    ])
+    mapping = get_sample_group_map(tmp_path, pivot, {0: "control", 1: "treated"})
+    assert mapping == {"sample1[126]": "control", "sample2[127N]": "treated", "sample3[127C]": "Unassigned"}
+    assert sample_columns(pivot, mapping) == ["sample1[126]", "sample2[127N]", "sample3[127C]"]
+    assert group_metadata(mapping, sample_columns(pivot, mapping))["sample_id"].to_list() == [
+        "sample1[126]", "sample2[127N]",
+    ]
