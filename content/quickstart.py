@@ -94,7 +94,7 @@ def render_windows_download_box(app_bytes: bytes) -> None:
 
 page_setup(page="main")
 
-st.markdown("# OpenDDA: find out which proteins change in your samples")
+st.markdown("# OpenDDA: Find differentially abundant proteins in your samples")
 
 windows_app_bytes = load_windows_app_bytes()
 if windows_app_bytes is not None:
@@ -104,7 +104,7 @@ st.markdown(
     """
 OpenDDA turns raw mass spectrometry files from a **data-dependent acquisition (DDA)**
 experiment into a list of proteins, how much of each protein every sample contains,
-and which proteins differ between your experimental groups. You do not need to know
+and which proteins are differentially abundant between your experimental groups. You do not need to know
 the search engines behind it: every setting starts at a value that suits a typical
 experiment, and each page explains what you are looking at.
 """
