@@ -5,25 +5,32 @@ from src.common.common import page_setup
 from src.common.results_helpers import get_workflow_dir
 from openms_insight import Heatmap, LinePlot, SequenceView, StateManager
 from src.common.common import show_fig
+from src.common.guide import needs_results, next_steps, page_intro
 from src.common.fragment_plots import fragment_error_plot, ion_table, ion_table_html, load_psm_fragments
 from src.workflow.ParameterManager import ParameterManager
 from src.common.sequence_display import psm_table, sequence_mode_selector
 from openms_insight import Heatmap, LinePlot, SequenceView, StateManager
 
 params = page_setup()
-st.title("Filtered PSMs")
+st.title("Peptide-spectrum matches")
 
-st.markdown(
-    """
-View FDR-controlled peptide identifications after **IDFilter** processing.
-These are high-confidence PSMs that passed the specified FDR threshold.
-Click on a PSM to view the annotated spectrum and peptide sequence.
-"""
+page_intro(
+    'The final, filtered peptide identifications of each run: one row per spectrum explained by a peptide. Select a match to check its spectrum, the fragment ions that support it and their mass errors.',
+    background="""
+- A **PSM** (peptide-spectrum match) is one fragmentation spectrum explained by one peptide.
+- The **plot** shows every PSM by retention time (when the peptide came off the column) and
+  mass; **click a PSM** in the table to see its spectrum with the matched fragment ions
+  (b ions from the peptide's start, y ions from its end) and its sequence.
+- The analysis identifies peptides in three steps: the database search (Comet) proposes the best
+  peptide per spectrum, rescoring (Percolator) re-ranks the matches, and filtering keeps those
+  within the false discovery rate. This page shows the result of one step.
+""",
+    background_title='What you are looking at',
 )
 
 st.info(
-    "**Score:** The q-value represents the minimum false discovery rate (FDR) at which this PSM "
-    "would be accepted. Lower values indicate higher confidence identifications."
+    "**Score: q-value**, the lowest false discovery rate at which this match would still be "
+    "accepted. 0.01 means it passes a 1 % FDR; lower is more confident."
 )
 
 if "workspace" not in st.session_state:
@@ -35,9 +42,7 @@ filter_dir = workflow_dir / "results" / "psm_filter"
 cache_dir = workflow_dir / "results" / "insight_cache"
 
 if not filter_dir.exists():
-    st.info("No filtered results available yet. Please run the workflow first.")
-    st.page_link("content/workflow_run.py", label="Go to Run", icon="🚀")
-    st.stop()
+    needs_results()
 
 filter_files = sorted(filter_dir.glob("*.idXML"))
 
@@ -109,6 +114,7 @@ else:
         st.markdown("**b/y ions** (theoretical m/z; matched ions highlighted, neutral losses not counted)")
         st.html(ion_table_html(values, matched))
 
-st.markdown("---")
-st.markdown("**Next step:** View abundance quantification")
-st.page_link("content/results_abundance.py", label="Go to Abundance", icon="📋")
+next_steps(
+    ('qc', 'Overall quality of the identifications.'),
+    ('proteins', 'The proteins these peptides add up to.'),
+)

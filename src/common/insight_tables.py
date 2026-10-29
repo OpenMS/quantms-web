@@ -37,6 +37,20 @@ def _fingerprint_dataframe(df: pd.DataFrame) -> str:
     return digest.hexdigest()
 
 
+def plot_cache(name: str, df: pd.DataFrame) -> dict:
+    """``cache_id``/``cache_path`` for an insight plot of a table computed in the session.
+
+    Keying the cache on the table's content rebuilds it when an upstream step
+    changes the data, and reuses it on every other rerun. Rebuilding on each
+    rerun (``regenerate_cache=True``) instead hands the browser new data every
+    time the component asks for it, and the plot never leaves "Loading...".
+    """
+    return {
+        "cache_id": f"{name}_{_fingerprint_dataframe(df)[:16]}",
+        "cache_path": str(_default_cache_dir()),
+    }
+
+
 def _default_cache_dir() -> Path:
     """Cache location for tables that are not tied to a workflow result directory."""
     workspace = st.session_state.get("workspace")

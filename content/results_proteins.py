@@ -5,6 +5,7 @@ import streamlit as st
 from openms_insight import StateManager
 
 from src.common.common import page_setup
+from src.common.guide import needs_results, next_steps, page_intro
 from src.common.insight_tables import show_insight_table
 from src.common.protein_table import build_tables, collect_psms, coverage_html, read_fasta
 from src.common.results_helpers import get_workflow_dir
@@ -13,13 +14,21 @@ from src.WorkflowTest import WorkflowTest
 params = page_setup()
 wf = WorkflowTest()
 
-st.title("Proteins")
-st.markdown(
-    """
-Proteins identified by the FDR-filtered PSMs of all runs, with their sequence
-coverage. **Select a protein** to list its peptides and see its coverage map;
-**select a peptide** to list its PSMs.
-"""
+st.title("Identified proteins")
+page_intro(
+    "Every protein found in any sample, with the evidence behind it. **Click a protein** to see "
+    "which parts of its sequence were covered by peptides; **click a peptide** to see the spectra "
+    "that identified it. Use the search fields in the table header to look up your protein of interest.",
+    background="""
+- A protein is identified through its **peptides**, and each peptide through one or more
+  **PSMs** (peptide-spectrum matches: a fragmentation spectrum explained by that peptide).
+- **Coverage** is the share of the protein sequence covered by identified peptides. 10 to 40 %
+  is normal; trypsin produces some peptides too short or too long to be measured.
+- More peptides and PSMs mean more confident identification. Proteins identified by a single
+  peptide deserve a closer look.
+- All identifications passed a 1 % false discovery rate (unless changed on *Describe experiment*).
+""",
+    background_title="How identification evidence works",
 )
 
 workflow_dir = get_workflow_dir(st.session_state["workspace"])
@@ -28,9 +37,7 @@ cache_dir = workflow_dir / "results" / "insight_cache"
 idxml_files = sorted(filter_dir.glob("*.idXML")) if filter_dir.exists() else []
 
 if not idxml_files:
-    st.info("No filtered PSMs available yet. Please run the workflow first.")
-    st.page_link("content/workflow_run.py", label="Go to Run", icon="🚀")
-    st.stop()
+    needs_results()
 
 fasta_path = None
 if wf.params.get("fasta-file"):
@@ -115,4 +122,9 @@ show_insight_table(
         "accession": HIDDEN, "peptide": HIDDEN,
         "RT (s)": decimals(1), "m/z": decimals(4),
     },
+)
+
+next_steps(
+    ("compare", "See whether your protein changes between the groups."),
+    ("abundance", "Its intensity in every sample."),
 )

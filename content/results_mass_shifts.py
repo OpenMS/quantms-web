@@ -8,21 +8,26 @@ import streamlit as st
 from openms_insight import LinePlot, StateManager, Table
 
 from src.common.common import page_setup
+from src.common.guide import needs_results, next_steps, page_intro, page_link
 from src.common.mass_shifts import MIN_PSMS, mass_shift_summary, psm_mass_shifts
 from src.common.results_helpers import get_workflow_dir
 from src.workflow.ParameterManager import ParameterManager
 
 params = page_setup()
-st.title("Mass Shifts")
+st.title("Mass shifts")
 
-st.markdown(
-    """
-The difference between each identified PSM's observed precursor mass and the
-theoretical mass of its peptide. With the **Open Search** preset (±500 Da
-precursor tolerance) a peptide can be identified with a modification the search
-did not include, and recurring shifts reveal which ones. Each shift is matched
-to Unimod. Click a peak or a row to list its PSMs.
-"""
+page_intro(
+    'Which unexpected modifications are in your sample? Each peak is a mass difference between measured and expected peptide masses that recurs across many peptides, matched to known modifications in Unimod. Most useful after a run with the **Open Search** preset.',
+    background="""
+- A normal search only finds the modifications you list on *Describe experiment*. The
+  **Open Search** preset widens the allowed peptide mass difference to ±500 Da, so peptides
+  carrying any other modification are still identified, at a mass offset.
+- **Recurring offsets** reveal those modifications: e.g. +16.0 Da is oxidation, +0.98 Da
+  deamidation, +1.0 Da often a picked 13C isotope peak rather than a modification.
+- If an offset matches a modification you care about, add it as a variable modification and
+  run a normal (closed) search for reliable quantification.
+""",
+    background_title='What mass shifts tell you',
 )
 
 if "workspace" not in st.session_state:
@@ -36,9 +41,7 @@ workflow_params = ParameterManager(workflow_dir, "TOPP Workflow").get_parameters
 
 idxmls = sorted(filter_dir.glob("*.idXML")) if filter_dir.is_dir() else []
 if not idxmls:
-    st.info("No results available yet. Please run the workflow first.")
-    st.page_link("content/workflow_run.py", label="Go to Run", icon="🚀")
-    st.stop()
+    needs_results()
 
 mzml_names = [Path(f).name for f in workflow_params.get("mzML-files", [])]
 mtimes = tuple(p.stat().st_mtime for p in idxmls)
@@ -63,7 +66,7 @@ else:
         "(0 Da and isotope picks). Apply the **Open Search** preset on the Configure page to "
         "look for unexpected modifications."
     )
-    st.page_link("content/workflow_configure.py", label="Go to Configure", icon="⚙️")
+    page_link("configure")
 
 if psms.empty:
     st.info("No target PSMs in the filtered results.")
@@ -165,4 +168,9 @@ Table(cache_id=ids["shifts"], cache_path=str(cache_dir))(
 st.subheader("PSMs of the selected shift")
 Table(cache_id=ids["psms"], cache_path=str(cache_dir))(
     key="mass_shift_psm_table", state_manager=state_manager, height=420
+)
+
+next_steps(
+    ('configure', 'Add a discovered modification to the search.'),
+    ('filtered', 'Inspect the matches behind a shift.'),
 )

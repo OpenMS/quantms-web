@@ -4,19 +4,32 @@ from pathlib import Path
 import streamlit as st
 
 from src.common.common import page_setup
+from src.common.guide import needs_results, next_steps, page_intro
 from src.common.insight_tables import show_insight_table
 from src.common.overview import run_overview
 from src.common.results_helpers import get_abundance_data, get_workflow_dir
 from src.workflow.ParameterManager import ParameterManager
 
 params = page_setup()
-st.title("Run Overview")
+st.title("Run summary")
 
-st.markdown(
-    """
-Key figures of the last run and how each file did: MS2 spectra, identified PSMs
-at the PSM FDR, peptides, precursor mass error, rescoring and search time.
-"""
+page_intro(
+    "Did the run work? The key figures below say how many proteins and peptides were found, "
+    "and the file table shows whether any sample stands out. Start here after every run.",
+    background="""
+- **PSM** (peptide-spectrum match): one fragmentation spectrum explained by one peptide.
+  Every protein is backed by peptides, and every peptide by one or more PSMs.
+- **PSMs per MS2 spectrum** (identification rate): the share of fragmentation spectra that
+  were explained by a peptide. 20 to 50 % is typical for a good tryptic digest on a modern
+  instrument; much lower values point to the wrong database, wrong modifications or wrong
+  mass tolerances.
+- **Precursor mass error**: how far measured peptide masses lie from the expected ones, in
+  parts per million (ppm). On an Orbitrap the median should be within a few ppm of 0;
+  a large offset means the instrument needs calibration.
+- A **file far below the others** in PSMs or ID rate usually had a problem during sample
+  preparation or measurement, and may distort the group comparison.
+""",
+    background_title="How to read these numbers",
 )
 
 if "workspace" not in st.session_state:
@@ -30,9 +43,7 @@ workflow_params = ParameterManager(workflow_dir, "TOPP Workflow").get_parameters
 mzml_files = [str(f) for f in workflow_params.get("mzML-files", [])]
 
 if not filter_dir.is_dir() or not any(filter_dir.glob("*.idXML")):
-    st.info("No results available yet. Please run the workflow first.")
-    st.page_link("content/workflow_run.py", label="Go to Run", icon="🚀")
-    st.stop()
+    needs_results()
 
 log_file = workflow_dir / "logs" / "commands-and-run-times.log"
 sources = sorted(filter_dir.glob("*.idXML")) + [log_file]
@@ -105,6 +116,8 @@ show_insight_table(
     layout="fitColumns",
 )
 
-st.markdown("---")
-st.markdown("**Next step:** Look at the identifications")
-st.page_link("content/results_filtered.py", label="Go to Filtered PSMs", icon="🎯")
+next_steps(
+    ("compare", "See which proteins differ between your groups."),
+    ("proteins", "Look up a protein of interest and the peptides that support it."),
+    ("download", "Get the protein and peptide tables for your own analysis."),
+)

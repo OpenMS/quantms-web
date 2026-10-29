@@ -541,6 +541,8 @@ def clear_downstream_steps(step: str) -> None:
     Re-applying a step changes the table the later steps were computed from,
     so their stored results no longer match and must be recomputed.
     """
+    # The note of how the comparison was computed no longer applies
+    st.session_state.pop("comparison_settings", None)
     for key in POSTPROCESSING_STEPS[POSTPROCESSING_STEPS.index(step) + 1:]:
         st.session_state.pop(key, None)
         if key == "normalized_df":

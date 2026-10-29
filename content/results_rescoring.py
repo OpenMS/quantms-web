@@ -2,24 +2,31 @@
 import streamlit as st
 from pathlib import Path
 from src.common.common import page_setup
+from src.common.guide import needs_results, next_steps, page_intro
 from src.common.results_helpers import get_workflow_dir
 from src.common.sequence_display import psm_table, sequence_mode_selector
 from openms_insight import Heatmap, LinePlot, SequenceView, StateManager
 
 params = page_setup()
-st.title("Rescoring Results")
+st.title("Rescored hits (Percolator)")
 
-st.markdown(
-    """
-View PSMs after **Percolator** statistical validation. Percolator uses machine learning
-to re-score PSMs and estimate false discovery rates (FDR) for more accurate results.
-Click on a PSM to view the annotated spectrum and peptide sequence.
-"""
+page_intro(
+    'The search matches after Percolator has re-scored them with machine learning, before filtering. Use it to see how rescoring changed the confidence of a match.',
+    background="""
+- A **PSM** (peptide-spectrum match) is one fragmentation spectrum explained by one peptide.
+- The **plot** shows every PSM by retention time (when the peptide came off the column) and
+  mass; **click a PSM** in the table to see its spectrum with the matched fragment ions
+  (b ions from the peptide's start, y ions from its end) and its sequence.
+- The analysis identifies peptides in three steps: the database search (Comet) proposes the best
+  peptide per spectrum, rescoring (Percolator) re-ranks the matches, and filtering keeps those
+  within the false discovery rate. This page shows the result of one step.
+""",
+    background_title='What you are looking at',
 )
 
 st.info(
-    "**Score:** The Posterior Error Probability (PEP) represents the probability that this PSM "
-    "is incorrect. Lower values indicate higher confidence identifications."
+    "**Score: PEP** (posterior error probability), the probability that this match is wrong. "
+    "0.01 means a 1 % chance; lower is more confident."
 )
 
 if "workspace" not in st.session_state:
@@ -31,9 +38,7 @@ perc_dir = workflow_dir / "results" / "percolator_results"
 cache_dir = workflow_dir / "results" / "insight_cache"
 
 if not perc_dir.exists():
-    st.info("No rescoring results available yet. Please run the workflow first.")
-    st.page_link("content/workflow_run.py", label="Go to Run", icon="🚀")
-    st.stop()
+    needs_results()
 
 perc_files = sorted(perc_dir.glob("*.idXML"))
 
@@ -76,6 +81,7 @@ seq_view(key=f"seqview_{cache_id_prefix}", state_manager=state_manager, height=5
 st.subheader("MS2 Spectrum")
 line_plot(key=f"lineplot_{cache_id_prefix}", state_manager=state_manager, height=450, sequence_view_key=f"seqview_{cache_id_prefix}")
 
-st.markdown("---")
-st.markdown("**Next step:** View filtered PSMs")
-st.page_link("content/results_filtered.py", label="Go to Filtered PSMs", icon="🎯")
+next_steps(
+    ('filtered', 'The final, filtered matches.'),
+    ('qc', 'Overall quality of the identifications.'),
+)

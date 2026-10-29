@@ -5,6 +5,7 @@ import pandas as pd
 import polars as pl
 import streamlit as st
 from src.common.common import page_setup, save_params, show_fig
+from src.common.guide import needs_results, next_steps, page_intro
 from src.common.postprocessing_plots import imputed_value_preview, missingness_vs_intensity
 from src.common.insight_tables import show_insight_table
 from src.common.results_helpers import (
@@ -26,12 +27,23 @@ def strip_stat_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df.drop(columns=[c for c in STAT_COLUMNS if c in df.columns], errors="ignore")
 
 params = page_setup()
-st.title("Step 2 of 4: Imputation")
+st.title("Fine-tune 2 of 4: Missing values")
 
-st.markdown(
-    """
-Handle missing values (zeros or nulls) in your quantification matrix using biological group-aware (MAR) or absolute lowest limit (MNAR) techniques.
-"""
+page_intro(
+    'Fill in the values of proteins that were not detected in some samples, so every protein can be tested.'
+    "\n\n" + 'You do not need this page for a standard analysis: **Compare groups** runs all four steps with the recommended settings. Use it to inspect this step or change it; the plots follow your choice.',
+    background="""
+- **Why values are missing.** In label-free data a protein is usually missing because it was too
+  faint to detect in that sample (*missing not at random*, MNAR), not by chance.
+- **Recommended: MNAR, row.** A missing value becomes the protein's own lowest measured value,
+  i.e. "at most as much as the faintest time we saw it". A protein switched off in one group
+  then comes out as clearly lower there, as it should.
+- *MAR* (missing at random) fills in the group mean or median. It suits data where dropouts are
+  random, but cannot fill a protein missing in a whole group.
+- The plots below help decide: if proteins with missing values are generally less intense
+  (orange curve lower), the recommended MNAR setting is right.
+""",
+    background_title='What imputation does',
 )
 
 if "workspace" not in st.session_state:
@@ -41,13 +53,7 @@ if "workspace" not in st.session_state:
 # Load base dataset and clean dictionary keys
 result = get_abundance_data(st.session_state["workspace"])
 if result is None:
-    st.info(
-        "Abundance data not available. Please run the workflow and configure sample groups first."
-    )
-    st.page_link(
-        "content/results_abundance.py", label="Go to Abundance", icon="📋"
-    )
-    st.stop()
+    needs_results()
 
 pivot_df, expr_df, group_map = result
 pivot_df = strip_stat_columns(pivot_df)
@@ -58,31 +64,21 @@ sample_group_map = get_sample_group_map(st.session_state["workspace"], pivot_df,
 if "filtered_df" in st.session_state and st.session_state["filtered_df"] is not None:
     base_df = strip_stat_columns(st.session_state["filtered_df"])
     st.session_state["filtered_df"] = base_df
-    st.info(
-        "🔄 **Upstream Pipeline Detected**: Using data processed from the **Filtering** step."
-    )
+    st.info("Working on the output of step 1 (Filter proteins).")
 else:
     base_df = pivot_df
-    st.warning(
-        "⚠️ **Raw Input Active**: No filtering history found. Operating on the original unfiltered table."
-    )
+    st.warning("Step 1 (Filter proteins) has not been applied: working on the unfiltered table.")
 
 # 2. Identify actual sample columns dynamically based on the current active matrix
 sample_cols = [
     c for c in base_df.columns if c not in [id_col, "PeptideSequence", "log2FC", "p-value", "p-adj"]
 ]
 
-# --- SECTION 1: Input Matrix Summary ---
-st.subheader("Input Matrix Overview")
-st.markdown(
-    f"Currently analyzing **{base_df.shape[0]}** rows across **{len(sample_cols)}** samples before imputation."
-)
-show_insight_table(base_df, name="imputation-input")
-
-st.markdown("---")
+with st.expander(f"Input: {base_df.shape[0]:,} proteins in {len(sample_cols)} samples"):
+    show_insight_table(base_df, name="imputation-input")
 
 # --- SECTION 2: Imputation Configuration ---
-st.subheader("Configure Imputation Engine")
+st.subheader("Settings")
 
 # Build Polars structural metadata DataFrame
 metadata_rows = [{"sample_id": s, "group": sample_group_map[s]} for s in sample_cols if s in sample_group_map]
@@ -98,7 +94,7 @@ metadata_pl = pl.DataFrame(
 # cannot fill a protein that is missing in a whole group.
 impute_options = ["MNAR (Missing Not At Random)", "MAR (Missing At Random)"]
 impute_category = st.selectbox(
-    "Select Imputation Class",
+    "Why are values missing?",
     options=impute_options,
     index=impute_options.index(
         postprocessing_param(params, "postproc-impute-class", impute_options)
@@ -196,3 +192,8 @@ imputed_df = st.session_state.get("imputed_df")
 if imputed_df is not None:
     st.subheader("Imputed Result Table")
     show_insight_table(imputed_df, name="imputation-result")
+
+next_steps(
+    ('normalization', 'Next: make the samples comparable.'),
+    ('compare', 'Back to the overview of the comparison.'),
+)

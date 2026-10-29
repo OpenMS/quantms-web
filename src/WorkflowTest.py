@@ -43,6 +43,61 @@ def detect_decoy_prefix(fasta_path: str, mtime: float) -> str | None:
     return None
 
 
+# Plain-language help shown above the search settings (LFQ and TMT).
+DECOY_INFO = """
+**Why decoys?** To estimate how many matches are wrong, the search also looks for
+peptides from fake ("decoy") proteins: your proteins with their sequences reversed or
+shuffled. Every decoy hit is a known false match, so the number of decoy hits tells how
+many false matches hide among the real ones. *Reverse* is the standard choice.
+"""
+
+COMET_INFO = """
+**How peptides are identified.** Comet compares every fragmentation (MS2) spectrum with
+the spectra expected for the peptides of your FASTA database. The defaults fit a tryptic
+digest with carbamidomethylated cysteines. Pick the **instrument preset** at the top of the
+page to set the tolerances for your mass spectrometer; change the rest only if your sample
+preparation differs:
+
+* **enzyme**: the protease you digested with (usually Trypsin/P).
+* **missed_cleavages**: how many cut sites the enzyme may skip within one peptide (2 is typical).
+* **fixed_modifications**: changes present on every copy of an amino acid, e.g.
+  *Carbamidomethyl (C)* after reduction and alkylation with iodoacetamide.
+* **variable_modifications**: changes that may or may not be present, e.g. *Oxidation (M)*
+  or *Phospho (STY)*. Each one added makes the search slower and less sensitive, so add only
+  those you expect.
+* **precursor / fragment mass tolerance**: how far a measured mass may lie from the expected
+  one. Set by the instrument preset.
+"""
+
+COMET_DECOY_INFO = """* **PeptideIndexing:decoy_string**: the label that marks decoy proteins in your FASTA
+  file (detected automatically, e.g. *rev_* or *DECOY_*).
+"""
+
+
+PERCOLATOR_INFO = """
+**Telling right from wrong matches.** Percolator learns, from many features of each
+match (score, mass error, peptide length, ...), what distinguishes real matches from the
+decoy ones, and re-scores every match. This typically identifies 20 to 50 % more peptides
+at the same error rate. The defaults suit every experiment.
+"""
+
+FDR_INFO = """
+**How many wrong matches you accept.** The false discovery rate (FDR) is the share of
+reported matches expected to be wrong. **1 %** is the community standard and what journals
+expect; raise it only for exploration. 100 % switches the filter off.
+"""
+
+
+def demo_group(filename: str) -> str:
+    """Group of a demo file (UPS2 spiked in at two ratios), so the demo runs as shipped."""
+    if not Path("example-data", "mzML", filename).is_file():
+        return ""
+    for ratio in ("ratio01", "ratio10"):
+        if ratio in filename:
+            return f"UPS2_{ratio}"
+    return ""
+
+
 # params = page_setup()
 class WorkflowTest(WorkflowManager):
 
@@ -77,10 +132,11 @@ class WorkflowTest(WorkflowManager):
 
     @st.fragment
     def configure(self) -> None:
+        self.preselect_all_inputs("mzML-files")
         # reactive=True so Group Selection tab updates when selection changes
-        self.ui.select_input_file("mzML-files", multiple=True, reactive=True)
+        self.ui.select_input_file("mzML-files", name="MS data files to analyse", multiple=True, reactive=True)
         # reactive=True so the decoy default below follows the selected database
-        self.ui.select_input_file("fasta-file", multiple=False, reactive=True)
+        self.ui.select_input_file("fasta-file", name="Protein database (FASTA)", multiple=False, reactive=True)
 
         self.params = self.parameter_manager.get_parameters_from_json()
         self.apply_decoy_default()
@@ -89,10 +145,11 @@ class WorkflowTest(WorkflowManager):
         self.ui.input_widget(
             key="analysis-mode",
             default=saved_mode,
-            name="Analysis Mode",
+            name="Experiment type",
             widget_type="selectbox",
             options=["LFQ", "TMT"],
-            help="Choose between Label-Free Quantification (LFQ) or Tandem Mass Tag (TMT) analysis.",
+            help="LFQ (label-free): every sample was measured in its own run. "
+                 "TMT: samples were labelled with isobaric tags (TMT or iTRAQ) and pooled into one run.",
             reactive=True
         )
 
@@ -103,6 +160,27 @@ class WorkflowTest(WorkflowManager):
             self.render_lfq_tabs()
         else:
             self.render_tmt_tabs()
+
+    def preselect_all_inputs(self, key: str) -> None:
+        """Select every uploaded file of ``key`` until the user makes a choice.
+
+        A fresh workspace then runs as it is (all uploaded runs, or the demo
+        data); once the selection is saved, even as empty, it is left alone.
+        """
+        if key in self.params:
+            return
+        path = Path(self.workflow_dir, "input-files", key)
+        if not path.is_dir():
+            return
+        options = sorted(str(f) for f in path.iterdir() if "external_files.txt" not in str(f))
+        if not options:
+            return
+        params = self.parameter_manager.get_parameters_from_json()
+        params[key] = options
+        with open(self.parameter_manager.params_file, "w", encoding="utf-8") as f:
+            json.dump(params, f, indent=4)
+        self.params = params
+        self.ui.params = params
 
     def apply_decoy_default(self) -> None:
         """Default decoy generation to on, unless the selected FASTA already has decoys.
@@ -150,13 +228,13 @@ class WorkflowTest(WorkflowManager):
         self.ui.input_widget(
             key="psm-fdr-percent",
             default=1.0,
-            name="PSM FDR level (%)",
+            name="False discovery rate for peptide matches (%)",
             widget_type="number",
             min_value=0.001,
             max_value=100.0,
             step_size=1.0,
-            help="Keep PSMs with a q-value up to this level. 100% disables FDR filtering "
-                 "and passes every PSM on unfiltered.",
+            help="Keep peptide-spectrum matches (PSMs) with a q-value up to this level. 1 % is the "
+                 "standard; 100 % disables the filter and passes every PSM on.",
         )
 
     def psm_fdr(self) -> float:
@@ -194,10 +272,16 @@ class WorkflowTest(WorkflowManager):
         )
 
     def render_lfq_tabs(self):
-        st.subheader("LFQ Analysis Mode")
-        t = st.tabs(["**Identification**", "**Rescoring**", "**Filtering**", "**Library Generation**", "**Quantification**", "**Group Selection**"])
+        st.subheader("Label-free experiment")
+        t = st.tabs([
+            "**1 · Samples and groups**", "**2 · Database search**", "**3 · Rescoring**",
+            "**4 · False discovery rate**", "**5 · Quantification**", "**6 · Spectral library (optional)**",
+        ])
 
         with t[0]:
+            self.render_lfq_groups()
+
+        with t[1]:
             # Checkbox for decoy generation
             # reactive=True ensures the parent configure() fragment re-runs when checkbox changes,
             # so conditional UI (DecoyDatabase settings) updates immediately
@@ -216,14 +300,7 @@ class WorkflowTest(WorkflowManager):
 
             # Show DecoyDatabase settings if generating decoys
             if self.params.get("generate-decoys", True):
-                st.info("""
-                **Decoy Database Settings:**
-                * **method**: How decoy sequences are generated from target protein sequences.
-                *Reverse* creates decoys by reversing each sequence, while *shuffle* randomly
-                rearranges the amino acids. Both methods preserve the amino acid composition
-                of the original protein, ensuring decoys have similar properties to real sequences
-                for accurate false discovery rate (FDR) estimation.
-                """)
+                st.info(DECOY_INFO)
                 self.ui.input_TOPP(
                     "DecoyDatabase",
                     custom_defaults={
@@ -234,20 +311,9 @@ class WorkflowTest(WorkflowManager):
                     include_parameters=["method"],
                 )
 
-            comet_info = """
-            **Identification (Comet):**
-            * **enzyme**: The enzyme used for peptide digestion.
-            * **missed_cleavages**: Number of possible cleavage sites missed by the enzyme. It has no effect if enzyme is unspecific cleavage.
-            * **fixed_modifications**: Fixed modifications, specified using Unimod (www.unimod.org) terms, e.g. 'Carbamidomethyl (C)' or 'Oxidation (M)'
-            * **variable_modifications**: Variable modifications, specified using Unimod (www.unimod.org) terms, e.g. 'Carbamidomethyl (C)' or 'Oxidation (M)'
-            * **instrument**: Type of instrument (high_res or low_res). Use 'high_res' for high-resolution MS2 (Orbitrap, TOF), 'low_res' for ion trap.
-            * **fragment_mass_tolerance**: Fragment mass tolerance for MS2 matching.
-            * **fragment_bin_offset**: Offset for binning MS2 spectra. Typically 0.0 for high-res, 0.4 for low-res instruments.
-            """
+            comet_info = COMET_INFO
             if not self.params.get("generate-decoys", True):
-                comet_info += """* **PeptideIndexing:decoy_string**: String that was appended (or prefixed - see 'decoy_string_position' flag below) to the accessions
-                    in the protein database to indicate decoy proteins.
-            """
+                comet_info += COMET_DECOY_INFO
             st.info(comet_info)
 
             comet_include = [":enzyme", "missed_cleavages", "fixed_modifications", "variable_modifications",
@@ -261,7 +327,8 @@ class WorkflowTest(WorkflowManager):
                 "CometAdapter",
                 custom_defaults={
                     "threads": 8,
-                    "instrument": "low_res",
+                    # Orbitrap HCD (the "Orbitrap HCD" preset), the most common DDA setup
+                    "instrument": "high_res",
                     "missed_cleavages": 2,
                     "min_peptide_length": 6,
                     "max_peptide_length": 40,
@@ -270,8 +337,8 @@ class WorkflowTest(WorkflowManager):
                     "isotope_error": "0/1",
                     "precursor_charge": "2:4",
                     "precursor_mass_tolerance": 20.0,
-                    "fragment_mass_tolerance": 0.6,
-                    "fragment_bin_offset": 0.4,
+                    "fragment_mass_tolerance": 0.01,
+                    "fragment_bin_offset": 0.0,
                     "max_variable_mods_in_peptide": 3,
                     "minimum_peaks": 1,
                     "clip_nterm_methionine": "true",
@@ -286,13 +353,8 @@ class WorkflowTest(WorkflowManager):
                 exclude_parameters=["second_enzyme"],
             )
 
-        with t[1]:
-            st.info("""
-            **Rescoring (Percolator):**
-            * **post_processing_tdc**: Use target-decoy competition to assign q-values and PEPs.
-            * **score_type**: Type of the peptide main score
-            * **subset_max_train**: Only train an SVM on a subset of <x> PSMs, and use the resulting score vector to evaluate the other PSMs. Recommended when analyzing huge numbers (>1 million) of PSMs. When set to 0, all PSMs are used for training as normal.
-            """)
+        with t[2]:
+            st.info(PERCOLATOR_INFO)
             # decoy_pattern is always derived from upstream, never shown
             percolator_include = ["post_processing_tdc", "score_type", "subset_max_train"]
 
@@ -310,12 +372,8 @@ class WorkflowTest(WorkflowManager):
                 exclude_parameters=["out_type"],
             )
 
-        with t[2]:
-            st.info("""
-            **Filtering (IDFilter):**
-            PSMs are filtered on their Percolator q-value at the FDR level below.
-            Set it to 100% to keep all PSMs.
-            """)
+        with t[3]:
+            st.info(FDR_INFO)
             self.render_psm_fdr_widget()
             self.ui.input_TOPP(
                 "IDFilter",
@@ -325,10 +383,12 @@ class WorkflowTest(WorkflowManager):
                 exclude_parameters=["type_protein", "type_peptide", "score:psm"],
             )
 
-        with t[3]:  # Library Generation
+        with t[5]:
             st.info("""
-            **Spectral Library Generation (EasyPQP):**
-            Generate a spectral library from filtered PSMs for targeted proteomics (DIA/SWATH).
+            **Optional.** Builds a spectral library from the identified peptides, for analysing
+            data-independent acquisition (DIA/SWATH) runs of the same samples later, e.g. in
+            OpenSWATH. Not needed for the protein comparison; leave it off if you do not plan a
+            DIA experiment.
             """)
 
             self.ui.input_widget(
@@ -385,10 +445,14 @@ class WorkflowTest(WorkflowManager):
 
         with t[4]:
             st.info("""
-            **Quantification (ProteomicsLFQ):**
-            * **intThreshold**: Peak intensity threshold applied in seed detection.
-            * **psmFDR**: FDR threshold for sub-protein level (e.g. 0.05=5%). Use -FDR_type to choose the level. Cutoff is applied at the highest level. If Bayesian inference was chosen, it is equivalent with a peptide FDR
-            * **proteinFDR**: Protein FDR threshold (0.05=5%).
+            **How proteins are quantified.** ProteomicsLFQ measures each identified peptide's
+            signal over its elution time in every run, aligns the runs so the same peptide is
+            matched across them, and adds up the peptides of each protein. Only peptides unique
+            to one protein are used, so shared peptides cannot blur the comparison.
+
+            * **intThreshold**: the faintest signal that counts as a peptide (raise it for noisy data).
+            * **psmFDR** / **proteinFDR**: the false discovery rate at peptide and protein level
+              (0.01 = 1 %, the community standard).
             """)
             self.ui.input_TOPP(
                 "ProteomicsLFQ",
@@ -408,60 +472,65 @@ class WorkflowTest(WorkflowManager):
                 include_parameters=["intThreshold", "psmFDR", "proteinFDR"],
             )
 
-        with t[5]:
-            st.markdown("### 🧪 Sample Group Assignment")
-            st.info(
-                "Enter a group name for each mzML file.\n\n"
-                "Examples: case, control"
+    def render_lfq_groups(self):
+        """Per-file group names; the group comparison needs at least two groups."""
+        st.markdown(
+            "Give every file the name of its experimental group, for example **control** and "
+            "**treated**. Files with the same name are replicates of one condition, and the group "
+            "comparison tests every protein between the groups. Use at least two groups, ideally "
+            "with three or more replicates each."
+        )
+
+        mzml_keys = self.params.get("mzML-files")
+
+        if not mzml_keys:
+            st.warning("No mzML files available. Please upload mzML files first.")
+            return
+
+        try:
+            mzml_files = self.file_manager.get_files(mzml_keys)
+        except ValueError:
+            st.warning("Selected mzML files are not available.")
+            return
+
+        # Current mzML filenames
+        current_filenames = {Path(mz).name for mz in mzml_files}
+
+        # Per-file group input using input_widget (auto-saves to params.json)
+        for mz in mzml_files:
+            filename = Path(mz).name
+            self.ui.input_widget(
+                key=f"mzML-group-{filename}",
+                default=demo_group(filename),
+                name=f"Group of {filename}",
+                widget_type="text",
+                help="The condition this sample belongs to, e.g. control or treated. Spelling must match exactly between replicates.",
             )
 
-            mzml_keys = self.params.get("mzML-files")
+        # Reload params to get current values
+        self.params = self.parameter_manager.get_parameters_from_json()
 
-            if not mzml_keys:
-                st.warning("No mzML files available. Please upload mzML files first.")
-                return
-
-            try:
-                mzml_files = self.file_manager.get_files(mzml_keys)
-            except ValueError:
-                st.warning("Selected mzML files are not available.")
-                return
-
-            # Current mzML filenames
-            current_filenames = {Path(mz).name for mz in mzml_files}
-
-            # Per-file group input using input_widget (auto-saves to params.json)
-            for mz in mzml_files:
-                filename = Path(mz).name
-                self.ui.input_widget(
-                    key=f"mzML-group-{filename}",
-                    default="",
-                    name=f"Group for {filename}",
-                    widget_type="text",
-                    help="e.g. case, control",
-                )
-
-            # Reload params to get current values
-            self.params = self.parameter_manager.get_parameters_from_json()
-
-            # Clean up orphaned group params from previously selected files
-            orphaned_keys = [
-                k for k in self.params.keys()
-                if k.startswith("mzML-group-") and k[11:] not in current_filenames
-            ]
-            for key in orphaned_keys:
-                del self.params[key]
-            if orphaned_keys:
-                self.parameter_manager.save_parameters()
+        # Clean up orphaned group params from previously selected files
+        orphaned_keys = [
+            k for k in self.params.keys()
+            if k.startswith("mzML-group-") and k[11:] not in current_filenames
+        ]
+        for key in orphaned_keys:
+            del self.params[key]
+        if orphaned_keys:
+            self.parameter_manager.save_parameters()
 
     def render_tmt_tabs(self):
-        st.subheader("TMT Analysis Mode")
+        st.subheader("TMT / iTRAQ experiment")
         # Create tabs for different analysis steps.
-        t = st.tabs(
-            ["**IsobaricAnalyzer**", "**CometAdapter**", "**PercolatorAdapter**", "**IDFilter**", "**IDMapper**", "**FileMerger**",
-            "**ProteinInference**", "**IDFilter**", "**IDConflictResolver**", "**ProteinQuantifier**", "**Group Selection**"]
-        )
+        t = st.tabs([
+            "**1 · Samples and groups**", "**2 · Labels and decoys**", "**3 · Database search**",
+            "**4 · Rescoring**", "**5 · False discovery rate**", "**6 · Proteins and quantification**",
+        ])
+
         with t[0]:
+            self.render_tmt_groups()
+        with t[1]:
             # Checkbox for decoy generation
             # reactive=True ensures the parent configure() fragment re-runs when checkbox changes,
             # so conditional UI (DecoyDatabase settings) updates immediately
@@ -480,14 +549,7 @@ class WorkflowTest(WorkflowManager):
 
             # Show DecoyDatabase settings if generating decoys
             if self.params.get("generate-decoys", True):
-                st.info("""
-                **Decoy Database Settings:**
-                * **method**: How decoy sequences are generated from target protein sequences.
-                *Reverse* creates decoys by reversing each sequence, while *shuffle* randomly
-                rearranges the amino acids. Both methods preserve the amino acid composition
-                of the original protein, ensuring decoys have similar properties to real sequences
-                for accurate false discovery rate (FDR) estimation.
-                """)
+                st.info(DECOY_INFO)
                 self.ui.input_TOPP(
                     "DecoyDatabase",
                     custom_defaults={
@@ -498,31 +560,11 @@ class WorkflowTest(WorkflowManager):
                     include_parameters=["method"],
                 )
 
-            comet_info = """
-            **Identification (Comet):**
-            * **enzyme**: The enzyme used for peptide digestion.
-            * **missed_cleavages**: Number of possible cleavage sites missed by the enzyme. It has no effect if enzyme is unspecific cleavage.
-            * **fixed_modifications**: Fixed modifications, specified using Unimod (www.unimod.org) terms, e.g. 'Carbamidomethyl (C)' or 'Oxidation (M)'
-            * **variable_modifications**: Variable modifications, specified using Unimod (www.unimod.org) terms, e.g. 'Carbamidomethyl (C)' or 'Oxidation (M)'
-            * **instrument**: Type of instrument (high_res or low_res). Use 'high_res' for high-resolution MS2 (Orbitrap, TOF), 'low_res' for ion trap.
-            * **fragment_mass_tolerance**: Fragment mass tolerance for MS2 matching.
-            * **fragment_bin_offset**: Offset for binning MS2 spectra. Typically 0.0 for high-res, 0.4 for low-res instruments.
-            """
-            if not self.params.get("generate-decoys", True):
-                comet_info += """* **PeptideIndexing:decoy_string**: String that was appended (or prefixed - see 'decoy_string_position' flag below) to the accessions
-                    in the protein database to indicate decoy proteins.
-            """
-            st.info(comet_info)
-
-            st.write(Path(self.workflow_dir, "results"))
-
-            comet_include = [":enzyme", "missed_cleavages", "fixed_modifications", "variable_modifications",
-                            "instrument", "fragment_mass_tolerance", "fragment_error_units", "fragment_bin_offset",
-                            "precursor_mass_tolerance", "precursor_error_units", "isotope_error"]
-            if not self.params.get("generate-decoys", True):
-                # Only show decoy_string when not generating decoys
-                comet_include.append("PeptideIndexing:decoy_string")
-                
+            st.info("""
+            **Label type.** Choose the TMT or iTRAQ kit you used (e.g. *tmt11plex*, *tmt16plex*).
+            IsobaricAnalyzer reads each channel's reporter-ion intensity from the fragment spectra;
+            the defaults fit current Orbitrap TMT methods.
+            """)
             self.ui.input_TOPP(
                 "IsobaricAnalyzer",
                 custom_defaults={
@@ -538,7 +580,8 @@ class WorkflowTest(WorkflowManager):
                 tool_instance_name="IsobaricAnalyzer-TMT",
                 reactive=True,
             )
-        with t[1]:
+        with t[2]:
+            st.info(COMET_INFO)
             comet_include = [":enzyme", "missed_cleavages", "fixed_modifications", "variable_modifications",
                             "instrument", "fragment_mass_tolerance", "fragment_error_units", "fragment_bin_offset", "PeptideIndexing:IL_equivalent",
                             "precursor_mass_tolerance", "precursor_error_units", "isotope_error"]
@@ -573,12 +616,8 @@ class WorkflowTest(WorkflowManager):
                 exclude_parameters=["second_enzyme"],
                 tool_instance_name="CometAdapter-TMT",
             )
-        with t[2]:
-            st.info("""
-            **Filtering (IDFilter):**
-            * **score:type_peptide**: Score used for filtering. If empty, the main score is used.
-            * **score:psm**: The score which should be reached by a peptide hit to be kept. (use 'NAN' to disable this filter)
-            """)
+        with t[3]:
+            st.info(PERCOLATOR_INFO)
             self.ui.input_TOPP(
                 "PercolatorAdapter",
                 custom_defaults={
@@ -592,25 +631,20 @@ class WorkflowTest(WorkflowManager):
                 tool_instance_name="PercolatorAdapter-TMT",
             )
 
-        with t[3]:
-            st.info("""
-            **Filtering (IDFilter):**
-            PSMs are filtered on their Percolator q-value at the FDR level below.
-            Set it to 100% to keep all PSMs.
-            """)
+        with t[4]:
+            st.info(FDR_INFO)
             self.render_psm_fdr_widget()
             self.ui.input_TOPP(
                 "IDFilter",
                 exclude_parameters=["type_peptide", "score:psm"],
                 tool_instance_name="IDFilter-strict",
             )
-        with t[4]:
-            st.info("""
-            **Quantification (ProteomicsLFQ):**
-            * **intThreshold**: Peak intensity threshold applied in seed detection.
-            * **psmFDR**: FDR threshold for sub-protein level (e.g. 0.05=5%). Use -FDR_type to choose the level. Cutoff is applied at the highest level. If Bayesian inference was chosen, it is equivalent with a peptide FDR
-            * **proteinFDR**: Protein FDR threshold (0.05=5%).
-            """)
+        with t[5]:
+            st.info(
+                "These steps turn the identified peptides into one abundance per protein and channel. "
+                "The defaults follow the quantms TMT workflow; most experiments never change them."
+            )
+            st.markdown("**Map identifications to the reporter intensities** (IDMapper)")
             self.ui.input_TOPP(
                 "IDMapper",
                 custom_defaults={
@@ -620,6 +654,7 @@ class WorkflowTest(WorkflowManager):
                 tool_instance_name="IDMapper-TMT",
             )
         with t[5]:
+            st.markdown("**Combine the runs** (FileMerger)")
             self.ui.input_TOPP(
                 "FileMerger",
                 custom_defaults={
@@ -631,7 +666,8 @@ class WorkflowTest(WorkflowManager):
                 flag_parameters=["annotate_file_origin"],
                 tool_instance_name="FileMerger-TMT",
             )
-        with t[6]:
+        with t[5]:
+            st.markdown("**Infer proteins from peptides** (ProteinInference)")
             self.ui.input_TOPP(
                 "ProteinInference",
                 custom_defaults={
@@ -647,7 +683,8 @@ class WorkflowTest(WorkflowManager):
                 },
                 tool_instance_name="ProteinInference-TMT",
             )
-        with t[7]:
+        with t[5]:
+            st.markdown("**Protein-level false discovery rate** (IDFilter)")
             # A single checkbox widget for workflow logic.
             # self.ui.input_widget("run-python-script", False, "Run custom Python script") *
             # Generate input widgets for a custom Python tool, located at src/python-tools.
@@ -665,7 +702,8 @@ class WorkflowTest(WorkflowManager):
                 flag_parameters=["delete_unreferenced_peptide_hits", "remove_decoys"],
                 tool_instance_name="IDFilter-lenient",
             )
-        with t[8]:
+        with t[5]:
+            st.markdown("**Resolve peptides matched to several features** (IDConflictResolver)")
             self.ui.input_TOPP(
                 "IDConflictResolver",
                 custom_defaults={
@@ -674,7 +712,8 @@ class WorkflowTest(WorkflowManager):
                 tool_instance_name="IDConflictResolver-TMT",
             )
 
-        with t[9]:
+        with t[5]:
+            st.markdown("**Sum peptides into protein abundances** (ProteinQuantifier)")
             self.ui.input_TOPP(
                 "ProteinQuantifier",
                 custom_defaults={
@@ -689,64 +728,69 @@ class WorkflowTest(WorkflowManager):
                 flag_parameters=["top:include_all", "ratios"],
                 tool_instance_name="ProteinQuantifier-TMT",
             )
-        with t[10]:
-            st.markdown("### 🧪 TMT Sample Group Assignment")
+    def render_tmt_groups(self):
+        """Per-channel group names for the label type chosen in IsobaricAnalyzer."""
+        st.markdown(
+            "Give every label channel the name of the experimental group of the sample in it, for "
+            "example **control** and **treated**. Channels with the same name are replicates. "
+            "Type **skip** for an empty channel or a reference/pool channel you do not want compared. "
+            "The number of channels follows the label type chosen in tab 2."
+        )
 
-            latest_params = self.parameter_manager.get_parameters_from_json()
-            type_key = (
-                f"{self.parameter_manager.topp_param_prefix}"
-                "IsobaricAnalyzer-TMT:1:type"
-            )
-            selected_type = str(
-                st.session_state.get(type_key)
-                or latest_params.get("IsobaricAnalyzer-TMT", {}).get("type")
-                or "tmt11plex"
-            ).lower()
+        latest_params = self.parameter_manager.get_parameters_from_json()
+        type_key = (
+            f"{self.parameter_manager.topp_param_prefix}"
+            "IsobaricAnalyzer-TMT:1:type"
+        )
+        selected_type = str(
+            st.session_state.get(type_key)
+            or latest_params.get("IsobaricAnalyzer-TMT", {}).get("type")
+            or "tmt11plex"
+        ).lower()
 
-            m = re.search(r'\d+', selected_type)
-            is_supported_type = any(label in selected_type for label in ["tmt", "itraq"])
-            if not m or not is_supported_type:
-                st.warning("Please select a supported isobaric type in the IsobaricAnalyzer tab first.")
-            else:
-                num_plex = int(m.group())
-                channels = [f"sample{i+1}" for i in range(num_plex)]
-                st.caption(f"Isobaric type: **{selected_type}** - {num_plex} channels")
-                st.info("Assign a group name to each channel. Use **'skip'** to exclude a channel.")
+        m = re.search(r'\d+', selected_type)
+        is_supported_type = any(label in selected_type for label in ["tmt", "itraq"])
+        if not m or not is_supported_type:
+            st.warning("Choose a TMT or iTRAQ label type in tab 2 (Labels and decoys) first.")
+        else:
+            num_plex = int(m.group())
+            channels = [f"sample{i+1}" for i in range(num_plex)]
+            st.caption(f"Isobaric type: **{selected_type}** - {num_plex} channels")
 
-                for row_start in range(0, num_plex, 2):
-                    c1, c2 = st.columns(2)
+            for row_start in range(0, num_plex, 2):
+                c1, c2 = st.columns(2)
 
-                    left_idx = row_start
-                    left_channel = channels[left_idx]
-                    with c1:
+                left_idx = row_start
+                left_channel = channels[left_idx]
+                with c1:
+                    self.ui.input_widget(
+                        key=f"TMT-group-{left_channel}",
+                        default="",
+                        name=f"Group for channel {left_idx + 1}",
+                        widget_type="text",
+                        help="e.g. control, case, skip",
+                    )
+
+                right_idx = row_start + 1
+                if right_idx < num_plex:
+                    right_channel = channels[right_idx]
+                    with c2:
                         self.ui.input_widget(
-                            key=f"TMT-group-{left_channel}",
+                            key=f"TMT-group-{right_channel}",
                             default="",
-                            name=f"Group for channel {left_idx + 1}",
+                            name=f"Group for channel {right_idx + 1}",
                             widget_type="text",
                             help="e.g. control, case, skip",
                         )
 
-                    right_idx = row_start + 1
-                    if right_idx < num_plex:
-                        right_channel = channels[right_idx]
-                        with c2:
-                            self.ui.input_widget(
-                                key=f"TMT-group-{right_channel}",
-                                default="",
-                                name=f"Group for channel {right_idx + 1}",
-                                widget_type="text",
-                                help="e.g. control, case, skip",
-                            )
-
-                # Remove orphaned params from a previously selected larger plex
-                self.params = self.parameter_manager.get_parameters_from_json()
-                valid_keys = {f"TMT-group-{ch}" for ch in channels}
-                orphaned = [k for k in self.params if k.startswith("TMT-group-") and k not in valid_keys]
-                if orphaned:
-                    for k in orphaned:
-                        del self.params[k]
-                    self.parameter_manager.save_parameters()
+            # Remove orphaned params from a previously selected larger plex
+            self.params = self.parameter_manager.get_parameters_from_json()
+            valid_keys = {f"TMT-group-{ch}" for ch in channels}
+            orphaned = [k for k in self.params if k.startswith("TMT-group-") and k not in valid_keys]
+            if orphaned:
+                for k in orphaned:
+                    del self.params[k]
+                self.parameter_manager.save_parameters()
 
     def _has_identifications(self, idxml_files: list, stage: str) -> bool:
         """Return False, and log why, when no idXML file holds a peptide hit.

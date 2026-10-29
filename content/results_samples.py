@@ -5,20 +5,19 @@ import plotly.express as px
 import streamlit as st
 
 from src.common.common import page_setup, show_fig
+from src.common.guide import next_steps, page_intro, page_link
 from src.common.insight_tables import show_insight_table
 from src.common.results_helpers import get_abundance_data, get_sample_group_map, get_workflow_dir
 from src.common.samples import COUNT_COLUMNS, channel_samples, condition_summary, lfq_samples
 from src.workflow.ParameterManager import ParameterManager
 
 params = page_setup()
-st.title("Samples")
+st.title("Per-sample counts")
 
-st.markdown(
-    """
-How many PSMs, peptides and proteins each sample contributed, grouped by the
-conditions set on the Configure page. A sample far below the others in its
-condition points to a failed run or a loading problem.
-"""
+page_intro(
+    "How many spectrum matches, peptides and proteins did each sample yield? Replicates of one "
+    "group should give similar numbers; a sample far below the others points to a failed run or "
+    "less material loaded, and may distort the group comparison."
 )
 
 if "workspace" not in st.session_state:
@@ -47,7 +46,7 @@ if analysis_mode == "LFQ":
     filter_dir = results_dir / "psm_filter"
     if not filter_dir.is_dir() or not any(filter_dir.glob("*.idXML")):
         st.info("No results available yet. Please run the workflow first.")
-        st.page_link("content/workflow_run.py", label="Go to Run", icon="🚀")
+        page_link("run")
         st.stop()
     mzml_files = [str(f) for f in workflow_params.get("mzML-files", [])]
     group_map = {
@@ -68,7 +67,7 @@ else:
     abundance = get_abundance_data(st.session_state["workspace"])
     if abundance is None:
         st.info("No quantification result available yet. Please run the workflow first.")
-        st.page_link("content/workflow_run.py", label="Go to Run", icon="🚀")
+        page_link("run")
         st.stop()
     pivot_df, _, group_map = abundance
     sample_group_map = get_sample_group_map(st.session_state["workspace"], pivot_df, group_map)
@@ -138,5 +137,10 @@ show_insight_table(
     layout="fitColumns",
 )
 if (samples["Condition"] == "Unassigned").any():
-    st.caption("Samples without a condition are shown as Unassigned. Set conditions on the Configure page.")
-    st.page_link("content/workflow_configure.py", label="Go to Configure", icon="⚙️")
+    st.caption("Samples without a group are shown as Unassigned. Set groups on the Describe experiment page.")
+    page_link("configure")
+
+next_steps(
+    ("overview", "Identification rate and mass error per file, to find out what went wrong with a weak sample."),
+    ("pca", "Check whether a weak sample also stands apart in its protein profile."),
+)
