@@ -16,6 +16,7 @@ from src.workflow.WorkflowManager import WorkflowManager
 from src.common.common import page_setup
 from src.common.results_helpers import get_abundance_data
 from src.common.results_helpers import parse_idxml, build_spectra_cache, load_idxml, write_psm_exports
+from src.pride_ui import pride_import_section
 from openms_insight import Table, Heatmap, LinePlot, SequenceView
 
 # Accession prefixes that mark decoy entries in a FASTA database.
@@ -48,14 +49,18 @@ class WorkflowTest(WorkflowManager):
         super().__init__("TOPP Workflow", st.session_state["workspace"])
 
     def upload(self) -> None:
-        t = st.tabs(["MS data (mzML)", "FASTA database"])
+        t = st.tabs(["MS data (mzML)", "FASTA database", "Import from PRIDE"])
+        fallback = {
+            "mzML-files": [str(f) for f in Path("example-data", "mzML").glob("*.mzML")],
+            "fasta-file": [str(f) for f in Path("example-data", "db").glob("*.fasta")],
+        }
 
         with t[0]:
             self.ui.upload_widget(
                 key="mzML-files",
                 name="MS data",
                 file_types="mzML",
-                fallback=[str(f) for f in Path("example-data", "mzML").glob("*.mzML")],
+                fallback=fallback["mzML-files"],
             )
 
         with t[1]:
@@ -63,8 +68,11 @@ class WorkflowTest(WorkflowManager):
                 key="fasta-file",
                 name="Protein FASTA database",
                 file_types=("fasta", "fa"),
-                fallback=[str(f) for f in Path("example-data", "db").glob("*.fasta")],
+                fallback=fallback["fasta-file"],
             )
+
+        with t[2]:
+            pride_import_section(self, fallback)
 
     @st.fragment
     def configure(self) -> None:

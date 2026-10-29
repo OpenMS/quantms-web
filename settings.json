@@ -38,6 +38,9 @@
             "example-data/workspaces"
         ]
     },
+    "pride_import": {
+        "max_download_gb_online": 50
+    },
     "max_threads": {
         "local": 4,
         "online": 2
