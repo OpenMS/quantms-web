@@ -3,7 +3,7 @@ import streamlit as st
 from pathlib import Path
 from src.common.common import page_setup
 from src.common.results_helpers import get_workflow_dir
-from openms_insight import Table, Heatmap, LinePlot, SequenceView, StateManager
+from openms_insight import Heatmap, LinePlot, SequenceView, StateManager
 from src.common.common import show_fig
 from src.common.fragment_plots import fragment_error_plot, ion_table, ion_table_html, load_psm_fragments
 from src.workflow.ParameterManager import ParameterManager
