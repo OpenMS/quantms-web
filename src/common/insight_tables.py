@@ -54,7 +54,7 @@ def _cache_key(source_files, extra: str) -> str:
     return hashlib.sha1("|".join(parts).encode()).hexdigest()[:10]
 
 
-def _to_polars(df: pd.DataFrame) -> tuple[pl.DataFrame, list[dict]]:
+def _to_polars(df: pd.DataFrame, column_overrides: dict | None = None) -> tuple[pl.DataFrame, list[dict]]:
     """Convert to polars with Tabulator-safe field names and column definitions.
 
     Tabulator reads a "." in a field name as a nested lookup, so such columns get
@@ -73,6 +73,7 @@ def _to_polars(df: pd.DataFrame) -> tuple[pl.DataFrame, list[dict]]:
         if pd.api.types.is_numeric_dtype(df[column]):
             col_def["sorter"] = "number"
             col_def["hozAlign"] = "right"
+        col_def.update((column_overrides or {}).get(column, {}))
         column_definitions.append(col_def)
     df = df.rename(columns=renames)
     for column in df.columns:
@@ -91,6 +92,8 @@ def show_insight_table(
     title: str | None = None,
     height: int = 500,
     page_size: int = 100,
+    state_manager=None,
+    column_overrides: dict | None = None,
     **table_kwargs,
 ) -> None:
     """Render ``df`` as a server-side paginated openms-insight table.
@@ -115,6 +118,11 @@ def show_insight_table(
         title: Title, also used as the CSV download's file name.
         height: Component height in pixels.
         page_size: Rows per page.
+        state_manager: Shared ``StateManager`` for tables linked through
+            ``filters``/``interactivity``; defaults to openms-insight's own.
+        column_overrides: Extra Tabulator column settings per column name,
+            e.g. a ``formatter``. openms-insight stores floats as float32, so
+            a column of rounded values needs one to display without noise.
         **table_kwargs: Passed on to ``Table`` (e.g. ``initial_sort``).
     """
     cache_dir = Path(cache_dir) if cache_dir else _default_cache_dir()
@@ -127,7 +135,7 @@ def show_insight_table(
         for stale in cache_dir.glob(f"{name}_" + "?" * 10):
             shutil.rmtree(stale, ignore_errors=True)
         cache_dir.mkdir(parents=True, exist_ok=True)
-        pl_df, column_definitions = _to_polars(df)
+        pl_df, column_definitions = _to_polars(df, column_overrides)
         Table(
             cache_id=cache_id,
             data=pl_df.lazy(),
@@ -140,4 +148,4 @@ def show_insight_table(
         )
 
     table = Table(cache_id=cache_id, cache_path=str(cache_dir))
-    table(key=f"insight_table_{name}", height=height)
+    table(key=f"insight_table_{name}", height=height, state_manager=state_manager)
