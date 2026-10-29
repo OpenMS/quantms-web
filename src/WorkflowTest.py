@@ -243,7 +243,8 @@ class WorkflowTest(WorkflowManager):
             st.info(comet_info)
 
             comet_include = [":enzyme", "missed_cleavages", "fixed_modifications", "variable_modifications",
-                            "instrument", "fragment_mass_tolerance", "fragment_error_units", "fragment_bin_offset"]
+                            "instrument", "fragment_mass_tolerance", "fragment_error_units", "fragment_bin_offset",
+                            "precursor_mass_tolerance", "precursor_error_units", "isotope_error"]
             if not self.params.get("generate-decoys", True):
                 # Only show decoy_string when not generating decoys
                 comet_include.append("PeptideIndexing:decoy_string")
@@ -508,7 +509,8 @@ class WorkflowTest(WorkflowManager):
             st.write(Path(self.workflow_dir, "results"))
 
             comet_include = [":enzyme", "missed_cleavages", "fixed_modifications", "variable_modifications",
-                            "instrument", "fragment_mass_tolerance", "fragment_error_units", "fragment_bin_offset"]
+                            "instrument", "fragment_mass_tolerance", "fragment_error_units", "fragment_bin_offset",
+                            "precursor_mass_tolerance", "precursor_error_units", "isotope_error"]
             if not self.params.get("generate-decoys", True):
                 # Only show decoy_string when not generating decoys
                 comet_include.append("PeptideIndexing:decoy_string")
@@ -530,7 +532,8 @@ class WorkflowTest(WorkflowManager):
             )
         with t[1]:
             comet_include = [":enzyme", "missed_cleavages", "fixed_modifications", "variable_modifications",
-                            "instrument", "fragment_mass_tolerance", "fragment_error_units", "fragment_bin_offset", "PeptideIndexing:IL_equivalent"]
+                            "instrument", "fragment_mass_tolerance", "fragment_error_units", "fragment_bin_offset", "PeptideIndexing:IL_equivalent",
+                            "precursor_mass_tolerance", "precursor_error_units", "isotope_error"]
             self.ui.input_TOPP(
                 "CometAdapter",
                 custom_defaults={

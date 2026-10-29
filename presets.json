@@ -15,6 +15,32 @@
                 "fragment_mass_tolerance": 0.50025,
                 "fragment_bin_offset": 0.4
             }
+        },
+        "Open Search": {
+            "_description": "Open search: precursor tolerance \u00b1500 Da without isotope errors, so peptides are identified with modifications the search did not include. See the Mass Shifts results page for the shifts and their Unimod matches.",
+            "CometAdapter": {
+                "precursor_mass_tolerance": 500.0,
+                "precursor_error_units": "Da",
+                "isotope_error": "off"
+            },
+            "CometAdapter-TMT": {
+                "precursor_mass_tolerance": 500.0,
+                "precursor_error_units": "Da",
+                "isotope_error": "off"
+            }
+        },
+        "Closed Search": {
+            "_description": "Back to a standard (closed) search: the default precursor tolerance (20 ppm label-free, 4.5 ppm TMT) with 13C isotope errors 0/1.",
+            "CometAdapter": {
+                "precursor_mass_tolerance": 20.0,
+                "precursor_error_units": "ppm",
+                "isotope_error": "0/1"
+            },
+            "CometAdapter-TMT": {
+                "precursor_mass_tolerance": 4.5,
+                "precursor_error_units": "ppm",
+                "isotope_error": "0/1"
+            }
         }
     }
 }
