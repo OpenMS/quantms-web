@@ -16,6 +16,7 @@ from src.workflow.WorkflowManager import WorkflowManager
 from src.common.common import page_setup
 from src.common.results_helpers import get_abundance_data
 from src.common.results_helpers import parse_idxml, build_spectra_cache, load_idxml, write_psm_exports
+from src.common.contaminants import CONTAMINANT_PREFIX, append_fasta, write_contaminants
 from openms_insight import Table, Heatmap, LinePlot, SequenceView
 
 # Accession prefixes that mark decoy entries in a FASTA database.
@@ -169,6 +170,21 @@ class WorkflowTest(WorkflowManager):
             tool_instance_name=tool_instance_name,
         )
 
+    def render_contaminant_option(self):
+        """Checkbox for appending the cRAP contaminants to the search database."""
+        self.ui.input_widget(
+            key="add-contaminants",
+            default=True,
+            name="Add common contaminants (cRAP)",
+            widget_type="checkbox",
+            help=(
+                "Search the 116 proteins of the common Repository of Adventitious Proteins "
+                "(keratins, trypsin, BSA, ...) with your database. Their accessions start with "
+                f"{CONTAMINANT_PREFIX}; they are flagged in the PSM tables and left out of the "
+                "protein tables and the downstream analysis unless you show them."
+            ),
+        )
+
     def render_lfq_tabs(self):
         st.subheader("LFQ Analysis Mode")
         t = st.tabs(["**Identification**", "**Rescoring**", "**Filtering**", "**Library Generation**", "**Quantification**", "**Group Selection**"])
@@ -185,6 +201,7 @@ class WorkflowTest(WorkflowManager):
                 help="Generate decoy sequences for FDR calculation. Switched off automatically when the selected FASTA already contains decoys (e.g. DECOY_ or rev_ accessions).",
                 reactive=True,
             )
+            self.render_contaminant_option()
 
             # Reload params to get current checkbox value after it was saved
             self.params = self.parameter_manager.get_parameters_from_json()
@@ -447,6 +464,7 @@ class WorkflowTest(WorkflowManager):
                 help="Generate decoy sequences for FDR calculation. Switched off automatically when the selected FASTA already contains decoys (e.g. DECOY_ or rev_ accessions).",
                 reactive=True,
             )
+            self.render_contaminant_option()
 
             # Reload params to get current checkbox value after it was saved
             self.params = self.parameter_manager.get_parameters_from_json()
@@ -744,6 +762,69 @@ class WorkflowTest(WorkflowManager):
         self.logger.log("Workflow stopped due to error")
         return False
 
+    def prepare_search_database(self, fasta_path: Path):
+        """Build the database to search: the FASTA, the cRAP contaminants and decoys.
+
+        Returns ``(database_fasta, decoy_string)``, or None when a TOPP tool failed.
+        """
+        # Contaminants (cRAP with CON__ accessions) are searched with the targets
+        add_contaminants = self.params.get("add-contaminants", True)
+        db_dir = Path(self.workflow_dir, "results", "database")
+        con_fasta = db_dir / "contaminants.fasta"
+        if add_contaminants:
+            n_con = write_contaminants(con_fasta)
+            self.logger.log(f"🧫 Adding {n_con} contaminant proteins (cRAP, {CONTAMINANT_PREFIX} accessions)")
+
+        if self.params.get("generate-decoys", True):
+            # Get decoy_string from DecoyDatabase params
+            decoy_string = self.params.get("DecoyDatabase", {}).get("decoy_string", "rev_")
+            if add_contaminants:
+                # DecoyDatabase reads both files, so the contaminants get decoys too
+                decoy_fasta = db_dir / f"{fasta_path.stem}.con.decoy.fasta"
+                decoy_inputs = [str(fasta_path), str(con_fasta)]
+                stale = decoy_fasta.exists() and decoy_fasta.stat().st_mtime < fasta_path.stat().st_mtime
+            else:
+                decoy_fasta = fasta_path.with_suffix(".decoy.fasta")
+                decoy_inputs = [str(fasta_path)]
+                stale = False
+
+            if not decoy_fasta.exists() or stale:
+                self.logger.log("🧬 Generating decoy database...")
+                st.info("Generating decoy FASTA database...")
+                db_dir.mkdir(parents=True, exist_ok=True)
+                if not self.executor.run_topp(
+                    "DecoyDatabase",
+                    {"in": [decoy_inputs], "out": [str(decoy_fasta)]},
+                ):
+                    self.logger.log("Workflow stopped due to error")
+                    return None
+                self.logger.log("✅ Decoy database ready")
+            st.success(f"Using decoy FASTA: {decoy_fasta.name}")
+            database_fasta = decoy_fasta
+        else:
+            # Get decoy_string from the active mode's CometAdapter params
+            comet_instance = "CometAdapter-TMT" if self.params.get("analysis-mode", "LFQ") == "TMT" else "CometAdapter"
+            decoy_string = self.params.get(comet_instance, {}).get("PeptideIndexing:decoy_string", "rev_")
+            self.logger.log("📄 Using existing FASTA database")
+            st.info(f"Using original FASTA: {fasta_path.name}")
+            database_fasta = fasta_path
+            if add_contaminants:
+                # The FASTA has its own decoys; give the contaminants decoys in the same style.
+                # Own instance name, so stored DecoyDatabase settings don't repeat these options.
+                con_decoy_fasta = db_dir / "contaminants.decoy.fasta"
+                if not self.executor.run_topp(
+                    "DecoyDatabase",
+                    {"in": [str(con_fasta)], "out": [str(con_decoy_fasta)]},
+                    {"decoy_string": decoy_string, "decoy_string_position": "prefix"},
+                    tool_instance_name="DecoyDatabase-contaminants",
+                ):
+                    self.logger.log("Workflow stopped due to error")
+                    return None
+                database_fasta = db_dir / f"{fasta_path.stem}.con.fasta"
+                append_fasta([fasta_path, con_decoy_fasta], database_fasta)
+                st.info(f"Added contaminants: {database_fasta.name}")
+        return database_fasta, decoy_string
+
     def execution(self) -> bool:
         """
         Refactored TOPP workflow execution:
@@ -772,31 +853,11 @@ class WorkflowTest(WorkflowManager):
 
         self.logger.log(f"📂 Loaded {len(in_mzML)} sample(s)")
 
-        if self.params.get("generate-decoys", True):
-            decoy_fasta = fasta_path.with_suffix(".decoy.fasta")
-            # Get decoy_string from DecoyDatabase params
-            decoy_string = self.params.get("DecoyDatabase", {}).get("decoy_string", "rev_")
+        prepared = self.prepare_search_database(fasta_path)
+        if prepared is None:
+            return False
+        database_fasta, decoy_string = prepared
 
-            if not decoy_fasta.exists():
-                self.logger.log("🧬 Generating decoy database...")
-                st.info("Generating decoy FASTA database...")
-                if not self.executor.run_topp(
-                    "DecoyDatabase",
-                    {"in": [str(fasta_path)], "out": [str(decoy_fasta)]},
-                ):
-                    self.logger.log("Workflow stopped due to error")
-                    return False
-                self.logger.log("✅ Decoy database ready")
-            st.success(f"Using decoy FASTA: {decoy_fasta.name}")
-            database_fasta = decoy_fasta
-        else:
-            # Get decoy_string from the active mode's CometAdapter params
-            comet_instance = "CometAdapter-TMT" if self.params.get("analysis-mode", "LFQ") == "TMT" else "CometAdapter"
-            decoy_string = self.params.get(comet_instance, {}).get("PeptideIndexing:decoy_string", "rev_")
-            self.logger.log("📄 Using existing FASTA database")
-            st.info(f"Using original FASTA: {fasta_path.name}")
-            database_fasta = fasta_path
-        
         current_mode = self.params.get("analysis-mode", "LFQ")
         st.write(f"Current analysis mode: **{current_mode}**")
 
@@ -904,6 +965,7 @@ class WorkflowTest(WorkflowManager):
                         {"field": "rt", "title": "RT", "sorter": "number"},
                         {"field": "score", "title": "Score", "sorter": "number"},
                         {"field": "protein_accession", "title": "Proteins"},
+                        {"field": "contaminant", "title": "Contaminant", "formatter": "tickCross", "sorter": "boolean"},
                     ],
                     initial_sort=[{"column": "score", "dir": "asc"}],
                     index_field="id_idx",
@@ -1004,6 +1066,7 @@ class WorkflowTest(WorkflowManager):
                         {"field": "rt", "title": "RT", "sorter": "number"},
                         {"field": "score", "title": "Score", "sorter": "number"},
                         {"field": "protein_accession", "title": "Proteins"},
+                        {"field": "contaminant", "title": "Contaminant", "formatter": "tickCross", "sorter": "boolean"},
                     ],
                     initial_sort=[{"column": "score", "dir": "asc"}],
                     index_field="id_idx",
@@ -1097,6 +1160,7 @@ class WorkflowTest(WorkflowManager):
                         {"field": "rt", "title": "RT", "sorter": "number"},
                         {"field": "score", "title": "Score", "sorter": "number"},
                         {"field": "protein_accession", "title": "Proteins"},
+                        {"field": "contaminant", "title": "Contaminant", "formatter": "tickCross", "sorter": "boolean"},
                     ],
                     initial_sort=[{"column": "score", "dir": "asc"}],
                     index_field="id_idx",
@@ -1417,6 +1481,7 @@ class WorkflowTest(WorkflowManager):
                         {"field": "rt", "title": "RT", "sorter": "number"},
                         {"field": "score", "title": "Score", "sorter": "number"},
                         {"field": "protein_accession", "title": "Proteins"},
+                        {"field": "contaminant", "title": "Contaminant", "formatter": "tickCross", "sorter": "boolean"},
                     ],
                     initial_sort=[{"column": "score", "dir": "asc"}],
                     index_field="id_idx",
@@ -1513,6 +1578,7 @@ class WorkflowTest(WorkflowManager):
                         {"field": "rt", "title": "RT", "sorter": "number"},
                         {"field": "score", "title": "Score", "sorter": "number"},
                         {"field": "protein_accession", "title": "Proteins"},
+                        {"field": "contaminant", "title": "Contaminant", "formatter": "tickCross", "sorter": "boolean"},
                     ],
                     initial_sort=[{"column": "score", "dir": "asc"}],
                     index_field="id_idx",
@@ -1603,6 +1669,7 @@ class WorkflowTest(WorkflowManager):
                         {"field": "rt", "title": "RT", "sorter": "number"},
                         {"field": "score", "title": "Score", "sorter": "number"},
                         {"field": "protein_accession", "title": "Proteins"},
+                        {"field": "contaminant", "title": "Contaminant", "formatter": "tickCross", "sorter": "boolean"},
                     ],
                     initial_sort=[{"column": "score", "dir": "asc"}],
                     index_field="id_idx",
