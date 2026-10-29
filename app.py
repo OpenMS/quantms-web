@@ -33,6 +33,7 @@ if __name__ == '__main__':
             st.Page(Path("content", "results_qc.py"), title="Identification QC", icon="🩺"),
             st.Page(Path("content", "results_proteins.py"), title="Proteins", icon="🧩"),
             st.Page(Path("content", "results_abundance.py"), title="Protein Abundance", icon="📋"),
+            st.Page(Path("content", "results_samples.py"), title="Samples", icon="🧪"),
             st.Page(Path("content", "results_download.py"), title="Download", icon="⬇️"),
         ],
         # Steps run in order; each one works on the previous step's output.
