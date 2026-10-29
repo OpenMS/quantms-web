@@ -7,6 +7,8 @@ from openms_insight import Table, Heatmap, LinePlot, SequenceView, StateManager
 from src.common.common import show_fig
 from src.common.fragment_plots import fragment_error_plot, ion_table, ion_table_html, load_psm_fragments
 from src.workflow.ParameterManager import ParameterManager
+from src.common.sequence_display import psm_table, sequence_mode_selector
+from openms_insight import Heatmap, LinePlot, SequenceView, StateManager
 
 params = page_setup()
 st.title("Filtered PSMs")
@@ -60,7 +62,6 @@ if not (cache_dir / f"table_{cache_id_prefix}").is_dir():
 state_manager = StateManager()
 
 # Load components from cache (no data parameter needed)
-table = Table(cache_id=f"table_{cache_id_prefix}", cache_path=str(cache_dir))
 heatmap = Heatmap(cache_id=f"heatmap_{cache_id_prefix}", cache_path=str(cache_dir))
 seq_view = SequenceView(cache_id=f"seqview_{cache_id_prefix}", cache_path=str(cache_dir))
 line_plot = LinePlot(cache_id=f"lineplot_{cache_id_prefix}", cache_path=str(cache_dir))
@@ -70,7 +71,8 @@ st.subheader("PSM Overview")
 heatmap(state_manager=state_manager, height=350)
 
 st.subheader("PSM Table")
-table(state_manager=state_manager, height=533)
+mode = sequence_mode_selector()
+psm_table(cache_dir, f"table_{cache_id_prefix}", mode, state_manager)
 
 st.subheader("Peptide Sequence")
 seq_view(key=f"seqview_{cache_id_prefix}", state_manager=state_manager, height=533)

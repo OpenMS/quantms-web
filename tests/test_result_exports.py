@@ -64,13 +64,14 @@ def test_write_psm_exports(tmp_path):
     psms = pl.read_csv(tmp_path / "exports" / "run_filter_psms.tsv", separator="\t")
     assert psms.height == 2
     assert set(id_df.columns) <= set(psms.columns)
+    assert psms["proforma"].to_list() == ["PEPTIDEK", "ELVISK"]
 
     frags = pl.read_csv(tmp_path / "exports" / "run_filter_fragment_ions.tsv", separator="\t")
     matched = {(r["sequence"], r["ion"], r["filename"]) for r in frags.iter_rows(named=True) if r["charge"] == 1}
     assert ("PEPTIDEK", "y3", "A.mzML") in matched
     assert ("ELVISK", "y2", "B.mzML") in matched
     # PSM context comes along with every ion
-    assert {"rt", "precursor_mz", "score", "protein_accession"} <= set(frags.columns)
+    assert {"rt", "precursor_mz", "score", "protein_accession", "proforma"} <= set(frags.columns)
 
 
 def test_insight_table_cache_follows_source_file(tmp_path, monkeypatch):
