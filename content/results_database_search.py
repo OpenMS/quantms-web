@@ -3,9 +3,10 @@ import streamlit as st
 from pathlib import Path
 from src.common.common import page_setup
 from src.common.guide import needs_results, next_steps, page_intro
-from src.common.results_helpers import run_picker, get_run_dir
+from src.common.results_helpers import run_picker, get_run_dir, get_run_params
+from src.common.spectrum_view import psm_mzml_files, show_selected_psm_spectrum
 from src.common.sequence_display import psm_table, sequence_mode_selector
-from openms_insight import Heatmap, LinePlot, SequenceView, StateManager
+from openms_insight import Heatmap, SequenceView, StateManager
 
 params = page_setup()
 run_picker()
@@ -35,6 +36,7 @@ if "workspace" not in st.session_state:
     st.stop()
 
 run_dir = get_run_dir(st.session_state["workspace"])
+run_params = get_run_params(st.session_state["workspace"])
 comet_dir = run_dir / "results" / "comet_results"
 cache_dir = run_dir / "results" / "insight_cache"
 
@@ -66,7 +68,6 @@ state_manager = StateManager()
 # Load components from cache (no data parameter needed)
 heatmap = Heatmap(cache_id=f"heatmap_{cache_id_prefix}", cache_path=str(cache_dir))
 seq_view = SequenceView(cache_id=f"seqview_{cache_id_prefix}", cache_path=str(cache_dir))
-line_plot = LinePlot(cache_id=f"lineplot_{cache_id_prefix}", cache_path=str(cache_dir))
 
 # Render components
 st.subheader("PSM Overview")
@@ -79,8 +80,16 @@ psm_table(cache_dir, f"table_{cache_id_prefix}", mode, state_manager)
 st.subheader("Peptide Sequence")
 seq_view(key=f"seqview_{cache_id_prefix}", state_manager=state_manager, height=533)
 
-st.subheader("MS2 Spectrum")
-line_plot(key=f"lineplot_{cache_id_prefix}", state_manager=state_manager, height=450, sequence_view_key=f"seqview_{cache_id_prefix}")
+st.subheader("MS2 spectrum")
+st.caption(
+    "Top: the measured spectrum, with peaks explained by the peptide's fragment ions coloured. Bottom, mirrored: "
+    "the spectrum a deep-learning model (AlphaPeptDeep) predicts for the peptide. A correct match shows the same "
+    "strong peaks on both sides."
+)
+show_selected_psm_spectrum(
+    cache_dir, selected_file, state_manager, seqview_key=f"seqview_{cache_id_prefix}",
+    workflow_params=run_params, mzml_files=psm_mzml_files(run_params),
+)
 
 next_steps(
     ('rescoring', 'The same matches after rescoring.'),

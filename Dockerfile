@@ -108,6 +108,11 @@ COPY requirements.txt ./requirements.txt
 RUN grep -Ev '^pyopenms([=<>!~].*)?$' requirements.txt > requirements_cleaned.txt && mv requirements_cleaned.txt requirements.txt
 RUN pip install -r requirements.txt
 
+# AlphaPeptDeep's pretrained models, fetched at build time so the spectrum
+# prediction works offline and for any user the container runs as.
+ENV PEPTDEEP_HOME=/opt/peptdeep
+RUN python -c "import os; from peptdeep.pretrained_models import download_models, get_model_zip_file_path; from peptdeep.settings import global_settings; global_settings['PEPTDEEP_HOME'] = os.environ['PEPTDEEP_HOME']; download_models(target_path=get_model_zip_file_path())" && chmod -R a+rX /opt/peptdeep
+
 WORKDIR /
 RUN mkdir openms
 

@@ -66,6 +66,11 @@ RUN mamba install pip
 RUN python -m pip install --upgrade pip
 RUN python -m pip install -r requirements.txt
 
+# AlphaPeptDeep's pretrained models, fetched at build time so the spectrum
+# prediction works offline and for any user the container runs as.
+ENV PEPTDEEP_HOME=/opt/peptdeep
+RUN python -c "import os; from peptdeep.pretrained_models import download_models, get_model_zip_file_path; from peptdeep.settings import global_settings; global_settings['PEPTDEEP_HOME'] = os.environ['PEPTDEEP_HOME']; download_models(target_path=get_model_zip_file_path())" && chmod -R a+rX /opt/peptdeep
+
 # Pre-create bind-mount targets so apptainer/singularity has a real attach
 # point. Docker auto-creates missing `-v` targets, but singularity uses a
 # read-only underlay and silently ignores `:rw` when the target isn't a
