@@ -169,6 +169,7 @@ docker-compose up --build
 - Widget keys must match parameter keys in `default-parameters.json`
 - Workflow names use lowercase with hyphens: "My Workflow" -> "my-workflow"
 - Use `show_fig()` and `show_table()` from `src/common/common.py` for consistent display
+- Light and dark theme: `.streamlit/config.toml` defines `[theme.light]` and `[theme.dark]` without `theme.base`, so the app follows the OS color scheme (switch under ⋮ → Settings). `show_fig()` runs figures through `follow_app_theme()`; call it yourself before a direct `st.plotly_chart`. Never set a light `background-color` in custom HTML without also setting the text `color`
 - Show DataFrames with `show_insight_table(df, name=...)` from `src/common/insight_tables.py` (or `show_table()`), not `st.dataframe()`: it uses OpenMS-Insight's server-side-paginated `Table`, so only the visible page is sent to the browser. `st.dataframe` serializes the whole frame and is extremely slow on full-scale datasets. Only use it for tiny fixed-size previews (e.g. `.head(10)`)
 - Insight components request a rerun the first time they render, so never draw them only inside `if st.button(...):`. Store the result in `st.session_state` and render it outside the button block
 - Use `@st.fragment` on methods that should partially rerun (configure, results)

@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas as pd
 import polars as pl
 import streamlit as st
-from src.common.common import page_setup
+from src.common.common import page_setup, follow_app_theme
 from src.common.guide import ensure_group_comparison, needs_results, next_steps, page_intro, show_comparison_settings
 from src.common.insight_tables import show_insight_table
 from src.common.results_helpers import get_abundance_data, get_id_column
@@ -123,7 +123,7 @@ if go_result is not None and go_result[0] == stats_key:
                 fig = output["categories"][go_type]["fig"]
                 df_go = output["categories"][go_type]["df"]
                 if fig is not None and df_go is not None:
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(follow_app_theme(fig), use_container_width=True)
                     if isinstance(df_go, pl.DataFrame):
                         df_go = df_go.to_pandas()
                     show_insight_table(df_go, name=f"go-{go_type}", height=400)
