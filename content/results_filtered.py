@@ -2,37 +2,48 @@
 import streamlit as st
 from pathlib import Path
 from src.common.common import page_setup
-from src.common.results_helpers import get_workflow_dir
-from openms_insight import Table, Heatmap, LinePlot, SequenceView, StateManager
+from src.common.results_helpers import run_picker, get_run_dir, get_run_params
+from src.common.spectrum_view import fragment_tolerance, psm_mzml_files, show_selected_psm_spectrum
+from src.common.common import show_fig
+from src.common.guide import needs_results, next_steps, page_intro
+from src.common.fragment_plots import fragment_error_plot, ion_table, ion_table_html, load_psm_fragments
+from src.common.sequence_display import psm_table, sequence_mode_selector
+from openms_insight import Heatmap, SequenceView, StateManager
 
 params = page_setup()
-st.title("Filtered PSMs")
+run_picker()
+st.title("Peptide-spectrum matches")
 
-st.markdown(
-    """
-View FDR-controlled peptide identifications after **IDFilter** processing.
-These are high-confidence PSMs that passed the specified FDR threshold.
-Click on a PSM to view the annotated spectrum and peptide sequence.
-"""
+page_intro(
+    'The final, filtered peptide identifications of each run: one row per spectrum explained by a peptide. Select a match to check its spectrum, the fragment ions that support it and their mass errors.',
+    background="""
+- A **PSM** (peptide-spectrum match) is one fragmentation spectrum explained by one peptide.
+- The **plot** shows every PSM by retention time (when the peptide came off the column) and
+  mass; **click a PSM** in the table to see its spectrum with the matched fragment ions
+  (b ions from the peptide's start, y ions from its end) and its sequence.
+- The analysis identifies peptides in three steps: the database search (Comet) proposes the best
+  peptide per spectrum, rescoring (Percolator) re-ranks the matches, and filtering keeps those
+  within the false discovery rate. This page shows the result of one step.
+""",
+    background_title='What you are looking at',
 )
 
 st.info(
-    "**Score:** The q-value represents the minimum false discovery rate (FDR) at which this PSM "
-    "would be accepted. Lower values indicate higher confidence identifications."
+    "**Score: q-value**, the lowest false discovery rate at which this match would still be "
+    "accepted. 0.01 means it passes a 1 % FDR; lower is more confident."
 )
 
 if "workspace" not in st.session_state:
     st.warning("Please initialize your workspace first.")
     st.stop()
 
-workflow_dir = get_workflow_dir(st.session_state["workspace"])
-filter_dir = workflow_dir / "results" / "psm_filter"
-cache_dir = workflow_dir / "results" / "insight_cache"
+run_dir = get_run_dir(st.session_state["workspace"])
+run_params = get_run_params(st.session_state["workspace"])
+filter_dir = run_dir / "results" / "psm_filter"
+cache_dir = run_dir / "results" / "insight_cache"
 
 if not filter_dir.exists():
-    st.info("No filtered results available yet. Please run the workflow first.")
-    st.page_link("content/workflow_run.py", label="Go to Run", icon="🚀")
-    st.stop()
+    needs_results()
 
 filter_files = sorted(filter_dir.glob("*.idXML"))
 
@@ -57,24 +68,56 @@ if not (cache_dir / f"table_{cache_id_prefix}").is_dir():
 state_manager = StateManager()
 
 # Load components from cache (no data parameter needed)
-table = Table(cache_id=f"table_{cache_id_prefix}", cache_path=str(cache_dir))
 heatmap = Heatmap(cache_id=f"heatmap_{cache_id_prefix}", cache_path=str(cache_dir))
 seq_view = SequenceView(cache_id=f"seqview_{cache_id_prefix}", cache_path=str(cache_dir))
-line_plot = LinePlot(cache_id=f"lineplot_{cache_id_prefix}", cache_path=str(cache_dir))
 
 # Render components
 st.subheader("PSM Overview")
 heatmap(state_manager=state_manager, height=350)
 
 st.subheader("PSM Table")
-table(state_manager=state_manager, height=533)
+mode = sequence_mode_selector()
+psm_table(cache_dir, f"table_{cache_id_prefix}", mode, state_manager)
 
 st.subheader("Peptide Sequence")
 seq_view(key=f"seqview_{cache_id_prefix}", state_manager=state_manager, height=533)
 
-st.subheader("MS2 Spectrum")
-line_plot(key=f"lineplot_{cache_id_prefix}", state_manager=state_manager, height=450, sequence_view_key=f"seqview_{cache_id_prefix}")
+st.subheader("MS2 spectrum")
+st.caption(
+    "Top: the measured spectrum, with peaks explained by the peptide's fragment ions coloured. Bottom, mirrored: "
+    "the spectrum a deep-learning model (AlphaPeptDeep) predicts for the peptide. A correct match shows the same "
+    "strong peaks on both sides."
+)
+show_selected_psm_spectrum(
+    cache_dir, selected_file, state_manager, seqview_key=f"seqview_{cache_id_prefix}",
+    workflow_params=run_params, mzml_files=psm_mzml_files(run_params),
+)
 
-st.markdown("---")
-st.markdown("**Next step:** View abundance quantification")
-st.page_link("content/results_abundance.py", label="Go to Abundance", icon="📋")
+st.subheader("Fragment ions")
+fragments_tsv = run_dir / "results" / "exports" / f"{cache_id_prefix}_fragment_ions.tsv"
+psm_id = state_manager.get_selection("identification")
+if not fragments_tsv.is_file():
+    st.info("No fragment ion export for this run. Re-run the workflow to create it.")
+elif psm_id is None:
+    st.info("Select a PSM in the table to see its fragment mass errors and ion table.")
+else:
+    fragments = load_psm_fragments(fragments_tsv, int(psm_id))
+    if fragments.empty:
+        st.info("No fragment ion of this PSM matched a peak within the tolerance.")
+    else:
+        tolerance, tolerance_ppm = fragment_tolerance(run_params)
+
+        first = fragments.iloc[0]
+        st.caption(
+            f"{first['sequence']}, charge {int(first['precursor_charge'])}. Matched with the search's fragment "
+            f"tolerance (±{tolerance:g} {'ppm' if tolerance_ppm else 'Da'}, shaded)."
+        )
+        show_fig(fragment_error_plot(fragments, tolerance, tolerance_ppm), f"fragment-errors-{cache_id_prefix}-{psm_id}")
+        values, matched = ion_table(first["sequence"], int(first["precursor_charge"]), fragments)
+        st.markdown("**b/y ions** (theoretical m/z; matched ions highlighted, neutral losses not counted)")
+        st.html(ion_table_html(values, matched))
+
+next_steps(
+    ('qc', 'Overall quality of the identifications.'),
+    ('proteins', 'The proteins these peptides add up to.'),
+)

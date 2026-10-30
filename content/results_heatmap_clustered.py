@@ -3,25 +3,33 @@ import streamlit as st
 import numpy as np
 import polars as pl
 from src.common.common import page_setup
+from src.common.insight_tables import plot_cache
+from src.common.guide import ensure_group_comparison, needs_results, next_steps, page_intro, show_comparison_settings
 from src.common.results_helpers import (
+    run_picker,
     get_abundance_data,
     get_active_table,
     get_id_column,
     get_sample_group_map,
     log2_matrix,
-    show_pipeline_banner,
 )
 from openms_insight import ClusteredHeatmap
 
 params = page_setup()
-st.title("Clustered Heatmap")
+run_picker()
+st.title("Clustered heatmap")
 
-st.markdown(
-    """
-A real grid heatmap (rows = proteins, columns = samples) with hierarchical
-clustering dendrograms on both axes and a sample-group color bar, powered
-by OpenMS-Insight.
-"""
+page_intro(
+    'The most variable proteins (rows) across all samples (columns). Similar samples and similar proteins are placed next to each other, so patterns shared by a group stand out as blocks of color.',
+    background="""
+- **Colors** show each protein relative to its own average (Z-score): red is above, blue below,
+  white average. This makes rare and abundant proteins comparable.
+- **Trees (dendrograms)** on the sides join the most similar samples or proteins first. If the
+  sample tree splits along the group color bar at the top, the groups differ consistently.
+- **Blocks of rows** with the same color pattern are proteins that rise or fall together,
+  often members of one complex or pathway.
+""",
+    background_title='How to read this heatmap',
 )
 
 if "workspace" not in st.session_state:
@@ -30,9 +38,7 @@ if "workspace" not in st.session_state:
 
 result = get_abundance_data(st.session_state["workspace"])
 if result is None:
-    st.info("Abundance data not available. Please run the workflow and configure sample groups first.")
-    st.page_link("content/results_abundance.py", label="Go to Abundance", icon="📋")
-    st.stop()
+    needs_results()
 
 pivot_df, expr_df, group_map = result
 id_col = get_id_column(st.session_state["workspace"], pivot_df)
@@ -40,7 +46,8 @@ sample_group_map = get_sample_group_map(st.session_state["workspace"], pivot_df,
 
 # Plot the same protein table as PCA and Statistics: the latest downstream
 # step's output, on a log2 scale, proteins with any missing value dropped.
-show_pipeline_banner()
+# Plots follow the group comparison, run with the recommended settings if needed
+ensure_group_comparison(params, show_errors=False)
 base_df, _, is_log2 = get_active_table(pivot_df)
 # expr_df from the workflow lists exactly the sample columns in both LFQ and TMT mode
 sample_cols = [c for c in expr_df.columns if c in base_df.columns]
@@ -90,10 +97,7 @@ unique_groups = sorted(set(sample_group_map.values()))
 group_colors = {g: group_palette[i % len(group_palette)] for i, g in enumerate(unique_groups)}
 
 heatmap_component = ClusteredHeatmap(
-    cache_id="quantms_clustered_heatmap",
-    # Data changes whenever an upstream step reruns; rebuild rather than reuse
-    regenerate_cache=True,
-    cache_path=str(st.session_state["workspace"]),
+    **plot_cache("quantms_clustered_heatmap", heatmap_z),
     id_col=id_col,
     data=heatmap_lazy,
     metadata=metadata_pl,
@@ -119,10 +123,10 @@ st.caption(
     "(dendrograms). If the sample dendrogram splits along the group color bar, the groups differ consistently."
 )
 
-st.markdown("---")
-st.markdown("**Other visualizations:**")
-col1, col2 = st.columns(2)
-with col1:
-    st.page_link("content/results_volcano.py", label="Volcano Plot", icon="🌋")
-with col2:
-    st.page_link("content/results_heatmap.py", label="Heatmap (original)", icon="🔥")
+show_comparison_settings()
+
+next_steps(
+    ('enrichment', 'Find the biology behind groups of changed proteins.'),
+    ('pca', 'Sample similarity at a glance.'),
+    ('heatmap', 'The same proteins without clustering.'),
+)

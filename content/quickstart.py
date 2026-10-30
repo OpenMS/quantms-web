@@ -9,6 +9,7 @@ from pathlib import Path
 
 import streamlit as st
 from src.common.common import page_setup
+from src.common.guide import page_link
 
 WINDOWS_APP_PATH = Path("/app/OpenMS-App-Setup.exe")
 
@@ -73,8 +74,8 @@ def render_windows_download_box(app_bytes: bytes) -> None:
         f"""
         <style>
         .st-key-{container_key} {{
-            background: linear-gradient(135deg, #f8f9fa 0%, #f1f3f4 100%) !important;
-            border: 1px solid #e0e0e0 !important;
+            background: rgba(128, 128, 128, 0.08) !important;
+            border: 1px solid rgba(128, 128, 128, 0.3) !important;
             border-radius: 8px !important;
             padding: 1.5rem !important;
             margin: 1rem 0 !important;
@@ -93,7 +94,7 @@ def render_windows_download_box(app_bytes: bytes) -> None:
 
 page_setup(page="main")
 
-st.markdown("# OpenDDA: DDA Quantitative Proteomics")
+st.markdown("# OpenDDA: Find differentially abundant proteins in your samples")
 
 windows_app_bytes = load_windows_app_bytes()
 if windows_app_bytes is not None:
@@ -101,143 +102,110 @@ if windows_app_bytes is not None:
 
 st.markdown(
     """
-This application provides complete **Data-Dependent Acquisition (DDA)** quantification
-workflows for proteomics data analysis. The pipeline identifies and quantifies proteins
-from mass spectrometry data and supports two quantification strategies:
-
-- **Label-free quantification (LFQ)**: compares precursor intensities across separately measured samples.
-- **Tandem Mass Tag (TMT) quantification**: compares reporter-ion intensities of multiplexed samples measured in one run.
-
-Choose the **Analysis Mode** (LFQ or TMT) on the Configure page.
+OpenDDA turns raw mass spectrometry files from a **data-dependent acquisition (DDA)**
+experiment into a list of proteins, how much of each protein every sample contains,
+and which proteins are differentially abundant between your experimental groups. You do not need to know
+the search engines behind it: every setting starts at a value that suits a typical
+experiment, and each page explains what you are looking at.
 """
 )
 
-st.info(
-    "These workflows mirror the **DDA-LFQ and DDA-ISO (TMT) branches of the quantms Nextflow workflow**."
+st.markdown("## How it works")
+steps = st.columns(3)
+with steps[0]:
+    st.markdown(
+        """
+### 1 · Set up and run
+Upload your **mzML** files and a **FASTA** file with the protein sequences of your
+organism (or import a public dataset from PRIDE). Say which sample belongs to which
+group, then press Run. A run takes minutes to hours depending on the data.
+"""
+    )
+    page_link("upload", "Upload data")
+with steps[1]:
+    st.markdown(
+        """
+### 2 · Read the main results
+The **run summary** tells you whether the run went well. **Compare groups** and the
+**volcano plot** show the proteins that go up or down between your groups.
+**Identified proteins** lists everything that was found.
+"""
+    )
+    page_link("compare", "Compare groups")
+with steps[2]:
+    st.markdown(
+        """
+### 3 · Explore further
+Check that replicates look alike (**PCA**, **clustered heatmap**), and find biological
+processes over-represented among the changed proteins (**GO enrichment**).
+"""
+    )
+    page_link("enrichment", "GO enrichment")
+
+st.markdown("## Which page answers my question?")
+st.markdown(
+    """
+| Your question | Page |
+|---|---|
+| Did the run work, and how many proteins were found? | **Run summary** |
+| Which proteins are up or down between my groups? | **Compare groups**, **Volcano plot** |
+| Is my protein of interest there, and which peptides support it? | **Identified proteins** |
+| How much of each protein is in each sample? | **Protein abundances** |
+| Do my replicates agree? Is there an outlier sample? | **Sample similarity (PCA)**, **Clustered heatmap** |
+| What biology do the changed proteins point to? | **GO enrichment** |
+| I want the tables for my own analysis. | **Runs and downloads** |
+"""
+)
+st.caption(
+    "The sections **Fine-tune the comparison** and **Quality control and details** in the sidebar "
+    "are for adjusting the statistics step by step and for checking the identifications in depth. "
+    "You can ignore them for a first analysis."
 )
 
-st.markdown("## Workflow Overview")
-
+st.markdown("## Two kinds of experiments")
 lfq_col, tmt_col = st.columns(2)
-
 with lfq_col:
     st.markdown(
         """
 ### Label-free (LFQ)
-
-| Stage | Tool |
-|-------|------|
-| **1. Identification** | Comet |
-| **2. Rescoring** | Percolator |
-| **3. Filtering** | IDFilter |
-| **4. Quantification** | ProteomicsLFQ |
-| **5. Statistical Analysis** | Built-in |
+Each sample was measured in its own run. Proteins are compared by the intensity of
+their peptides across runs. Choose this if you did not label your samples.
 """
     )
-
 with tmt_col:
     st.markdown(
         """
-### TMT
+### Tandem Mass Tags (TMT)
+Several samples were labelled with isobaric tags, pooled and measured together.
+Proteins are compared by the tag (reporter ion) intensities within each run.
+"""
+    )
+st.caption("You choose the experiment type on the Describe experiment page.")
 
-| Stage | Tool |
-|-------|------|
-| **1. Reporter extraction** | IsobaricAnalyzer |
-| **2. Identification** | Comet |
-| **3. Rescoring** | Percolator |
-| **4. Filtering** | IDFilter |
-| **5. Protein inference** | ProteinInference |
-| **6. Quantification** | ProteinQuantifier |
-| **7. Statistical Analysis** | Built-in |
+with st.expander("📖 What the analysis does behind the scenes"):
+    st.markdown(
+        """
+The pipeline mirrors the DDA-LFQ and DDA-ISO (TMT) branches of the
+[quantms](https://quantms.org) Nextflow workflow and uses OpenMS tools throughout:
+
+| Stage | What it does | Tool |
+|---|---|---|
+| Identification | Matches each fragmentation spectrum to a peptide from your FASTA file | Comet |
+| Rescoring | Re-ranks the matches with machine learning to separate true from false ones | Percolator |
+| Filtering | Keeps matches at a 1 % false discovery rate, judged against reversed "decoy" sequences | IDFilter |
+| Quantification (LFQ) | Measures each peptide's signal in every run and sums it per protein | ProteomicsLFQ |
+| Quantification (TMT) | Reads the reporter-ion intensities and sums them per protein | IsobaricAnalyzer, ProteinQuantifier |
+| Group comparison | Filters, fills in missing values, normalizes and tests every protein | Built in |
 """
     )
 
-st.markdown("## Getting Started")
+with st.expander("💾 Workspaces: where your data and results live"):
+    st.markdown(
+        """
+A **workspace** keeps your files, settings and results together.
 
-st.markdown(
-    """
-Follow these steps to run your analysis:
-
-### 1. Upload Files
-Upload your mzML mass spectrometry files and a protein FASTA database.
+- **Online**, the workspace ID is part of the page address. Bookmark it to come back
+  to a running or finished analysis, or share it with a colleague.
+- **On your own computer**, create a separate workspace per project in the sidebar.
 """
-)
-st.page_link("content/workflow_fileupload.py", label="Go to File Upload", icon="📁")
-
-st.markdown(
-    """
-### 2. Configure Parameters
-Choose LFQ or TMT, then set up search parameters, sample groups (or TMT channels), and analysis settings.
-"""
-)
-st.page_link("content/workflow_configure.py", label="Go to Configure", icon="⚙️")
-
-st.markdown(
-    """
-### 3. Run Workflow
-Execute the analysis pipeline and monitor progress.
-"""
-)
-st.page_link("content/workflow_run.py", label="Go to Run", icon="🚀")
-
-st.markdown(
-    """
-### 4. Explore Results
-View identification results, quantification tables, and statistical visualizations.
-- **Database Search**: View Comet PSM identification results
-- **Rescoring**: Examine Percolator statistical validation output
-- **Filtered PSMs**: Inspect FDR-controlled peptide identifications
-- **Abundance**: Protein and PSM quantification tables with statistics
-- **Volcano Plot**: Differential expression analysis visualization
-- **PCA**: Principal component analysis of sample relationships
-- **Heatmap**: Hierarchically clustered expression patterns
-- **Spectral Library**: Download the generated spectral library for DIA/SWATH analysis
-"""
-)
-
-st.markdown("### 5. Run Differential Protein Analysis")
-
-st.markdown(
-    """
-After quantification, continue through the downstream analysis pages in order:
-
-| Step | Available analysis |
-|------|--------------------|
-| **1. Filtering** | Remove proteins with low abundance, low repeatability, or low variance |
-| **2. Imputation** | Handle missing values using MAR mean/median strategies or MNAR small-value replacement |
-| **3. Normalization** | Apply mathematical transformation, sample normalization, and optional row scaling |
-| **4. Statistics** | Test group differences and apply BH, Bonferroni, or no multiple-testing correction |
-| **Volcano** | Explore effect size and adjusted-significance thresholds |
-| **PCA** | Inspect sample separation using high-variance proteins |
-| **Heatmap** | View abundance patterns across proteins and samples |
-| **Clustered Heatmap** | Explore hierarchically clustered proteins and samples |
-| **Pathway Analysis** | Run GO enrichment on statistically significant proteins |
-
-Each preprocessing page uses the output of the preceding step when available. The recommended
-order is **Filtering → Imputation → Normalization → Statistics → Plots/Pathway Analysis**.
-"""
-)
-
-analysis_links = st.columns(4)
-with analysis_links[0]:
-    st.page_link("content/filtering.py", label="Filtering", icon="🧹")
-with analysis_links[1]:
-    st.page_link("content/imputation.py", label="Imputation", icon="🩹")
-with analysis_links[2]:
-    st.page_link("content/normalization.py", label="Normalization", icon="⚖️")
-with analysis_links[3]:
-    st.page_link("content/statistical.py", label="Statistics", icon="🔢")
-
-st.markdown("## Workspaces")
-
-st.markdown(
-    """
-**Workspaces** store your inputs, parameters, and results for each analysis session.
-
-- In **online mode**: The workspace ID is embedded in the URL for easy sharing
-- In **local mode**: Create and manage separate workspaces for different projects
-
-Your workspace persists between sessions, allowing you to return to a running or completed
-workflow at any time.
-"""
-)
+    )

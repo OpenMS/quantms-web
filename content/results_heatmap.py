@@ -3,24 +3,29 @@ import streamlit as st
 import numpy as np
 import polars as pl
 from src.common.common import page_setup
+from src.common.insight_tables import plot_cache
+from src.common.guide import ensure_group_comparison, needs_results, next_steps, page_intro, show_comparison_settings
 from src.common.results_helpers import (
+    run_picker,
     get_abundance_data,
     get_active_table,
     get_id_column,
     get_sample_group_map,
     log2_matrix,
-    show_pipeline_banner,
 )
 from openms_insight import Heatmap
 
 params = page_setup()
+run_picker()
 st.title("Heatmap")
 
-st.markdown(
-    """
-Interactive hierarchically clustered heatmap of protein-level abundance (Z-score normalized).
-Powered by OpenMS-Insight multi-resolution engine.
-"""
+page_intro(
+    'The most variable proteins (rows) across samples (columns), in the order of your groups. For proteins and samples sorted by similarity, use the clustered heatmap.',
+    background="""
+Colors show each protein relative to its own average (Z-score): red is above, blue below.
+Blocks of color that follow the sample groups point to group-specific proteins.
+""",
+    background_title='How to read this heatmap',
 )
 
 if "workspace" not in st.session_state:
@@ -29,9 +34,7 @@ if "workspace" not in st.session_state:
 
 result = get_abundance_data(st.session_state["workspace"])
 if result is None:
-    st.info("Abundance data not available. Please run the workflow and configure sample groups first.")
-    st.page_link("content/results_abundance.py", label="Go to Abundance", icon="📋")
-    st.stop()
+    needs_results()
 
 pivot_df, expr_df, group_map = result
 id_col = get_id_column(st.session_state["workspace"], pivot_df)
@@ -39,7 +42,8 @@ sample_group_map = get_sample_group_map(st.session_state["workspace"], pivot_df,
 
 # Plot the same protein table as PCA and Statistics: the latest downstream
 # step's output, on a log2 scale, proteins with any missing value dropped.
-show_pipeline_banner()
+# Plots follow the group comparison, run with the recommended settings if needed
+ensure_group_comparison(params, show_errors=False)
 base_df, _, is_log2 = get_active_table(pivot_df)
 # expr_df from the workflow lists exactly the sample columns in both LFQ and TMT mode
 sample_cols = [c for c in expr_df.columns if c in base_df.columns]
@@ -85,9 +89,7 @@ if not heatmap_z.empty:
 
     # Initialize the OpenMS-Insight Heatmap component and map attributes
     heatmap_component = Heatmap(
-        cache_id="quantms_protein_heatmap",
-        # Data changes whenever an upstream step reruns; rebuild rather than reuse
-        regenerate_cache=True,
+        **plot_cache("quantms_protein_heatmap", melted_df),
         x_column="Sample",
         y_column=id_col,
         data=heatmap_pl_lazy,
@@ -113,10 +115,9 @@ if not heatmap_z.empty:
 else:
     st.warning("Insufficient data to generate the heatmap.")
 
-st.markdown("---")
-st.markdown("**Other visualizations:**")
-col1, col2 = st.columns(2)
-with col1:
-    st.page_link("content/results_volcano.py", label="Volcano Plot", icon="🌋")
-with col2:
-    st.page_link("content/results_pca.py", label="PCA", icon="📊")
+show_comparison_settings()
+
+next_steps(
+    ('clustered', 'Proteins and samples sorted by similarity.'),
+    ('pca', 'Sample similarity at a glance.'),
+)

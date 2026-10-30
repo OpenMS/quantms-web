@@ -4,14 +4,15 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 
-from src.common.common import page_setup
+from src.common.common import page_setup, follow_app_theme
 from src.common.insight_tables import show_insight_table
-from src.common.results_helpers import get_abundance_data
+from src.common.results_helpers import get_abundance_data, run_picker, get_run_dir
 
 # ================================
 # Page setup
 # ================================
 params = page_setup()
+run_picker()
 st.title("ProteomicsLFQ Results")
 
 # ================================
@@ -61,7 +62,7 @@ with protein_tab:
 st.markdown("---")
 st.subheader("🧬 GO Enrichment Analysis")
 
-results_dir = Path(st.session_state["workspace"]) / "topp-workflow" / "results" / "go-terms"
+results_dir = get_run_dir(st.session_state["workspace"]) / "results" / "go-terms"
 go_json_file = results_dir / "go_results.json"
 
 if not go_json_file.exists():
@@ -95,7 +96,7 @@ else:
             if df_go.empty:
                 st.info(f"No enriched {go_type} terms found.")
             else:
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(follow_app_theme(fig), use_container_width=True)
                 
                 st.markdown(f"#### {go_type} Enrichment Results")
                 show_insight_table(df_go, name=f"proteomicslfq-go-{go_type}", height=350)

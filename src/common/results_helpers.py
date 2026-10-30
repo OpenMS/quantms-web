@@ -12,10 +12,95 @@ try:  # pyOpenMS >= 3.5.0
 except ImportError:  # pyOpenMS <= 3.4.x
     PeptideIdentificationList = None
 from src.workflow.ParameterManager import ParameterManager
+from src.workflow.RunManager import RunManager
+from src.workflow.run_widgets import get_selected_run, select_run
+from src.common.contaminants import drop_contaminants, is_contaminant
+from src.common.peptide_format import to_proforma
+from src.common.isobaric import channel_column_names, label_type
+
+UNASSIGNED = "Unassigned"
+# Columns the group comparison adds to a protein table
+STAT_COLUMNS = ("log2FC", "p-value", "p-adj", "stat")
 
 def get_workflow_dir(workspace):
     """Get the workflow directory path."""
     return Path(workspace, "topp-workflow")
+
+
+# Session-state keys holding results computed from the shown run. They are
+# dropped when another run is picked, so no page mixes two runs.
+RUN_DERIVED_KEYS = [
+    "filtered_df", "imputed_df", "normalized_df", "statistics_df",
+    "normalized_transform", "comparison_settings", "comparison_group_map",
+    "go_enrichment", "go_results", "go_ready", "pivot_df",
+]
+# Group assignments are edited on Describe experiment after a run, so they are
+# read from the current settings; every other parameter as the run was started.
+GROUP_PREFIXES = ("mzML-group-", "TMT-group-")
+
+
+def get_runs(workspace) -> RunManager:
+    """The analysis runs of the workspace (a results/ from before runs became one)."""
+    runs = RunManager(get_workflow_dir(workspace))
+    runs.adopt_legacy_results()
+    return runs
+
+
+def get_run_id(workspace) -> str | None:
+    """The run the results pages show (the newest finished one unless picked)."""
+    return get_selected_run(get_runs(workspace))
+
+
+def get_results_dir(workspace, run_id: str | None = None) -> Path:
+    """Results folder of a run (default: the one shown). Missing if nothing ran yet."""
+    runs = get_runs(workspace)
+    run_id = run_id or get_selected_run(runs)
+    if run_id is None:
+        return get_workflow_dir(workspace) / "results"
+    return runs.results_dir(run_id)
+
+
+def get_run_dir(workspace, run_id: str | None = None) -> Path:
+    """Folder of a run (default: the one shown): results/, logs/ and params.json,
+    laid out like the workflow folder."""
+    return get_results_dir(workspace, run_id).parent
+
+
+def get_run_params(workspace, run_id: str | None = None) -> dict:
+    """Parameters of a run (default: the one shown), with the current sample groups."""
+    workflow_dir = get_workflow_dir(workspace)
+    current = ParameterManager(workflow_dir, "TOPP Workflow").get_parameters_from_json()
+    runs = get_runs(workspace)
+    run_id = run_id or get_selected_run(runs)
+    params = runs.params(run_id) if run_id else {}
+    if not params:
+        return current
+    return params | {k: v for k, v in current.items() if k.startswith(GROUP_PREFIXES)}
+
+
+def run_picker(workspace=None) -> str | None:
+    """Picker for the run the results pages show. Returns its id.
+
+    Results derived from another run (the group comparison, GO enrichment) are
+    dropped when the pick changes, including when a new run has finished.
+    """
+    workspace = workspace or st.session_state.get("workspace")
+    if workspace is None:
+        return None
+    runs = get_runs(workspace)
+    # Top right of the page, above the title, so it is seen on every results page
+    _, right = st.columns([2, 1])
+    with right:
+        run_id = select_run(
+            runs, label="Showing run",
+            help="Every analysis you start is kept as its own run. Pick the one the "
+            "results pages show; rename, download or delete runs on Runs and downloads.",
+        )
+    if st.session_state.get("_results_run") != run_id:
+        for key in RUN_DERIVED_KEYS:
+            st.session_state.pop(key, None)
+        st.session_state["_results_run"] = run_id
+    return run_id
 
 
 def load_idxml(idxml_file):
@@ -141,6 +226,7 @@ ID_DF_SCHEMA = {
     "rt": pl.Float64,
     "score": pl.Float64,
     "protein_accession": pl.Utf8,
+    "contaminant": pl.Boolean,
 }
 
 
@@ -179,6 +265,7 @@ def parse_idxml(idxml_path: Path, filename_to_index: dict | None = None) -> tupl
         filename = spectra_data[0]
 
         for h in pep.getHits():
+            accessions = ";".join([ev.getProteinAccession() for ev in h.getPeptideEvidences()])
             records.append({
                 "id_idx": len(records),
                 "scan_id": scan_id,
@@ -189,7 +276,8 @@ def parse_idxml(idxml_path: Path, filename_to_index: dict | None = None) -> tupl
                 "mz": pep.getMZ(),
                 "rt": pep.getRT(),
                 "score": h.getScore(),
-                "protein_accession": ";".join([ev.getProteinAccession() for ev in h.getPeptideEvidences()]),
+                "protein_accession": accessions,
+                "contaminant": is_contaminant(accessions),
             })
 
     # Keep the columns when nothing was identified, so callers selecting
@@ -250,6 +338,11 @@ def write_psm_exports(id_df: pl.DataFrame, seq_view, export_dir: Path, prefix: s
     as the view), together with the PSM's run, RT, m/z, score and proteins.
     """
     export_dir.mkdir(parents=True, exist_ok=True)
+    # Exports carry the ProForma form next to the OpenMS string, for other tools
+    if "sequence" in id_df.columns:
+        id_df = id_df.with_columns(
+            pl.col("sequence").map_elements(to_proforma, return_dtype=pl.Utf8).alias("proforma")
+        )
     id_df.write_csv(export_dir / f"{prefix}_psms.tsv", separator="\t")
 
     fragments = seq_view.export_fragment_ions()
@@ -258,6 +351,7 @@ def write_psm_exports(id_df: pl.DataFrame, seq_view, export_dir: Path, prefix: s
             pl.col("id_idx").cast(fragments.schema["sequence_id"]).alias("sequence_id"),
             "filename",
             "rt",
+            "proforma",
             pl.col("mz").alias("precursor_mz"),
             "score",
             "protein_accession",
@@ -267,7 +361,9 @@ def write_psm_exports(id_df: pl.DataFrame, seq_view, export_dir: Path, prefix: s
 
 
 @st.cache_data
-def load_abundance_data(workspace_path: str, csv_mtime: float, params_mtime: float = 0.0) -> tuple | None:
+def load_abundance_data(
+    workspace_path: str, csv_mtime: float, params_mtime: float = 0.0, run_id: str | None = None
+) -> tuple | None:
     """Load CSV and build abundance matrices for downstream preprocessing.
 
     Args:
@@ -276,16 +372,13 @@ def load_abundance_data(workspace_path: str, csv_mtime: float, params_mtime: flo
         params_mtime: Modification time of params.json (used as cache key so
             changing group assignments in Configure invalidates the cache
             even when the CSV itself hasn't changed)
+        run_id: The run to load (default: the newest finished one)
 
     Returns:
         Tuple of (pivot_df, expr_df, group_map) or None if data unavailable
     """
-    workflow_dir = get_workflow_dir(Path(workspace_path))
-    quant_dir = workflow_dir / "results" / "quant_results"
-
-    parameter_manager = ParameterManager(workflow_dir, "TOPP Workflow")
-
-    workflow_params = parameter_manager.get_parameters_from_json()
+    quant_dir = get_results_dir(workspace_path, run_id) / "quant_results"
+    workflow_params = get_run_params(workspace_path, run_id)
     analysis_mode = workflow_params.get("analysis-mode", "LFQ")
 
     if analysis_mode == "LFQ":
@@ -309,8 +402,7 @@ def load_abundance_data(workspace_path: str, csv_mtime: float, params_mtime: flo
         # Get optional group mapping from parameters.
         # Group information is not required at this stage; statistical testing
         # happens in the Statistical page.
-        param_manager = ParameterManager(workflow_dir)
-        params = param_manager.get_parameters_from_json()
+        params = workflow_params
         group_map = {
             key[11:]: value  # Remove "mzML-group-" prefix
             for key, value in params.items()
@@ -382,12 +474,13 @@ def load_abundance_data(workspace_path: str, csv_mtime: float, params_mtime: flo
 
         # ratio column removal
         df = df.loc[:, ~df.columns.str.contains('ratio', case=False)]
+        # "abundance_sample3[unknown]" -> "sample3[127C]"
+        df = df.rename(columns=channel_column_names(df.columns, label_type(workflow_params)))
 
         # exclude_indices = st.session_state.get("tmt_exclude_indices", [])
         # group_map = st.session_state.get("tmt_group_map", {})
         # Get group mapping from parameters
-        parameter_manager = ParameterManager(Path(workflow_dir), "TOPP Workflow")
-        params = parameter_manager.get_parameters_from_json()
+        params = workflow_params
         group_map = {}
         for key, value in params.items():
             if key.startswith("TMT-group-") and value:
@@ -441,17 +534,20 @@ def load_abundance_data(workspace_path: str, csv_mtime: float, params_mtime: flo
         return pivot_df, expr_df, group_map
 
 
-def get_abundance_data(workspace: Path) -> tuple | None:
+def get_abundance_data(workspace: Path, include_contaminants: bool = False) -> tuple | None:
     """Wrapper that handles cache key (workspace + CSV mtime + params mtime).
 
     Args:
         workspace: Path to the workspace directory
+        include_contaminants: Keep the proteins with CON__ accessions (cRAP).
+            They are left out by default, so downstream analysis never sees them.
 
     Returns:
         Tuple of (pivot_df, expr_df, group_map) or None if data unavailable
     """
     workflow_dir = get_workflow_dir(workspace)
-    quant_dir = workflow_dir / "results" / "quant_results"
+    run_id = get_run_id(workspace)
+    quant_dir = get_results_dir(workspace, run_id) / "quant_results"
 
     if not quant_dir.exists():
         return None
@@ -465,7 +561,16 @@ def get_abundance_data(workspace: Path) -> tuple | None:
     params_file = workflow_dir / "params.json"
     params_mtime = params_file.stat().st_mtime if params_file.exists() else 0.0
 
-    return load_abundance_data(str(workspace), csv_mtime, params_mtime)
+    result = load_abundance_data(str(workspace), csv_mtime, params_mtime, run_id)
+    if result is None or include_contaminants:
+        return result
+    pivot_df, expr_df, group_map = result
+    id_col = pivot_df.columns[0]
+    return (
+        drop_contaminants(pivot_df, id_col),
+        expr_df[~expr_df.index.to_series().map(is_contaminant).to_numpy(dtype=bool)],
+        group_map,
+    )
 
 
 def get_id_column(workspace: Path, pivot_df: pd.DataFrame) -> str:
@@ -474,8 +579,7 @@ def get_id_column(workspace: Path, pivot_df: pd.DataFrame) -> str:
     LFQ reports always use "ProteinName"; TMT reports use whatever the
     report's first column is actually named (e.g. "protein").
     """
-    workflow_dir = get_workflow_dir(workspace)
-    analysis_mode = ParameterManager(workflow_dir, "TOPP Workflow").get_parameters_from_json().get("analysis-mode", "LFQ")
+    analysis_mode = get_run_params(workspace).get("analysis-mode", "LFQ")
     return "ProteinName" if analysis_mode == "LFQ" else pivot_df.columns[0]
 
 
@@ -486,13 +590,18 @@ def get_sample_group_map(workspace: Path, pivot_df: pd.DataFrame, group_map: dic
     ".mzML" suffix). TMT group_map keys are 0-based channel indices that must
     be matched against the report's actual "sampleN[...]" column names.
     """
-    workflow_dir = get_workflow_dir(workspace)
-    analysis_mode = ParameterManager(workflow_dir, "TOPP Workflow").get_parameters_from_json().get("analysis-mode", "LFQ")
+    analysis_mode = get_run_params(workspace).get("analysis-mode", "LFQ")
 
     if analysis_mode == "LFQ":
-        return {
+        grouped = {
             k[:-5] if k.endswith(".mzML") else k: v
             for k, v in group_map.items()
+        }
+        # Every sample column is listed, those without a group as "Unassigned"
+        return {
+            c: grouped.get(c) or UNASSIGNED
+            for c in pivot_df.columns
+            if c not in ("ProteinName", "PeptideSequence", *STAT_COLUMNS)
         }
 
     actual_sample_names = pivot_df.columns.tolist()
@@ -505,8 +614,29 @@ def get_sample_group_map(workspace: Path, pivot_df: pd.DataFrame, group_map: dic
         target_substring = f"sample{sample_idx}["
         real_full_name = next((name for name in actual_sample_names if target_substring in name), None)
         if real_full_name:
-            norm_map[real_full_name] = v if v and v.strip() else "Unassigned"
+            norm_map[real_full_name] = v if v and v.strip() else UNASSIGNED
+    # Channels left without a group (not skipped) count as "Unassigned"
+    for name in actual_sample_names:
+        if re.search(r"sample\d+\[", str(name)) and name not in norm_map:
+            norm_map[name] = UNASSIGNED
     return norm_map
+
+
+def sample_columns(df: pd.DataFrame, sample_group_map: dict) -> list:
+    """The sample columns of ``df``, in table order (no id or summary columns)."""
+    return [c for c in df.columns if c in sample_group_map]
+
+
+def group_metadata(sample_group_map: dict, columns) -> pl.DataFrame:
+    """Sample-to-group table for the statistics, leaving out unassigned samples."""
+    return pl.DataFrame(
+        [
+            {"sample_id": s, "group": sample_group_map[s]}
+            for s in columns
+            if sample_group_map.get(s, UNASSIGNED) != UNASSIGNED
+        ],
+        schema={"sample_id": pl.String, "group": pl.String},
+    )
 
 
 # Session-state keys of the postprocessing chain, in pipeline order.
@@ -519,6 +649,8 @@ def clear_downstream_steps(step: str) -> None:
     Re-applying a step changes the table the later steps were computed from,
     so their stored results no longer match and must be recomputed.
     """
+    # The note of how the comparison was computed no longer applies
+    st.session_state.pop("comparison_settings", None)
     for key in POSTPROCESSING_STEPS[POSTPROCESSING_STEPS.index(step) + 1:]:
         st.session_state.pop(key, None)
         if key == "normalized_df":

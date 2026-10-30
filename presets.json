@@ -1,19 +1,86 @@
 {
     "topp-workflow": {
-        "High Res MS": {
-            "_description": "Optimized for high-resolution MS2 (Orbitrap, TOF) when using ppm fragment tolerance",
+        "Orbitrap HCD": {
+            "_description": "Orbitrap with high-resolution HCD MS2, tryptic digest: 10 ppm precursor tolerance, 0.02 Da fragment bins (Comet's recommendation for high-resolution MS2). Also returns to a closed search.",
             "CometAdapter": {
                 "instrument": "high_res",
-                "fragment_mass_tolerance": 0.015,
-                "fragment_bin_offset": 0.0
+                "fragment_mass_tolerance": 0.01,
+                "fragment_bin_offset": 0.0,
+                "precursor_mass_tolerance": 10.0,
+                "precursor_error_units": "ppm",
+                "isotope_error": "0/1"
+            },
+            "CometAdapter-TMT": {
+                "instrument": "high_res",
+                "fragment_mass_tolerance": 0.01,
+                "fragment_bin_offset": 0.0,
+                "precursor_mass_tolerance": 10.0,
+                "precursor_error_units": "ppm",
+                "isotope_error": "0/1"
             }
         },
-        "Low Res MS": {
-            "_description": "Optimized for low-resolution MS2 (Ion trap) when using ppm fragment tolerance",
+        "timsTOF": {
+            "_description": "timsTOF (PASEF) with high-resolution MS2, tryptic digest: 20 ppm precursor tolerance and wider 0.05 Da fragment bins for the TOF's lower fragment mass accuracy. Also returns to a closed search.",
+            "CometAdapter": {
+                "instrument": "high_res",
+                "fragment_mass_tolerance": 0.025,
+                "fragment_bin_offset": 0.0,
+                "precursor_mass_tolerance": 20.0,
+                "precursor_error_units": "ppm",
+                "isotope_error": "0/1"
+            },
+            "CometAdapter-TMT": {
+                "instrument": "high_res",
+                "fragment_mass_tolerance": 0.025,
+                "fragment_bin_offset": 0.0,
+                "precursor_mass_tolerance": 20.0,
+                "precursor_error_units": "ppm",
+                "isotope_error": "0/1"
+            }
+        },
+        "Ion Trap CID": {
+            "_description": "Low-resolution ion trap MS2 (CID, e.g. LTQ or Orbitrap Velos/Elite with ion trap readout): 1.0005 Da fragment bins with a 0.4 Da offset and 20 ppm precursor tolerance. Also returns to a closed search.",
             "CometAdapter": {
                 "instrument": "low_res",
                 "fragment_mass_tolerance": 0.50025,
-                "fragment_bin_offset": 0.4
+                "fragment_bin_offset": 0.4,
+                "precursor_mass_tolerance": 20.0,
+                "precursor_error_units": "ppm",
+                "isotope_error": "0/1"
+            },
+            "CometAdapter-TMT": {
+                "instrument": "low_res",
+                "fragment_mass_tolerance": 0.50025,
+                "fragment_bin_offset": 0.4,
+                "precursor_mass_tolerance": 20.0,
+                "precursor_error_units": "ppm",
+                "isotope_error": "0/1"
+            }
+        },
+        "Open Search": {
+            "_description": "Open search: precursor tolerance \u00b1500 Da without isotope errors, so peptides are identified with modifications the search did not include. See the Mass Shifts results page for the shifts and their Unimod matches.",
+            "CometAdapter": {
+                "precursor_mass_tolerance": 500.0,
+                "precursor_error_units": "Da",
+                "isotope_error": "off"
+            },
+            "CometAdapter-TMT": {
+                "precursor_mass_tolerance": 500.0,
+                "precursor_error_units": "Da",
+                "isotope_error": "off"
+            }
+        },
+        "Closed Search": {
+            "_description": "Back to a standard (closed) search: the default precursor tolerance (20 ppm label-free, 4.5 ppm TMT) with 13C isotope errors 0/1.",
+            "CometAdapter": {
+                "precursor_mass_tolerance": 20.0,
+                "precursor_error_units": "ppm",
+                "isotope_error": "0/1"
+            },
+            "CometAdapter-TMT": {
+                "precursor_mass_tolerance": 4.5,
+                "precursor_error_units": "ppm",
+                "isotope_error": "0/1"
             }
         }
     }
