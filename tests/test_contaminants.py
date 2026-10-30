@@ -126,6 +126,7 @@ def _workflow(tmp_path, params):
     wf = object.__new__(WorkflowTest)
     wf.params = params
     wf.workflow_dir = tmp_path / "topp-workflow"
+    wf.results_dir = wf.workflow_dir / "results"
     wf.logger = SimpleNamespace(log=lambda *a, **k: None)
     wf.executor = SimpleNamespace(run_topp=run_topp)
     return wf, calls

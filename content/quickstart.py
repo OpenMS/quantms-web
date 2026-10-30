@@ -153,7 +153,7 @@ st.markdown(
 | How much of each protein is in each sample? | **Protein abundances** |
 | Do my replicates agree? Is there an outlier sample? | **Sample similarity (PCA)**, **Clustered heatmap** |
 | What biology do the changed proteins point to? | **GO enrichment** |
-| I want the tables for my own analysis. | **Download results** |
+| I want the tables for my own analysis. | **Runs and downloads** |
 """
 )
 st.caption(

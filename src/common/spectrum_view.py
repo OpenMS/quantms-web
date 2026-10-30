@@ -13,12 +13,13 @@ from src.common.ms2_prediction import (
     instrument_of, load_model, match_peaks, mirror_frame, peptdeep_available, predict_fragments, spectral_angle,
 )
 from src.common.results_helpers import parse_idxml
-from src.workflow.ParameterManager import ParameterManager
 
 
-def fragment_tolerance(workflow_dir: Path) -> tuple[float, bool]:
-    """The search's fragment tolerance: user value, else the workflow's default for it."""
-    workflow_params = ParameterManager(workflow_dir, "TOPP Workflow").get_parameters_from_json()
+def fragment_tolerance(workflow_params: dict) -> tuple[float, bool]:
+    """The search's fragment tolerance: user value, else the workflow's default for it.
+
+    ``workflow_params`` are the parameters of the run shown (``get_run_params``).
+    """
     comet = "CometAdapter-TMT" if workflow_params.get("analysis-mode", "LFQ") == "TMT" else "CometAdapter"
     comet_params = {**workflow_params.get("_defaults", {}).get(comet, {}), **workflow_params.get(comet, {})}
     return float(comet_params.get("fragment_mass_tolerance", 0.02)), comet_params.get("fragment_error_units", "Da") != "Da"
@@ -134,7 +135,7 @@ def show_spectrum(cache_dir: Path, run: str, state_manager, *, peptide: str, cha
 
 
 def show_selected_psm_spectrum(cache_dir: Path, idxml: Path, state_manager, *, seqview_key: str,
-                               workflow_dir: Path, mzml_files: list) -> None:
+                               workflow_params: dict, mzml_files: list) -> None:
     """``show_spectrum`` for the PSM selected in a run's PSM table (state: identification, file, spectrum)."""
     psm_id = state_manager.get_selection("identification")
     file_index = state_manager.get_selection("file")
@@ -144,7 +145,7 @@ def show_selected_psm_spectrum(cache_dir: Path, idxml: Path, state_manager, *, s
         st.info("Select a PSM in the table to see its spectrum next to the predicted one.")
         return
     hit = hits.loc[int(psm_id)]
-    tolerance, ppm = fragment_tolerance(workflow_dir)
+    tolerance, ppm = fragment_tolerance(workflow_params)
     mzml = Path(mzml_files[int(file_index)]) if int(file_index) < len(mzml_files) else None
     show_spectrum(
         cache_dir, idxml.stem, state_manager, peptide=hit["sequence"], charge=int(hit["charge"]),
@@ -153,10 +154,10 @@ def show_selected_psm_spectrum(cache_dir: Path, idxml: Path, state_manager, *, s
     )
 
 
-def psm_mzml_files() -> list[Path]:
-    """The workflow's mzML inputs, in the order that numbers them in the viewer caches."""
+def psm_mzml_files(workflow_params: dict) -> list[Path]:
+    """A run's mzML inputs, in the order that numbers them in the viewer caches."""
     from src.WorkflowTest import WorkflowTest
 
     wf = WorkflowTest()
-    names = wf.params.get("mzML-files") or []
+    names = workflow_params.get("mzML-files") or []
     return [Path(f) for f in wf.file_manager.get_files(names)] if names else []

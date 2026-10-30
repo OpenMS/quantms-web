@@ -4,11 +4,12 @@ import polars as pl
 from src.common.common import page_setup
 from src.common.differential import comparison_groups
 from src.common.guide import ensure_group_comparison, needs_results, next_steps, page_intro, show_comparison_settings
-from src.common.results_helpers import get_abundance_data, get_id_column, get_sample_group_map
+from src.common.results_helpers import get_abundance_data, get_id_column, get_sample_group_map, run_picker
 from src.common.insight_tables import plot_cache
 from openms_insight import VolcanoPlot
 
 params = page_setup()
+run_picker()
 st.title("Volcano plot")
 
 page_intro(

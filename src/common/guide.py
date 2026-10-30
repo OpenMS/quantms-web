@@ -25,7 +25,7 @@ PAGES = {
     "clustered": ("content/results_heatmap_clustered.py", "Clustered heatmap", "🧬"),
     "enrichment": ("content/enrichment.py", "GO enrichment", "📉"),
     "samples": ("content/results_samples.py", "Per-sample counts", "🧪"),
-    "download": ("content/results_download.py", "Download results", "⬇️"),
+    "download": ("content/results_download.py", "Runs and downloads", "🗂️"),
     "filtering": ("content/filtering.py", "1. Filter proteins", "🧹"),
     "imputation": ("content/imputation.py", "2. Missing values", "🩹"),
     "normalization": ("content/normalization.py", "3. Normalize", "⚖️"),
