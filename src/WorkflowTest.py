@@ -832,8 +832,12 @@ class WorkflowTest(WorkflowManager):
         db_dir = Path(self.workflow_dir, "results", "database")
         con_fasta = db_dir / "contaminants.fasta"
         if add_contaminants:
-            n_con = write_contaminants(con_fasta)
-            self.logger.log(f"🧫 Adding {n_con} contaminant proteins (cRAP, {CONTAMINANT_PREFIX} accessions)")
+            n_con, n_in_db = write_contaminants(con_fasta, targets=fasta_path)
+            note = f"; {n_in_db} already in your database are kept as targets" if n_in_db else ""
+            self.logger.log(
+                f"🧫 Adding {n_con} common lab contaminants (cRAP: keratins, trypsin, ...; "
+                f"{CONTAMINANT_PREFIX} accessions, hidden from the results){note}"
+            )
 
         if self.params.get("generate-decoys", True):
             # Get decoy_string from DecoyDatabase params
@@ -842,7 +846,9 @@ class WorkflowTest(WorkflowManager):
                 # DecoyDatabase reads both files, so the contaminants get decoys too
                 decoy_fasta = db_dir / f"{fasta_path.stem}.con.decoy.fasta"
                 decoy_inputs = [str(fasta_path), str(con_fasta)]
-                stale = decoy_fasta.exists() and decoy_fasta.stat().st_mtime < fasta_path.stat().st_mtime
+                stale = decoy_fasta.exists() and decoy_fasta.stat().st_mtime < max(
+                    fasta_path.stat().st_mtime, con_fasta.stat().st_mtime
+                )
             else:
                 decoy_fasta = fasta_path.with_suffix(".decoy.fasta")
                 decoy_inputs = [str(fasta_path)]

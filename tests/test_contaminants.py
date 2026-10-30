@@ -35,13 +35,45 @@ def _ids(path):
 
 def test_write_contaminants_prefixes_every_crap_entry(tmp_path):
     out = tmp_path / "con.fasta"
-    n = write_contaminants(out)
+    n, skipped = write_contaminants(out)
     ids = _ids(out)
     assert n == len(ids) == len(_ids(CRAP_FASTA)) == 116
+    assert skipped == 0
     assert all(i.startswith(CONTAMINANT_PREFIX) for i in ids)
     # An already prefixed entry is not prefixed twice
     write_contaminants(tmp_path / "again.fasta", crap_path=out)
     assert _ids(tmp_path / "again.fasta") == ids
+
+
+def test_contaminants_already_in_the_database_stay_targets(tmp_path):
+    crap = []
+    poms.FASTAFile().load(str(CRAP_FASTA), crap)
+    # One by sequence (under another name), one by UniProt entry name (another sequence)
+    _fasta(tmp_path / "targets.fasta", [
+        ("sp|Q0|MYPROT_BOVIN", crap[0].sequence),
+        ("sp|P02768|ALBU_HUMAN", "PEPTIDEK"),
+    ])
+    assert any("ALBU_HUMAN" in i for i in _ids(CRAP_FASTA))
+    out = tmp_path / "con.fasta"
+    n, skipped = write_contaminants(out, targets=tmp_path / "targets.fasta")
+    assert (n, skipped) == (114, 2)
+    kept = _load(out)
+    assert crap[0].sequence not in {e.sequence for e in kept}
+    assert not any("ALBU_HUMAN" in e.identifier for e in kept)
+
+
+def test_unchanged_contaminants_are_not_rewritten(tmp_path):
+    out = tmp_path / "con.fasta"
+    write_contaminants(out)
+    before = out.stat().st_mtime_ns
+    write_contaminants(out)
+    assert out.stat().st_mtime_ns == before
+
+
+def _load(path):
+    entries = []
+    poms.FASTAFile().load(str(path), entries)
+    return entries
 
 
 def test_append_fasta_keeps_order(tmp_path):

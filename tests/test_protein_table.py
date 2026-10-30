@@ -69,3 +69,52 @@ def test_coverage_html_marks_covered_residues():
     out = coverage_html("ACDEFGHIKLM", np.array([True, True] + [False] * 9))
     assert out.count('<span class="cov">') == 2
     assert "ACDEFGHIKL M" in out.replace('<span class="cov">A</span>', "A").replace('<span class="cov">C</span>', "C")
+
+
+def test_psm_ids_match_the_spectrum_viewer_numbering(tmp_path):
+    """collect_psms' psm_id is the top hit's id_idx in parse_idxml (the viewer cache)."""
+    import pyopenms as poms
+
+    from src.common.protein_table import collect_psms
+    from src.common.results_helpers import parse_idxml
+
+    prot = poms.ProteinIdentification()
+    prot.setIdentifier("run")
+    protein_hits = []
+    for acc in ("P1", "P2", "rev_P1"):
+        protein_hit = poms.ProteinHit()
+        protein_hit.setAccession(acc)
+        protein_hits.append(protein_hit)
+    prot.setHits(protein_hits)
+    peptides = []
+    # Two hits, then a decoy-only spectrum, then one hit: the ids skip every hit
+    for scan, hits in [(5, [("PEPTIDEK", "P1"), ("PEPTLDEK", "P2")]), (6, [("KEDITPEP", "rev_P1")]), (9, [("SAMPLER", "P2")])]:
+        pep = poms.PeptideIdentification()
+        pep.setIdentifier("run")
+        pep.setMetaValue("spectrum_reference", f"controllerType=0 controllerNumber=1 scan={scan}")
+        out = []
+        for seq, acc in hits:
+            hit = poms.PeptideHit()
+            hit.setSequence(poms.AASequence.fromString(seq))
+            hit.setCharge(2)
+            ev = poms.PeptideEvidence()
+            ev.setProteinAccession(acc)
+            hit.setPeptideEvidences([ev])
+            out.append(hit)
+        pep.setHits(out)
+        peptides.append(pep)
+    if hasattr(poms, "PeptideIdentificationList"):
+        container = poms.PeptideIdentificationList()
+        for pep in peptides:
+            container.push_back(pep)
+        peptides = container
+    path = tmp_path / "runA_filter.idXML"
+    poms.IdXMLFile().store(str(path), [prot], peptides)
+
+    psms = collect_psms([path], ["runA.mzML"])
+    viewer = parse_idxml(path, {"runA.mzML": 0})[0].to_pandas().set_index("id_idx")
+    assert psms["psm_id"].tolist() == [0, 3]
+    assert psms["run"].tolist() == ["runA_filter", "runA_filter"]
+    for _, row in psms.iterrows():
+        assert viewer.loc[row["psm_id"], "sequence"] == row["peptide"]
+        assert viewer.loc[row["psm_id"], "scan_id"] == row["scan"]

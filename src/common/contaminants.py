@@ -4,6 +4,7 @@ The workflow appends the cRAP proteins to the user's FASTA with ``CON__`` before
 their accessions, so every protein and PSM table can flag them, and the
 protein-level results and downstream analysis leave them out by default.
 """
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -19,19 +20,49 @@ CRAP_FASTA = Path("example-data", "db", "contaminants", "crap.fasta")
 _ACCESSION_SEPARATORS = (";", ",", "/")
 
 
-def write_contaminants(out_path, crap_path=CRAP_FASTA) -> int:
+def write_contaminants(out_path, crap_path=CRAP_FASTA, targets=None) -> tuple[int, int]:
     """Write the cRAP entries with ``CON__`` accessions to ``out_path``.
 
-    Entries that already carry the prefix keep it. Returns the number of entries.
+    Entries that already carry the prefix keep it. A cRAP protein that is in the
+    ``targets`` FASTA, by sequence or by UniProt entry name (cRAP's sequences
+    can differ from the current UniProt ones), is left out: the user searches for it on purpose
+    (e.g. the UPS spike-in standards, which cRAP lists too), and a CON__ twin
+    would mark its protein group as a contaminant and drop it from the results.
+    The file is rewritten only when its content changes, so a decoy database
+    built from it stays valid. Returns ``(written, already_in_targets)``.
     """
     entries = []
     FASTAFile().load(str(crap_path), entries)
-    for entry in entries:
+    target_sequences, target_names = set(), set()
+    if targets is not None:
+        target_entries = []
+        FASTAFile().load(str(targets), target_entries)
+        target_sequences = {e.sequence for e in target_entries}
+        target_names = {_entry_name(e.identifier) for e in target_entries} - {""}
+    kept = [
+        e for e in entries
+        if e.sequence not in target_sequences and _entry_name(e.identifier) not in target_names
+    ]
+    for entry in kept:
         if not entry.identifier.startswith(CONTAMINANT_PREFIX):
             entry.identifier = CONTAMINANT_PREFIX + entry.identifier
-    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
-    FASTAFile().store(str(out_path), entries)
-    return len(entries)
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = out_path.with_name(out_path.name + ".tmp")
+    FASTAFile().store(str(tmp), kept)
+    if out_path.exists() and out_path.read_bytes() == tmp.read_bytes():
+        tmp.unlink()
+    else:
+        tmp.replace(out_path)
+    return len(kept), len(entries) - len(kept)
+
+
+def _entry_name(identifier: str) -> str:
+    """The UniProt entry name (``ALBU_HUMAN``) in ``sp|P02768|ALBU_HUMAN`` or cRAP's ``sp|ALBU_HUMAN|``."""
+    for part in identifier.removeprefix(CONTAMINANT_PREFIX).split("|"):
+        if re.fullmatch(r"[A-Z0-9]+_[A-Z0-9]+", part):
+            return part
+    return ""
 
 
 def append_fasta(parts, out_path) -> None:

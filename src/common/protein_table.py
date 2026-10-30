@@ -16,7 +16,10 @@ from src.common.results_helpers import extract_filename_from_idxml, extract_scan
 DECOY_PREFIXES = ("DECOY_", "decoy_", "rev_", "REV_", "XXX_", "reversed_")
 Q_VALUE_KEYS = ("MS:1001491", "q-value")
 
-PSM_COLUMNS = ["file", "scan", "rt", "mz", "charge", "peptide", "sequence", "score", "q_value", "proteins"]
+# run and psm_id locate the PSM in the run's spectrum viewer cache (see parse_idxml)
+PSM_COLUMNS = [
+    "file", "scan", "rt", "mz", "charge", "peptide", "sequence", "score", "q_value", "proteins", "run", "psm_id",
+]
 
 
 def _is_decoy_accession(accession: str) -> bool:
@@ -50,8 +53,13 @@ def collect_psms(idxml_paths, mzml_names=None) -> pd.DataFrame:
     records = []
     for path in idxml_paths:
         file = extract_filename_from_idxml(Path(path), mzml_names)
+        # parse_idxml numbers every hit of the run in this order; the top hit's
+        # number is its id in the run's SequenceView cache
+        n_hits = 0
         for pep in load_idxml(path)[1]:
             hits = pep.getHits()
+            psm_id = n_hits
+            n_hits += len(hits)
             if not hits:
                 continue
             hit = hits[0]
@@ -81,6 +89,8 @@ def collect_psms(idxml_paths, mzml_names=None) -> pd.DataFrame:
                 "score": hit.getScore(),
                 "q_value": q_value,
                 "proteins": proteins,
+                "run": Path(path).stem,
+                "psm_id": psm_id,
             })
     return pd.DataFrame(records, columns=PSM_COLUMNS)
 
@@ -151,6 +161,9 @@ def build_tables(psms: pd.DataFrame, fasta: dict[str, tuple[str, str]], files: l
     psms_long = long[["accession", "peptide", "file", "scan", "rt", "mz", "charge", "score", "q_value"]].rename(
         columns={"rt": "RT (s)", "mz": "m/z", "q_value": "q-value"}
     ).reset_index(drop=True)
+    if {"run", "psm_id"} <= set(long.columns):
+        # One value per PSM, for selecting it: "<run>:<psm_id>"
+        psms_long["psm"] = (long["run"].astype(str) + ":" + long["psm_id"].astype(str)).to_numpy()
     return proteins, peptides, psms_long, coverage
 
 

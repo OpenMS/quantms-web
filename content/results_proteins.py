@@ -2,7 +2,7 @@
 from pathlib import Path
 
 import streamlit as st
-from openms_insight import StateManager
+from openms_insight import LinePlot, SequenceView, StateManager
 
 from src.common.common import page_setup
 from src.common.guide import needs_results, next_steps, page_intro
@@ -17,8 +17,9 @@ wf = WorkflowTest()
 st.title("Identified proteins")
 page_intro(
     "Every protein found in any sample, with the evidence behind it. **Click a protein** to see "
-    "which parts of its sequence were covered by peptides; **click a peptide** to see the spectra "
-    "that identified it. Use the search fields in the table header to look up your protein of interest.",
+    "which parts of its sequence were covered by peptides; **click a peptide** to list the spectra "
+    "that identified it, and **click one of those** to see the spectrum with its fragment ions "
+    "annotated. Use the search fields in the table header to look up your protein of interest.",
     background="""
 - A protein is identified through its **peptides**, and each peptide through one or more
   **PSMs** (peptide-spectrum matches: a fragmentation spectrum explained by that peptide).
@@ -114,15 +115,44 @@ show_insight_table(
 )
 
 st.subheader("PSMs of the selected peptide")
+st.caption("One row per spectrum that identified the peptide. Click a row to see its annotated spectrum below.")
 show_insight_table(
     psms_long, name="protein_psms", cache_dir=cache_dir, source_files=source_files,
     title="psms", height=350, state_manager=state_manager,
     filters={"protein": "accession", "peptide": "peptide"},
+    interactivity={"psm": "psm"}, layout="fitColumns",
+    extra_key="with-psm-id-v2",  # the cache follows the source files; name the newer psm column and layout
     column_overrides={
-        "accession": HIDDEN, "peptide": HIDDEN,
+        "accession": HIDDEN, "peptide": HIDDEN, "psm": HIDDEN,
         "RT (s)": decimals(1), "m/z": decimals(4),
     },
 )
+
+# The annotated spectrum comes from the viewer cache the workflow built for the
+# PSM's run (as on the Peptide-spectrum matches page), pointed at this one PSM
+selected_psm = state_manager.get_selection("psm")
+match = psms_long[psms_long["psm"] == selected_psm] if selected_psm else psms_long.iloc[0:0]
+if not match.empty:
+    psm = match.iloc[0]
+    run, psm_id = str(selected_psm).rsplit(":", 1)
+    st.subheader(f"Spectrum of {psm['peptide']} (scan {psm['scan']}, {Path(psm['file']).stem})")
+    if not (cache_dir / f"seqview_{run}").is_dir() or psm["file"] not in mzml_names:
+        st.info("No spectrum viewer data for this run. Re-run the analysis to create it.")
+    else:
+        viewer_state = StateManager("proteins_page_spectrum")
+        viewer_state.set_selection("identification", int(psm_id))
+        viewer_state.set_selection("file", mzml_names.index(psm["file"]))
+        viewer_state.set_selection("spectrum", int(psm["scan"]))
+        st.caption(
+            "Peaks explained by fragment ions of the peptide are coloured: b ions contain its start, "
+            "y ions its end. Click a peak to find it in the sequence."
+        )
+        SequenceView(cache_id=f"seqview_{run}", cache_path=str(cache_dir))(
+            key="proteins_seqview", state_manager=viewer_state, height=420,
+        )
+        LinePlot(cache_id=f"lineplot_{run}", cache_path=str(cache_dir))(
+            key="proteins_lineplot", state_manager=viewer_state, height=420, sequence_view_key="proteins_seqview",
+        )
 
 next_steps(
     ("compare", "See whether your protein changes between the groups."),
