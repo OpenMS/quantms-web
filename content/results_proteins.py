@@ -2,13 +2,14 @@
 from pathlib import Path
 
 import streamlit as st
-from openms_insight import LinePlot, SequenceView, StateManager
+from openms_insight import SequenceView, StateManager
 
 from src.common.common import page_setup
 from src.common.guide import needs_results, next_steps, page_intro
 from src.common.insight_tables import show_insight_table
 from src.common.protein_table import build_tables, collect_psms, coverage_html, read_fasta
 from src.common.results_helpers import get_workflow_dir
+from src.common.spectrum_view import fragment_tolerance, show_spectrum
 from src.WorkflowTest import WorkflowTest
 
 params = page_setup()
@@ -145,13 +146,21 @@ if not match.empty:
         viewer_state.set_selection("spectrum", int(psm["scan"]))
         st.caption(
             "Peaks explained by fragment ions of the peptide are coloured: b ions contain its start, "
-            "y ions its end. Click a peak to find it in the sequence."
+            "y ions its end. Click a peak to find it in the sequence. Below the measured spectrum, "
+            "mirrored, is the spectrum a deep-learning model (AlphaPeptDeep) predicts for this peptide: "
+            "a correct match shows the same strong peaks on both sides."
         )
         SequenceView(cache_id=f"seqview_{run}", cache_path=str(cache_dir))(
             key="proteins_seqview", state_manager=viewer_state, height=420,
         )
-        LinePlot(cache_id=f"lineplot_{run}", cache_path=str(cache_dir))(
-            key="proteins_lineplot", state_manager=viewer_state, height=420, sequence_view_key="proteins_seqview",
+        tolerance, ppm = fragment_tolerance(workflow_dir)
+        mzml_path = next(
+            (Path(f) for f in wf.file_manager.get_files(wf.params["mzML-files"]) if Path(f).name == psm["file"]), None,
+        )
+        show_spectrum(
+            cache_dir, run, viewer_state, peptide=psm["peptide"], charge=int(psm["charge"]),
+            file_index=mzml_names.index(psm["file"]), scan=int(psm["scan"]), seqview_key="proteins_seqview",
+            key="proteins", tolerance=tolerance, ppm=ppm, mzml_path=mzml_path, height=420,
         )
 
 next_steps(

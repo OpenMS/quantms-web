@@ -3,13 +3,12 @@ import streamlit as st
 from pathlib import Path
 from src.common.common import page_setup
 from src.common.results_helpers import get_workflow_dir
-from openms_insight import Heatmap, LinePlot, SequenceView, StateManager
+from src.common.spectrum_view import fragment_tolerance, psm_mzml_files, show_selected_psm_spectrum
 from src.common.common import show_fig
 from src.common.guide import needs_results, next_steps, page_intro
 from src.common.fragment_plots import fragment_error_plot, ion_table, ion_table_html, load_psm_fragments
-from src.workflow.ParameterManager import ParameterManager
 from src.common.sequence_display import psm_table, sequence_mode_selector
-from openms_insight import Heatmap, LinePlot, SequenceView, StateManager
+from openms_insight import Heatmap, SequenceView, StateManager
 
 params = page_setup()
 st.title("Peptide-spectrum matches")
@@ -69,7 +68,6 @@ state_manager = StateManager()
 # Load components from cache (no data parameter needed)
 heatmap = Heatmap(cache_id=f"heatmap_{cache_id_prefix}", cache_path=str(cache_dir))
 seq_view = SequenceView(cache_id=f"seqview_{cache_id_prefix}", cache_path=str(cache_dir))
-line_plot = LinePlot(cache_id=f"lineplot_{cache_id_prefix}", cache_path=str(cache_dir))
 
 # Render components
 st.subheader("PSM Overview")
@@ -82,8 +80,16 @@ psm_table(cache_dir, f"table_{cache_id_prefix}", mode, state_manager)
 st.subheader("Peptide Sequence")
 seq_view(key=f"seqview_{cache_id_prefix}", state_manager=state_manager, height=533)
 
-st.subheader("MS2 Spectrum")
-line_plot(key=f"lineplot_{cache_id_prefix}", state_manager=state_manager, height=450, sequence_view_key=f"seqview_{cache_id_prefix}")
+st.subheader("MS2 spectrum")
+st.caption(
+    "Top: the measured spectrum, with peaks explained by the peptide's fragment ions coloured. Bottom, mirrored: "
+    "the spectrum a deep-learning model (AlphaPeptDeep) predicts for the peptide. A correct match shows the same "
+    "strong peaks on both sides."
+)
+show_selected_psm_spectrum(
+    cache_dir, selected_file, state_manager, seqview_key=f"seqview_{cache_id_prefix}",
+    workflow_dir=workflow_dir, mzml_files=psm_mzml_files(),
+)
 
 st.subheader("Fragment ions")
 fragments_tsv = workflow_dir / "results" / "exports" / f"{cache_id_prefix}_fragment_ions.tsv"
@@ -97,12 +103,7 @@ else:
     if fragments.empty:
         st.info("No fragment ion of this PSM matched a peak within the tolerance.")
     else:
-        # The search's fragment tolerance: user value, else the workflow's default for it
-        workflow_params = ParameterManager(workflow_dir, "TOPP Workflow").get_parameters_from_json()
-        comet = "CometAdapter-TMT" if workflow_params.get("analysis-mode", "LFQ") == "TMT" else "CometAdapter"
-        comet_params = {**workflow_params.get("_defaults", {}).get(comet, {}), **workflow_params.get(comet, {})}
-        tolerance = float(comet_params.get("fragment_mass_tolerance", 0.02))
-        tolerance_ppm = comet_params.get("fragment_error_units", "Da") != "Da"
+        tolerance, tolerance_ppm = fragment_tolerance(workflow_dir)
 
         first = fragments.iloc[0]
         st.caption(
