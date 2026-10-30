@@ -7,7 +7,7 @@ params = page_setup()
 
 wf = WorkflowTest()
 
-st.title("Download Results")
+st.title("Export Results" if st.session_state.location == "local" else "Download Results")
 
 st.markdown(
     """

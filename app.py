@@ -16,6 +16,7 @@ if "settings" not in st.session_state:
             st.session_state.settings = json.load(f)
 
 if __name__ == '__main__':
+    local = not st.session_state.settings["online_deployment"]
     pages = {
         "Welcome": [
             st.Page(Path("content", "quickstart.py"), title="Quickstart", icon="👋"),
@@ -30,7 +31,8 @@ if __name__ == '__main__':
             st.Page(Path("content", "results_rescoring.py"), title="Rescoring", icon="📈"),
             st.Page(Path("content", "results_filtered.py"), title="Filtered PSMs", icon="🎯"),
             st.Page(Path("content", "results_abundance.py"), title="Protein Abundance", icon="📋"),
-            st.Page(Path("content", "results_download.py"), title="Download", icon="⬇️"),
+            # A local install exports results to a folder instead of downloading them.
+            st.Page(Path("content", "results_download.py"), title="Export" if local else "Download", icon="📤" if local else "⬇️"),
         ],
         # Steps run in order; each one works on the previous step's output.
         "Downstream Analysis": [
