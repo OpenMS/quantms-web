@@ -99,3 +99,12 @@ def test_table_without_source_files_is_cached_by_content(tmp_path, monkeypatch):
     assert rendered[2] != rendered[0]
     # The cache of the previous version of the table is removed
     assert [p.name for p in tmp_path.iterdir()] == [rendered[2]]
+
+
+def test_to_polars_applies_column_overrides():
+    df = pd.DataFrame({"a.b": [1.25], "c": ["x"]})
+    _, col_defs = _to_polars(df, {"a.b": {"formatter": "money"}, "c": {"visible": False}})
+    by_title = {d["title"]: d for d in col_defs}
+    assert by_title["a.b"]["formatter"] == "money"
+    assert by_title["a.b"]["field"] == "a_b"
+    assert by_title["c"]["visible"] is False

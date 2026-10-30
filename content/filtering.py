@@ -5,6 +5,7 @@ import pandas as pd
 import polars as pl
 import streamlit as st
 from src.common.common import page_setup, save_params, show_fig
+from src.common.guide import needs_results, next_steps, page_intro
 from src.common.postprocessing_plots import filter_threshold_curve
 from src.common.insight_tables import show_insight_table
 from src.common.results_helpers import (
@@ -12,6 +13,8 @@ from src.common.results_helpers import (
     get_abundance_data,
     get_id_column,
     get_sample_group_map,
+    group_metadata,
+    sample_columns,
     postprocessing_param,
 )
 
@@ -30,12 +33,21 @@ def strip_stat_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df.drop(columns=[c for c in STAT_COLUMNS if c in df.columns], errors="ignore")
 
 params = page_setup()
-st.title("Step 1 of 4: Filtering")
+st.title("Fine-tune 1 of 4: Filter proteins")
 
-st.markdown(
-    """
-Filter out low-quality proteins from your dataset based on abundance, repeatability, or variance thresholds.
-"""
+page_intro(
+    'Remove proteins that were measured in too few samples to be compared reliably.'
+    "\n\n" + 'You do not need this page for a standard analysis: **Compare groups** runs all four steps with the recommended settings. Use it to inspect this step or change it; the plots follow your choice.',
+    background="""
+- **Why filter?** A protein seen in one of six samples cannot be compared between groups: almost
+  all of its values would have to be invented in the next step.
+- **Recommended: Low Repeatability, 50 %.** A protein is kept if at least one group has it in at
+  least half of its samples. This keeps proteins switched on in only one group, often the most
+  interesting ones.
+- *Low Abundance* and *Low Variance* remove the faintest or least changing proteins instead; use
+  them only for specific reasons (e.g. to shorten a very long list before clustering).
+""",
+    background_title='What filtering does',
 )
 
 if "workspace" not in st.session_state:
@@ -44,13 +56,7 @@ if "workspace" not in st.session_state:
 
 result = get_abundance_data(st.session_state["workspace"])
 if result is None:
-    st.info(
-        "Abundance data not available. Please run the workflow and configure sample groups first."
-    )
-    st.page_link(
-        "content/results_abundance.py", label="Go to Abundance", icon="📋"
-    )
-    st.stop()
+    needs_results()
 
 pivot_df, expr_df, group_map = result
 pivot_df = strip_stat_columns(pivot_df)
@@ -58,43 +64,29 @@ id_col = get_id_column(st.session_state["workspace"], pivot_df)
 sample_group_map = get_sample_group_map(st.session_state["workspace"], pivot_df, group_map)
 
 # 1. Identify actual sample columns dynamically
-sample_cols = [
-    c
-    for c in pivot_df.columns
-    if c not in [id_col, "PeptideSequence", "log2FC", "p-value", "p-adj"]
-]
+sample_cols = sample_columns(pivot_df, sample_group_map)
 
-# --- SECTION 1: Original Data View ---
-st.subheader("Original Abundance Table")
-st.markdown(
-    f"Currently displaying **{pivot_df.shape[0]}** proteins and **{len(sample_cols)}** samples before filtering."
-)
-show_insight_table(pivot_df, name="filtering-original")
-
-st.markdown("---")
+with st.expander(f"Input: {pivot_df.shape[0]:,} proteins in {len(sample_cols)} samples"):
+    show_insight_table(pivot_df, name="filtering-original")
 
 # --- SECTION 2: Filter Configuration ---
-st.subheader("Configure Filter Engine")
+st.subheader("Settings")
 
 # Prepare Polars Metadata DataFrame required by openms_insight functions
-metadata_rows = [{"sample_id": s, "group": sample_group_map[s]} for s in sample_cols if s in sample_group_map]
-metadata_pl = pl.DataFrame(
-    metadata_rows, schema={"sample_id": pl.String, "group": pl.String}
-)
+metadata_pl = group_metadata(sample_group_map, sample_cols)
 
 # User selection for filtering strategy. The default keeps proteins quantified
 # in at least half of the samples of one group, which removes rows that
 # imputation would otherwise have to invent most values for.
 filter_options = ["Low Repeatability", "Low Abundance", "Low Variance"]
 filter_method = st.selectbox(
-    "Select Filtering Method",
+    "Filter by",
     options=filter_options,
     index=filter_options.index(
         postprocessing_param(params, "postproc-filter-method", filter_options)
     ),
     key="postproc-filter-method",
-    help="Choose the statistical criteria to prune unreliable protein entries. "
-    "Recommended: Low Repeatability with at most 50% missing values.",
+    help="Recommended: Low Repeatability with at most 50 % missing values per group.",
 )
 
 # Render threshold sliders dynamically based on the selected filter method
@@ -215,3 +207,8 @@ if filtered_df is not None:
         )
     else:
         show_insight_table(filtered_df, name="filtering-filtered")
+
+next_steps(
+    ('imputation', 'Next: fill in the remaining missing values.'),
+    ('compare', 'Back to the overview of the comparison.'),
+)
