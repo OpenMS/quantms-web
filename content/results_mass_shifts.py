@@ -10,10 +10,10 @@ from openms_insight import LinePlot, StateManager, Table
 from src.common.common import page_setup
 from src.common.guide import needs_results, next_steps, page_intro, page_link
 from src.common.mass_shifts import MIN_PSMS, mass_shift_summary, psm_mass_shifts
-from src.common.results_helpers import get_workflow_dir
-from src.workflow.ParameterManager import ParameterManager
+from src.common.results_helpers import run_picker, get_run_dir, get_run_params
 
 params = page_setup()
+run_picker()
 st.title("Mass shifts")
 
 page_intro(
@@ -34,10 +34,10 @@ if "workspace" not in st.session_state:
     st.warning("Please initialize your workspace first.")
     st.stop()
 
-workflow_dir = get_workflow_dir(st.session_state["workspace"])
-filter_dir = workflow_dir / "results" / "psm_filter"
-cache_dir = workflow_dir / "results" / "insight_cache"
-workflow_params = ParameterManager(workflow_dir, "TOPP Workflow").get_parameters_from_json()
+run_dir = get_run_dir(st.session_state["workspace"])
+filter_dir = run_dir / "results" / "psm_filter"
+cache_dir = run_dir / "results" / "insight_cache"
+workflow_params = get_run_params(st.session_state["workspace"])
 
 idxmls = sorted(filter_dir.glob("*.idXML")) if filter_dir.is_dir() else []
 if not idxmls:

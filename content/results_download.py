@@ -8,11 +8,16 @@ params = page_setup()
 
 wf = WorkflowTest()
 
-st.title("Download results")
+st.title("Runs and downloads")
 
 page_intro(
     """
-Every file the analysis produced, singly or as one ZIP. The ones most people need:
+Every analysis you start is kept as its own run, so you can change a setting, run again
+and compare. The list below shows all runs: 👁️ shows a run on the results pages (the
+**Showing run** box in the sidebar does the same), ✏️ renames it, 📦 packs its results,
+settings and logs into one ZIP to download, and 🗑️ deletes it.
+
+Below the list are the files of one run, singly or as one ZIP. The ones most people need:
 
 - **quant_results/**: the protein and peptide abundance table (CSV, opens in Excel or R).
 - **exports/**: all peptide-spectrum matches per run (`*_psms.tsv`) and each match's

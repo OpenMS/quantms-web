@@ -2,16 +2,16 @@
 import streamlit as st
 from pathlib import Path
 from src.common.common import page_setup
-from src.common.results_helpers import get_workflow_dir
+from src.common.results_helpers import run_picker, get_run_dir, get_run_params
 from openms_insight import Heatmap, LinePlot, SequenceView, StateManager
 from src.common.common import show_fig
 from src.common.guide import needs_results, next_steps, page_intro
 from src.common.fragment_plots import fragment_error_plot, ion_table, ion_table_html, load_psm_fragments
-from src.workflow.ParameterManager import ParameterManager
 from src.common.sequence_display import psm_table, sequence_mode_selector
 from openms_insight import Heatmap, LinePlot, SequenceView, StateManager
 
 params = page_setup()
+run_picker()
 st.title("Peptide-spectrum matches")
 
 page_intro(
@@ -37,9 +37,9 @@ if "workspace" not in st.session_state:
     st.warning("Please initialize your workspace first.")
     st.stop()
 
-workflow_dir = get_workflow_dir(st.session_state["workspace"])
-filter_dir = workflow_dir / "results" / "psm_filter"
-cache_dir = workflow_dir / "results" / "insight_cache"
+run_dir = get_run_dir(st.session_state["workspace"])
+filter_dir = run_dir / "results" / "psm_filter"
+cache_dir = run_dir / "results" / "insight_cache"
 
 if not filter_dir.exists():
     needs_results()
@@ -86,7 +86,7 @@ st.subheader("MS2 Spectrum")
 line_plot(key=f"lineplot_{cache_id_prefix}", state_manager=state_manager, height=450, sequence_view_key=f"seqview_{cache_id_prefix}")
 
 st.subheader("Fragment ions")
-fragments_tsv = workflow_dir / "results" / "exports" / f"{cache_id_prefix}_fragment_ions.tsv"
+fragments_tsv = run_dir / "results" / "exports" / f"{cache_id_prefix}_fragment_ions.tsv"
 psm_id = state_manager.get_selection("identification")
 if not fragments_tsv.is_file():
     st.info("No fragment ion export for this run. Re-run the workflow to create it.")
@@ -98,7 +98,7 @@ else:
         st.info("No fragment ion of this PSM matched a peak within the tolerance.")
     else:
         # The search's fragment tolerance: user value, else the workflow's default for it
-        workflow_params = ParameterManager(workflow_dir, "TOPP Workflow").get_parameters_from_json()
+        workflow_params = get_run_params(st.session_state["workspace"])
         comet = "CometAdapter-TMT" if workflow_params.get("analysis-mode", "LFQ") == "TMT" else "CometAdapter"
         comet_params = {**workflow_params.get("_defaults", {}).get(comet, {}), **workflow_params.get(comet, {})}
         tolerance = float(comet_params.get("fragment_mass_tolerance", 0.02))

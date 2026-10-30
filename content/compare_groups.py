@@ -14,9 +14,10 @@ from src.common.guide import (
     show_comparison_settings,
 )
 from src.common.insight_tables import show_insight_table
-from src.common.results_helpers import get_abundance_data, get_id_column, get_sample_group_map
+from src.common.results_helpers import get_abundance_data, get_id_column, get_sample_group_map, run_picker
 
 params = page_setup()
+run_picker()
 st.title("Compare groups")
 
 page_intro(

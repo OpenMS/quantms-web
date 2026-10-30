@@ -12,6 +12,8 @@ try:  # pyOpenMS >= 3.5.0
 except ImportError:  # pyOpenMS <= 3.4.x
     PeptideIdentificationList = None
 from src.workflow.ParameterManager import ParameterManager
+from src.workflow.RunManager import RunManager
+from src.workflow.run_widgets import get_selected_run, select_run
 from src.common.contaminants import drop_contaminants, is_contaminant
 from src.common.peptide_format import to_proforma
 from src.common.isobaric import channel_column_names, label_type
@@ -23,6 +25,80 @@ STAT_COLUMNS = ("log2FC", "p-value", "p-adj", "stat")
 def get_workflow_dir(workspace):
     """Get the workflow directory path."""
     return Path(workspace, "topp-workflow")
+
+
+# Session-state keys holding results computed from the shown run. They are
+# dropped when another run is picked, so no page mixes two runs.
+RUN_DERIVED_KEYS = [
+    "filtered_df", "imputed_df", "normalized_df", "statistics_df",
+    "normalized_transform", "comparison_settings", "comparison_group_map",
+    "go_enrichment", "go_results", "go_ready", "pivot_df",
+]
+# Group assignments are edited on Describe experiment after a run, so they are
+# read from the current settings; every other parameter as the run was started.
+GROUP_PREFIXES = ("mzML-group-", "TMT-group-")
+
+
+def get_runs(workspace) -> RunManager:
+    """The analysis runs of the workspace (a results/ from before runs became one)."""
+    runs = RunManager(get_workflow_dir(workspace))
+    runs.adopt_legacy_results()
+    return runs
+
+
+def get_run_id(workspace) -> str | None:
+    """The run the results pages show (the newest finished one unless picked)."""
+    return get_selected_run(get_runs(workspace))
+
+
+def get_results_dir(workspace, run_id: str | None = None) -> Path:
+    """Results folder of a run (default: the one shown). Missing if nothing ran yet."""
+    runs = get_runs(workspace)
+    run_id = run_id or get_selected_run(runs)
+    if run_id is None:
+        return get_workflow_dir(workspace) / "results"
+    return runs.results_dir(run_id)
+
+
+def get_run_dir(workspace, run_id: str | None = None) -> Path:
+    """Folder of a run (default: the one shown): results/, logs/ and params.json,
+    laid out like the workflow folder."""
+    return get_results_dir(workspace, run_id).parent
+
+
+def get_run_params(workspace, run_id: str | None = None) -> dict:
+    """Parameters of a run (default: the one shown), with the current sample groups."""
+    workflow_dir = get_workflow_dir(workspace)
+    current = ParameterManager(workflow_dir, "TOPP Workflow").get_parameters_from_json()
+    runs = get_runs(workspace)
+    run_id = run_id or get_selected_run(runs)
+    params = runs.params(run_id) if run_id else {}
+    if not params:
+        return current
+    return params | {k: v for k, v in current.items() if k.startswith(GROUP_PREFIXES)}
+
+
+def run_picker(workspace=None) -> str | None:
+    """Sidebar picker for the run the results pages show. Returns its id.
+
+    Results derived from another run (the group comparison, GO enrichment) are
+    dropped when the pick changes, including when a new run has finished.
+    """
+    workspace = workspace or st.session_state.get("workspace")
+    if workspace is None:
+        return None
+    runs = get_runs(workspace)
+    with st.sidebar:
+        run_id = select_run(
+            runs, label="Showing run",
+            help="Every analysis you start is kept as its own run. Pick the one the "
+            "results pages show; rename, download or delete runs on Runs and downloads.",
+        )
+    if st.session_state.get("_results_run") != run_id:
+        for key in RUN_DERIVED_KEYS:
+            st.session_state.pop(key, None)
+        st.session_state["_results_run"] = run_id
+    return run_id
 
 
 def load_idxml(idxml_file):
@@ -283,7 +359,9 @@ def write_psm_exports(id_df: pl.DataFrame, seq_view, export_dir: Path, prefix: s
 
 
 @st.cache_data
-def load_abundance_data(workspace_path: str, csv_mtime: float, params_mtime: float = 0.0) -> tuple | None:
+def load_abundance_data(
+    workspace_path: str, csv_mtime: float, params_mtime: float = 0.0, run_id: str | None = None
+) -> tuple | None:
     """Load CSV and build abundance matrices for downstream preprocessing.
 
     Args:
@@ -292,16 +370,13 @@ def load_abundance_data(workspace_path: str, csv_mtime: float, params_mtime: flo
         params_mtime: Modification time of params.json (used as cache key so
             changing group assignments in Configure invalidates the cache
             even when the CSV itself hasn't changed)
+        run_id: The run to load (default: the newest finished one)
 
     Returns:
         Tuple of (pivot_df, expr_df, group_map) or None if data unavailable
     """
-    workflow_dir = get_workflow_dir(Path(workspace_path))
-    quant_dir = workflow_dir / "results" / "quant_results"
-
-    parameter_manager = ParameterManager(workflow_dir, "TOPP Workflow")
-
-    workflow_params = parameter_manager.get_parameters_from_json()
+    quant_dir = get_results_dir(workspace_path, run_id) / "quant_results"
+    workflow_params = get_run_params(workspace_path, run_id)
     analysis_mode = workflow_params.get("analysis-mode", "LFQ")
 
     if analysis_mode == "LFQ":
@@ -325,8 +400,7 @@ def load_abundance_data(workspace_path: str, csv_mtime: float, params_mtime: flo
         # Get optional group mapping from parameters.
         # Group information is not required at this stage; statistical testing
         # happens in the Statistical page.
-        param_manager = ParameterManager(workflow_dir)
-        params = param_manager.get_parameters_from_json()
+        params = workflow_params
         group_map = {
             key[11:]: value  # Remove "mzML-group-" prefix
             for key, value in params.items()
@@ -404,8 +478,7 @@ def load_abundance_data(workspace_path: str, csv_mtime: float, params_mtime: flo
         # exclude_indices = st.session_state.get("tmt_exclude_indices", [])
         # group_map = st.session_state.get("tmt_group_map", {})
         # Get group mapping from parameters
-        parameter_manager = ParameterManager(Path(workflow_dir), "TOPP Workflow")
-        params = parameter_manager.get_parameters_from_json()
+        params = workflow_params
         group_map = {}
         for key, value in params.items():
             if key.startswith("TMT-group-") and value:
@@ -471,7 +544,8 @@ def get_abundance_data(workspace: Path, include_contaminants: bool = False) -> t
         Tuple of (pivot_df, expr_df, group_map) or None if data unavailable
     """
     workflow_dir = get_workflow_dir(workspace)
-    quant_dir = workflow_dir / "results" / "quant_results"
+    run_id = get_run_id(workspace)
+    quant_dir = get_results_dir(workspace, run_id) / "quant_results"
 
     if not quant_dir.exists():
         return None
@@ -485,7 +559,7 @@ def get_abundance_data(workspace: Path, include_contaminants: bool = False) -> t
     params_file = workflow_dir / "params.json"
     params_mtime = params_file.stat().st_mtime if params_file.exists() else 0.0
 
-    result = load_abundance_data(str(workspace), csv_mtime, params_mtime)
+    result = load_abundance_data(str(workspace), csv_mtime, params_mtime, run_id)
     if result is None or include_contaminants:
         return result
     pivot_df, expr_df, group_map = result
@@ -503,8 +577,7 @@ def get_id_column(workspace: Path, pivot_df: pd.DataFrame) -> str:
     LFQ reports always use "ProteinName"; TMT reports use whatever the
     report's first column is actually named (e.g. "protein").
     """
-    workflow_dir = get_workflow_dir(workspace)
-    analysis_mode = ParameterManager(workflow_dir, "TOPP Workflow").get_parameters_from_json().get("analysis-mode", "LFQ")
+    analysis_mode = get_run_params(workspace).get("analysis-mode", "LFQ")
     return "ProteinName" if analysis_mode == "LFQ" else pivot_df.columns[0]
 
 
@@ -515,8 +588,7 @@ def get_sample_group_map(workspace: Path, pivot_df: pd.DataFrame, group_map: dic
     ".mzML" suffix). TMT group_map keys are 0-based channel indices that must
     be matched against the report's actual "sampleN[...]" column names.
     """
-    workflow_dir = get_workflow_dir(workspace)
-    analysis_mode = ParameterManager(workflow_dir, "TOPP Workflow").get_parameters_from_json().get("analysis-mode", "LFQ")
+    analysis_mode = get_run_params(workspace).get("analysis-mode", "LFQ")
 
     if analysis_mode == "LFQ":
         grouped = {

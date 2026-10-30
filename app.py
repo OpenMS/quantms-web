@@ -44,7 +44,7 @@ if __name__ == '__main__':
             st.Page(Path("content", "results_heatmap.py"), title="Heatmap", icon="🔥"),
         ],
         "Export": [
-            st.Page(Path("content", "results_download.py"), title="Download results", icon="⬇️"),
+            st.Page(Path("content", "results_download.py"), title="Runs and downloads", icon="🗂️"),
         ],
         # The four steps Compare groups runs with recommended settings, one at a time.
         "Fine-tune the comparison": [

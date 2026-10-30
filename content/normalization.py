@@ -9,6 +9,7 @@ from src.common.guide import needs_results, next_steps, page_intro
 from src.common.postprocessing_plots import sample_distributions
 from src.common.insight_tables import show_insight_table
 from src.common.results_helpers import (
+    run_picker,
     clear_downstream_steps,
     get_abundance_data,
     get_id_column,
@@ -34,6 +35,7 @@ def strip_stat_columns(df: pd.DataFrame | None) -> pd.DataFrame | None:
     return df.drop(columns=[c for c in STAT_COLUMNS if c in df.columns], errors="ignore")
 
 params = page_setup()
+run_picker()
 st.title("Fine-tune 3 of 4: Normalize")
 
 page_intro(

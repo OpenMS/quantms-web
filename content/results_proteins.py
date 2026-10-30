@@ -8,10 +8,11 @@ from src.common.common import page_setup
 from src.common.guide import needs_results, next_steps, page_intro
 from src.common.insight_tables import show_insight_table
 from src.common.protein_table import build_tables, collect_psms, coverage_html, read_fasta
-from src.common.results_helpers import get_workflow_dir
+from src.common.results_helpers import run_picker, get_run_dir
 from src.WorkflowTest import WorkflowTest
 
 params = page_setup()
+run_picker()
 wf = WorkflowTest()
 
 st.title("Identified proteins")
@@ -32,9 +33,9 @@ page_intro(
     background_title="How identification evidence works",
 )
 
-workflow_dir = get_workflow_dir(st.session_state["workspace"])
-filter_dir = workflow_dir / "results" / "psm_filter"
-cache_dir = workflow_dir / "results" / "insight_cache"
+run_dir = get_run_dir(st.session_state["workspace"])
+filter_dir = run_dir / "results" / "psm_filter"
+cache_dir = run_dir / "results" / "insight_cache"
 idxml_files = sorted(filter_dir.glob("*.idXML")) if filter_dir.exists() else []
 
 if not idxml_files:

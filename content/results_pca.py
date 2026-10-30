@@ -6,6 +6,7 @@ from src.common.common import page_setup
 from src.common.guide import ensure_group_comparison, needs_results, next_steps, page_intro, show_comparison_settings
 from src.common.insight_tables import plot_cache, show_insight_table
 from src.common.results_helpers import (
+    run_picker,
     get_abundance_data,
     get_active_table,
     get_id_column,
@@ -15,6 +16,7 @@ from src.common.results_helpers import (
 from openms_insight import PCAPlot
 
 params = page_setup()
+run_picker()
 st.title("Sample similarity (PCA)")
 
 page_intro(
