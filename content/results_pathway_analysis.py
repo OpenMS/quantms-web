@@ -8,7 +8,7 @@ import plotly.io as pio
 from collections import defaultdict        
 from scipy.stats import fisher_exact
 from pathlib import Path
-from src.common.common import page_setup
+from src.common.common import page_setup, follow_app_theme
 from src.common.insight_tables import show_insight_table
 from src.common.results_helpers import get_abundance_data, run_picker, get_run_dir
 
@@ -254,7 +254,7 @@ else:
             if df_go.empty:
                 st.info(f"No enriched {go_type} terms found.")
             else:
-                st.plotly_chart(fig, width="stretch")
+                st.plotly_chart(follow_app_theme(fig), width="stretch")
                 
                 st.markdown(f"#### {go_type} Enrichment Results")
                 show_insight_table(df_go, name=f"pathway-go-{go_type}", height=350)
