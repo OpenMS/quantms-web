@@ -1,0 +1,50 @@
+{
+  "version": 3,
+  "component_type": "pca",
+  "created_at": "2026-10-29T09:59:06.125380",
+  "cache_generation": "2b308cad64f04afeba3f2f4f8378b895",
+  "config_hash": "54d914aeb5e92cb3a4196ede5d20776cfc7f68f32db27616ede8ca86fa9a1517",
+  "input_config_hash": "54d914aeb5e92cb3a4196ede5d20776cfc7f68f32db27616ede8ca86fa9a1517",
+  "config": {
+    "metadata_map": {
+      "B000272_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_2": "UPS2_ratio01",
+      "B000248_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA": "UPS2_ratio01",
+      "B000296_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_3": "UPS2_ratio01",
+      "B000264_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA": "UPS2_ratio10",
+      "B000288_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_2": "UPS2_ratio10",
+      "B000312_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_3": "UPS2_ratio10"
+    },
+    "sample_id_field": "sample_id",
+    "group_field": "group",
+    "n_components": 5,
+    "standardize": true,
+    "title": "Sample PCA",
+    "x_label": null,
+    "y_label": null,
+    "group_colors": {},
+    "show_ellipses": true
+  },
+  "filters": {},
+  "filter_defaults": {},
+  "interactivity": {},
+  "data_files": {
+    "pcaData": "pcaData.parquet"
+  },
+  "data_values": {
+    "variance_ratio": [
+      0.3911276724027375,
+      0.20997202345537408,
+      0.1876928501097148,
+      0.1284829491286109,
+      0.08272450490356281
+    ],
+    "n_components": 5,
+    "pc_columns": [
+      "PC1",
+      "PC2",
+      "PC3",
+      "PC4",
+      "PC5"
+    ]
+  }
+}

@@ -20,6 +20,10 @@ ARG GITHUB_REPO=quantms-web
 # Step 1: set up a sane build system
 USER root
 
+# Keep apt from stopping at interactive prompts: tzdata, pulled in by
+# later packages, otherwise waits for a timezone and the build hangs.
+ENV DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC
+
 RUN apt-get -y update
 # note: streamlit in docker needs libgtk2.0-dev (see https://yugdamor.medium.com/importerror-libgthread-2-0-so-0-cannot-open-shared-object-file-no-such-file-or-directory-895b94a7827b)
 RUN apt-get install -y --no-install-recommends --no-install-suggests wget ca-certificates libgtk2.0-dev curl jq cron nginx
@@ -61,6 +65,11 @@ COPY requirements.txt requirements.txt
 RUN mamba install pip
 RUN python -m pip install --upgrade pip
 RUN python -m pip install -r requirements.txt
+
+# AlphaPeptDeep's pretrained models, fetched at build time so the spectrum
+# prediction works offline and for any user the container runs as.
+ENV PEPTDEEP_HOME=/opt/peptdeep
+RUN python -c "import os; from peptdeep.pretrained_models import download_models, get_model_zip_file_path; from peptdeep.settings import global_settings; global_settings['PEPTDEEP_HOME'] = os.environ['PEPTDEEP_HOME']; download_models(target_path=get_model_zip_file_path())" && chmod -R a+rX /opt/peptdeep
 
 # Pre-create bind-mount targets so apptainer/singularity has a real attach
 # point. Docker auto-creates missing `-v` targets, but singularity uses a

@@ -18,6 +18,10 @@ ARG GITHUB_REPO=quantms-web
 
 USER root
 
+# Keep apt from stopping at interactive prompts: tzdata, pulled in by
+# later packages, otherwise waits for a timezone and the build hangs.
+ENV DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC
+
 # Install required Ubuntu packages.
 RUN apt-get -y update
 RUN apt-get install -y --no-install-recommends --no-install-suggests g++ autoconf automake patch libtool make git gpg wget ca-certificates curl jq libgtk2.0-dev openjdk-8-jdk cron cmake
@@ -132,6 +136,11 @@ COPY requirements.txt ./requirements.txt
 RUN grep -Ev '^pyopenms([=<>!~].*)?$' requirements.txt > requirements_cleaned.txt && mv requirements_cleaned.txt requirements.txt
 RUN pip install -r requirements.txt
 
+# AlphaPeptDeep's pretrained models, fetched at build time so the spectrum
+# prediction works offline and for any user the container runs as.
+ENV PEPTDEEP_HOME=/opt/peptdeep
+RUN python -c "import os; from peptdeep.pretrained_models import download_models, get_model_zip_file_path; from peptdeep.settings import global_settings; global_settings['PEPTDEEP_HOME'] = os.environ['PEPTDEEP_HOME']; download_models(target_path=get_model_zip_file_path())" && chmod -R a+rX /opt/peptdeep
+
 WORKDIR /
 RUN mkdir openms
 
@@ -159,6 +168,12 @@ FROM compile-openms AS run-app
 # /var/lib/redis setup is needed - that path is not writable under Apptainer.
 RUN apt-get update && apt-get install -y --no-install-recommends redis-server nginx \
     && rm -rf /var/lib/apt/lists/*
+
+# Mono runs the ThermoRawFileParser (THIRDPARTY/All, a .NET Framework build)
+# that FileConverter calls to convert Thermo RAW files to mzML on Linux.
+RUN apt-get update && apt-get install -y --no-install-recommends mono-complete \
+    && rm -rf /var/lib/apt/lists/* \
+    && mono --version
 
 # Create Redis data directory. Default 0755 root-owned is enough: the docker
 # entrypoint runs as root (can write regardless of mode), and the apptainer

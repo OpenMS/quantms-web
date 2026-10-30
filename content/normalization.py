@@ -5,6 +5,7 @@ import pandas as pd
 import polars as pl
 import streamlit as st
 from src.common.common import page_setup, save_params, show_fig
+from src.common.guide import needs_results, next_steps, page_intro
 from src.common.postprocessing_plots import sample_distributions
 from src.common.insight_tables import show_insight_table
 from src.common.results_helpers import (
@@ -12,6 +13,8 @@ from src.common.results_helpers import (
     get_abundance_data,
     get_id_column,
     get_sample_group_map,
+    group_metadata,
+    sample_columns,
     postprocessing_param,
 )
 # Import normalization engine functions from openms_insight
@@ -31,12 +34,22 @@ def strip_stat_columns(df: pd.DataFrame | None) -> pd.DataFrame | None:
     return df.drop(columns=[c for c in STAT_COLUMNS if c in df.columns], errors="ignore")
 
 params = page_setup()
-st.title("Step 3 of 4: Normalization")
+st.title("Fine-tune 3 of 4: Normalize")
 
-st.markdown(
-    """
-Standardize and transform your protein abundance profiles to correct for technical variations and optimize statistical distributions.
-"""
+page_intro(
+    'Make samples comparable by correcting for different amounts of material loaded, and put intensities on a log scale.'
+    "\n\n" + 'You do not need this page for a standard analysis: **Compare groups** runs all four steps with the recommended settings. Use it to inspect this step or change it; the plots follow your choice.',
+    background="""
+- **log2 transformation** turns ratios into differences: a difference of 1 means twice as much.
+  It also makes the spread of intensities more even, as statistical tests assume.
+- **Median normalization** shifts every sample so its median protein intensity matches the
+  others. This corrects for one sample simply containing more material. It assumes most
+  proteins do not change, which holds for most experiments.
+- **Row scaling** (e.g. auto-scaling) puts every protein on the same scale. It is useful for
+  clustering but removes the fold changes, so leave it off for the group comparison.
+- **Recommended: log2, median, no scaling.**
+""",
+    background_title='What normalization does',
 )
 
 if "workspace" not in st.session_state:
@@ -46,13 +59,7 @@ if "workspace" not in st.session_state:
 # Load primary database assets
 result = get_abundance_data(st.session_state["workspace"])
 if result is None:
-    st.info(
-        "Abundance data not available. Please run the workflow and configure sample groups first."
-    )
-    st.page_link(
-        "content/results_abundance.py", label="Go to Abundance", icon="📋"
-    )
-    st.stop()
+    needs_results()
 
 pivot_df, expr_df, group_map = result
 pivot_df = strip_stat_columns(pivot_df)
@@ -75,36 +82,24 @@ if (
     and st.session_state["imputed_df"] is not None
 ):
     base_df = imputed_df
-    st.info(
-        "🔄 **Upstream Pipeline Detected**: Using data processed from the **Imputation** step."
-    )
+    st.info("Working on the output of step 2 (Missing values).")
 elif (
     "filtered_df" in st.session_state
     and st.session_state["filtered_df"] is not None
 ):
     base_df = filtered_df
-    st.warning(
-        "⚠️ **Imputation Skipped**: Using data processed from the **Filtering** step."
-    )
+    st.warning("Step 2 (Missing values) has not been applied: working on the output of step 1.")
 else:
     base_df = pivot_df
-    st.warning(
-        "⚠️ **Raw Input Active**: No preprocessing history found. Operating on the original unfiltered table."
-    )
+    st.warning("Steps 1 and 2 have not been applied: working on the unprocessed table.")
 
 # 2. Extract actual active sample columns dynamically
-sample_cols = [
-    c for c in base_df.columns if c not in [id_col, "PeptideSequence", "log2FC", "p-value", "p-adj"]
-]
+sample_cols = sample_columns(base_df, sample_group_map)
 
-# --- SECTION 1: Active Input Table Preview ---
-st.subheader("Input Table Overview")
-st.markdown(
-    f"Currently displaying **{base_df.shape[0]}** rows and **{len(sample_cols)}** samples entering the normalization block."
-)
-show_insight_table(base_df, name="normalization-input")
+with st.expander(f"Input: {base_df.shape[0]:,} proteins in {len(sample_cols)} samples"):
+    show_insight_table(base_df, name="normalization-input")
 
-st.markdown("### Pipeline Overview")
+st.markdown("### Steps so far")
 st.caption("Data flows in order: Filtering -> Imputation -> Normalization")
 
 step_rows = [
@@ -145,13 +140,10 @@ with st.expander("Show step tables", expanded=False):
 st.markdown("---")
 
 # --- SECTION 2: Normalization Parameter Configuration ---
-st.subheader("Configure Preprocessing & Scaling Chains")
+st.subheader("Settings")
 
 # Prepare structural Polars metadata DataFrame required by backend functions
-metadata_rows = [{"sample_id": s, "group": sample_group_map[s]} for s in sample_cols if s in sample_group_map]
-metadata_pl = pl.DataFrame(
-    metadata_rows, schema={"sample_id": pl.String, "group": pl.String}
-)
+metadata_pl = group_metadata(sample_group_map, sample_cols)
 
 st.caption(
     "Recommended: log2 transformation, median normalization and no row scaling. "
@@ -298,3 +290,8 @@ if normalized_df is not None:
     # Display the finalized transformation matrix view
     st.subheader("Normalized Abundance Table")
     show_insight_table(normalized_df, name="normalization-result")
+
+next_steps(
+    ('statistics', 'Next: test every protein for a difference between the groups.'),
+    ('compare', 'Back to the overview of the comparison.'),
+)

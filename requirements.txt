@@ -16,7 +16,7 @@ cachetools==5.5.2
     # via streamlit
 captcha==0.7.1
     # via src (pyproject.toml)
-certifi==2025.8.3
+certifi==2026.1.4
     # via requests
 charset-normalizer==3.4.3
     # via requests
@@ -32,7 +32,7 @@ gitdb==4.0.12
     # via gitpython
 gitpython==3.1.45
     # via streamlit
-idna==3.10
+idna==3.11
     # via requests
 jinja2==3.1.6
     # via
@@ -42,9 +42,9 @@ jsonschema==4.23.0
     # via altair
 jsonschema-specifications==2024.10.1
     # via jsonschema
-kiwisolver==1.4.8
+kiwisolver==1.4.9
     # via matplotlib
-markupsafe==3.0.2
+markupsafe==3.0.3
     # via jinja2
 matplotlib==3.10.1
     # via pyopenms
@@ -132,7 +132,7 @@ typing-extensions==4.13.0
     #   streamlit
 tzdata==2025.2
     # via pandas
-urllib3==2.3.0
+urllib3==2.6.3
     # via requests
 watchdog==6.0.0
     # via streamlit
@@ -156,3 +156,8 @@ statsmodels
 # Redis Queue dependencies (for online mode)
 redis>=5.0.0
 rq>=1.16.0
+
+# Predicted fragment spectra next to measured PSMs (AlphaPeptDeep). torch comes
+# from the CPU index: the default Linux wheel pulls in several GB of CUDA libraries.
+--extra-index-url https://download.pytorch.org/whl/cpu
+peptdeep==1.5.1
