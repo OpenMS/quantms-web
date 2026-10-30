@@ -79,7 +79,7 @@ def get_run_params(workspace, run_id: str | None = None) -> dict:
 
 
 def run_picker(workspace=None) -> str | None:
-    """Sidebar picker for the run the results pages show. Returns its id.
+    """Picker for the run the results pages show. Returns its id.
 
     Results derived from another run (the group comparison, GO enrichment) are
     dropped when the pick changes, including when a new run has finished.
@@ -88,7 +88,9 @@ def run_picker(workspace=None) -> str | None:
     if workspace is None:
         return None
     runs = get_runs(workspace)
-    with st.sidebar:
+    # Top right of the page, above the title, so it is seen on every results page
+    _, right = st.columns([2, 1])
+    with right:
         run_id = select_run(
             runs, label="Showing run",
             help="Every analysis you start is kept as its own run. Pick the one the "

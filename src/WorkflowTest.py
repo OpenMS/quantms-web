@@ -102,7 +102,7 @@ def demo_group(filename: str) -> str:
 # params = page_setup()
 class WorkflowTest(WorkflowManager):
     # Every run is kept as its own result set (runs/<id>/); the results pages
-    # show the run picked in the sidebar.
+    # show the run picked under "Showing run".
     multi_run = True
 
     def __init__(self) -> None:

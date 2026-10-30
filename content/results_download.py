@@ -14,7 +14,7 @@ page_intro(
     """
 Every analysis you start is kept as its own run, so you can change a setting, run again
 and compare. The list below shows all runs: 👁️ shows a run on the results pages (the
-**Showing run** box in the sidebar does the same), ✏️ renames it, 📦 packs its results,
+**Showing run** box at the top of each results page does the same), ✏️ renames it, 📦 packs its results,
 settings and logs into one ZIP to download, and 🗑️ deletes it.
 
 Below the list are the files of one run, singly or as one ZIP. The ones most people need:
