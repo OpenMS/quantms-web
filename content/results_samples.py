@@ -7,11 +7,11 @@ import streamlit as st
 from src.common.common import page_setup, show_fig
 from src.common.guide import next_steps, page_intro, page_link
 from src.common.insight_tables import show_insight_table
-from src.common.results_helpers import get_abundance_data, get_sample_group_map, get_workflow_dir
+from src.common.results_helpers import get_abundance_data, get_sample_group_map, run_picker, get_run_dir, get_run_params
 from src.common.samples import COUNT_COLUMNS, channel_samples, condition_summary, lfq_samples
-from src.workflow.ParameterManager import ParameterManager
 
 params = page_setup()
+run_picker()
 st.title("Per-sample counts")
 
 page_intro(
@@ -24,10 +24,10 @@ if "workspace" not in st.session_state:
     st.warning("Please initialize your workspace first.")
     st.stop()
 
-workflow_dir = get_workflow_dir(st.session_state["workspace"])
-results_dir = workflow_dir / "results"
+run_dir = get_run_dir(st.session_state["workspace"])
+results_dir = run_dir / "results"
 cache_dir = results_dir / "insight_cache"
-workflow_params = ParameterManager(workflow_dir, "TOPP Workflow").get_parameters_from_json()
+workflow_params = get_run_params(st.session_state["workspace"])
 analysis_mode = workflow_params.get("analysis-mode", "LFQ")
 fdr = float(workflow_params.get("psm-fdr-percent", 1.0))
 
@@ -56,7 +56,7 @@ if analysis_mode == "LFQ":
     }
     sources = sorted(filter_dir.glob("*.idXML")) + sorted((results_dir / "quant_results").glob("*.csv"))
     samples = _lfq_samples(
-        str(workflow_dir), tuple(mzml_files), tuple(sorted(group_map.items())), _mtimes(sources)
+        str(run_dir), tuple(mzml_files), tuple(sorted(group_map.items())), _mtimes(sources)
     )
     st.caption(
         f"PSMs, peptides and proteins are the targets identified at {fdr:g} % PSM FDR, from the "

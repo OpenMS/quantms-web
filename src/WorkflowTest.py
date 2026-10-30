@@ -101,6 +101,9 @@ def demo_group(filename: str) -> str:
 
 # params = page_setup()
 class WorkflowTest(WorkflowManager):
+    # Every run is kept as its own result set (runs/<id>/); the results pages
+    # show the run picked under "Showing run".
+    multi_run = True
 
     def __init__(self) -> None:
         super().__init__("TOPP Workflow", st.session_state["workspace"])
@@ -829,7 +832,7 @@ class WorkflowTest(WorkflowManager):
         """
         # Contaminants (cRAP with CON__ accessions) are searched with the targets
         add_contaminants = self.params.get("add-contaminants", True)
-        db_dir = Path(self.workflow_dir, "results", "database")
+        db_dir = Path(self.results_dir, "database")
         con_fasta = db_dir / "contaminants.fasta"
         if add_contaminants:
             n_con, n_in_db = write_contaminants(con_fasta, targets=fasta_path)
@@ -933,7 +936,7 @@ class WorkflowTest(WorkflowManager):
             # ================================
             # 1️⃣ Directory setup
             # ================================
-            results_dir = Path(self.workflow_dir, "results")
+            results_dir = Path(self.results_dir)
             comet_dir = results_dir / "comet_results"
             perc_dir = results_dir / "percolator_results"
             filter_dir = results_dir / "psm_filter"
@@ -996,7 +999,7 @@ class WorkflowTest(WorkflowManager):
                 return False
 
             # Build visualization cache for Comet results
-            results_dir_path = Path(self.workflow_dir, "results")
+            results_dir_path = Path(self.results_dir)
             cache_dir = results_dir_path / "insight_cache"
             cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1296,7 +1299,7 @@ class WorkflowTest(WorkflowManager):
             if self.params.get("generate-library", False):
                 self.logger.log("📚 Building spectral library with EasyPQP...")
                 st.info("Building spectral library with EasyPQP...")
-                library_dir = Path(self.workflow_dir, "results", "library")
+                library_dir = Path(self.results_dir, "library")
                 library_dir.mkdir(parents=True, exist_ok=True)
 
                 psms_files, peaks_files = [], []
@@ -1431,7 +1434,7 @@ class WorkflowTest(WorkflowManager):
         else:
             self.logger.log("⚙️ Running TMT workflow")
 
-            results_dir = Path(self.workflow_dir, "results")
+            results_dir = Path(self.results_dir)
             iso_dir = results_dir / "isobaric_consensusXML"
             comet_dir = results_dir / "comet_results"
             perc_dir = results_dir / "percolator_results"
@@ -1512,7 +1515,7 @@ class WorkflowTest(WorkflowManager):
                 return False
 
             # Build visualization cache for Comet results
-            results_dir_path = Path(self.workflow_dir, "results")
+            results_dir_path = Path(self.results_dir)
             cache_dir = results_dir_path / "insight_cache"
             cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1911,7 +1914,7 @@ class WorkflowTest(WorkflowManager):
         # ================================
         with comet_tab:
 
-            comet_dir = Path(self.workflow_dir, "results", "comet_results")
+            comet_dir = Path(self.results_dir, "comet_results")
             comet_files = sorted(comet_dir.glob("*.idXML"))
 
             if not comet_files:
@@ -1989,7 +1992,7 @@ class WorkflowTest(WorkflowManager):
         # ================================
         with perc_tab:
 
-            perc_dir = Path(self.workflow_dir, "results", "percolator_results")
+            perc_dir = Path(self.results_dir, "percolator_results")
             perc_files = sorted(perc_dir.glob("*.idXML"))
 
             if not perc_files:
@@ -2043,7 +2046,7 @@ class WorkflowTest(WorkflowManager):
         # ================================
         with filter_tab:
 
-            filter_dir = Path(self.workflow_dir, "results", "psm_filter")
+            filter_dir = Path(self.results_dir, "psm_filter")
             filter_files = sorted(filter_dir.glob("*.idXML"))
 
             if not filter_files:
@@ -2099,7 +2102,7 @@ class WorkflowTest(WorkflowManager):
         # ================================
         with lfq_tab:
 
-            results_dir = Path(self.workflow_dir, "results")
+            results_dir = Path(self.results_dir)
             proteomicslfq_dir = results_dir / "quant_results"
 
             if not proteomicslfq_dir.exists():

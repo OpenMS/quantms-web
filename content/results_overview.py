@@ -7,10 +7,10 @@ from src.common.common import page_setup
 from src.common.guide import needs_results, next_steps, page_intro
 from src.common.insight_tables import show_insight_table
 from src.common.overview import run_overview
-from src.common.results_helpers import get_abundance_data, get_workflow_dir
-from src.workflow.ParameterManager import ParameterManager
+from src.common.results_helpers import get_abundance_data, run_picker, get_run_dir, get_run_params
 
 params = page_setup()
+run_picker()
 st.title("Run summary")
 
 page_intro(
@@ -36,16 +36,16 @@ if "workspace" not in st.session_state:
     st.warning("Please initialize your workspace first.")
     st.stop()
 
-workflow_dir = get_workflow_dir(st.session_state["workspace"])
-filter_dir = workflow_dir / "results" / "psm_filter"
-cache_dir = workflow_dir / "results" / "insight_cache"
-workflow_params = ParameterManager(workflow_dir, "TOPP Workflow").get_parameters_from_json()
+run_dir = get_run_dir(st.session_state["workspace"])
+filter_dir = run_dir / "results" / "psm_filter"
+cache_dir = run_dir / "results" / "insight_cache"
+workflow_params = get_run_params(st.session_state["workspace"])
 mzml_files = [str(f) for f in workflow_params.get("mzML-files", [])]
 
 if not filter_dir.is_dir() or not any(filter_dir.glob("*.idXML")):
     needs_results()
 
-log_file = workflow_dir / "logs" / "commands-and-run-times.log"
+log_file = run_dir / "logs" / "commands-and-run-times.log"
 sources = sorted(filter_dir.glob("*.idXML")) + [log_file]
 
 
@@ -60,7 +60,7 @@ def _overview(workflow_dir: str, files: tuple, mtimes: tuple):
 
 
 per_file, figures = _overview(
-    str(workflow_dir), tuple(mzml_files), _mtimes(mzml_files + [str(p) for p in sources])
+    str(run_dir), tuple(mzml_files), _mtimes(mzml_files + [str(p) for p in sources])
 )
 
 abundance = get_abundance_data(st.session_state["workspace"])

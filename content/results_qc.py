@@ -7,10 +7,10 @@ import streamlit as st
 from src.common.common import page_setup, show_fig
 from src.common.guide import needs_results, next_steps, page_intro
 from src.common.qc_plots import psm_qc_table, precursor_error_histogram, psms_per_file, score_distribution
-from src.common.results_helpers import get_workflow_dir
-from src.workflow.ParameterManager import ParameterManager
+from src.common.results_helpers import run_picker, get_run_dir, get_run_params
 
 params = page_setup()
+run_picker()
 
 st.title("Identification quality")
 
@@ -31,9 +31,9 @@ if "workspace" not in st.session_state:
     st.warning("Please initialize your workspace first.")
     st.stop()
 
-workflow_dir = get_workflow_dir(st.session_state["workspace"])
-results_dir = workflow_dir / "results"
-workflow_params = ParameterManager(workflow_dir, "TOPP Workflow").get_parameters_from_json()
+run_dir = get_run_dir(st.session_state["workspace"])
+results_dir = run_dir / "results"
+workflow_params = get_run_params(st.session_state["workspace"])
 fdr = min(float(workflow_params.get("psm-fdr-percent", 1.0)), 100.0) / 100.0
 mzml_names = [Path(f).name for f in workflow_params.get("mzML-files", []) or []]
 

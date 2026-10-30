@@ -10,12 +10,13 @@ from scipy.stats import fisher_exact
 from pathlib import Path
 from src.common.common import page_setup, follow_app_theme
 from src.common.insight_tables import show_insight_table
-from src.common.results_helpers import get_abundance_data
+from src.common.results_helpers import get_abundance_data, run_picker, get_run_dir
 
 # ================================
 # Page setup
 # ================================
 params = page_setup()
+run_picker()
 st.title("ProteomicsLFQ Results")
 
 # ================================
@@ -180,7 +181,7 @@ def _run_go_enrichment(pivot_df: pd.DataFrame, results_dir: Path):
 # ================================
 # Load abundance data
 # ================================
-results_dir = Path(st.session_state["workspace"]) / "topp-workflow" / "results" / "quant_results"
+results_dir = get_run_dir(st.session_state["workspace"]) / "results" / "quant_results"
 result = get_abundance_data(st.session_state["workspace"])
 if result is None:
     st.info("Abundance data not available. Please run the workflow and configure sample groups first.")

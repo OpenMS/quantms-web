@@ -2,7 +2,7 @@
 import streamlit as st
 from pathlib import Path
 from src.common.common import page_setup
-from src.common.results_helpers import get_workflow_dir
+from src.common.results_helpers import run_picker, get_run_dir, get_run_params
 from src.common.spectrum_view import fragment_tolerance, psm_mzml_files, show_selected_psm_spectrum
 from src.common.common import show_fig
 from src.common.guide import needs_results, next_steps, page_intro
@@ -11,6 +11,7 @@ from src.common.sequence_display import psm_table, sequence_mode_selector
 from openms_insight import Heatmap, SequenceView, StateManager
 
 params = page_setup()
+run_picker()
 st.title("Peptide-spectrum matches")
 
 page_intro(
@@ -36,9 +37,10 @@ if "workspace" not in st.session_state:
     st.warning("Please initialize your workspace first.")
     st.stop()
 
-workflow_dir = get_workflow_dir(st.session_state["workspace"])
-filter_dir = workflow_dir / "results" / "psm_filter"
-cache_dir = workflow_dir / "results" / "insight_cache"
+run_dir = get_run_dir(st.session_state["workspace"])
+run_params = get_run_params(st.session_state["workspace"])
+filter_dir = run_dir / "results" / "psm_filter"
+cache_dir = run_dir / "results" / "insight_cache"
 
 if not filter_dir.exists():
     needs_results()
@@ -88,11 +90,11 @@ st.caption(
 )
 show_selected_psm_spectrum(
     cache_dir, selected_file, state_manager, seqview_key=f"seqview_{cache_id_prefix}",
-    workflow_dir=workflow_dir, mzml_files=psm_mzml_files(),
+    workflow_params=run_params, mzml_files=psm_mzml_files(run_params),
 )
 
 st.subheader("Fragment ions")
-fragments_tsv = workflow_dir / "results" / "exports" / f"{cache_id_prefix}_fragment_ions.tsv"
+fragments_tsv = run_dir / "results" / "exports" / f"{cache_id_prefix}_fragment_ions.tsv"
 psm_id = state_manager.get_selection("identification")
 if not fragments_tsv.is_file():
     st.info("No fragment ion export for this run. Re-run the workflow to create it.")
@@ -103,7 +105,7 @@ else:
     if fragments.empty:
         st.info("No fragment ion of this PSM matched a peak within the tolerance.")
     else:
-        tolerance, tolerance_ppm = fragment_tolerance(workflow_dir)
+        tolerance, tolerance_ppm = fragment_tolerance(run_params)
 
         first = fragments.iloc[0]
         st.caption(

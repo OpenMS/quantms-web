@@ -4,12 +4,12 @@ import pandas as pd
 from pathlib import Path
 from src.common.common import page_setup
 from src.common.guide import needs_results, next_steps, page_intro
-from src.common.results_helpers import get_workflow_dir, get_abundance_data
-from src.workflow.ParameterManager import ParameterManager
+from src.common.results_helpers import get_workflow_dir, get_abundance_data, run_picker, get_run_dir, get_run_params
 from src.common.insight_tables import show_insight_table
 from src.common.contaminants import CONTAMINANT_PREFIX, contaminant_mask
 
 params = page_setup()
+run_picker()
 st.title("Protein abundances")
 
 page_intro(
@@ -31,11 +31,9 @@ if "workspace" not in st.session_state:
     st.warning("Please initialize your workspace first.")
     st.stop()
 
-workflow_dir = get_workflow_dir(st.session_state["workspace"])
-quant_dir = workflow_dir / "results" / "quant_results"
-parameter_manager = ParameterManager(workflow_dir, "TOPP Workflow")
-
-workflow_params = parameter_manager.get_parameters_from_json() 
+run_dir = get_run_dir(st.session_state["workspace"])
+quant_dir = run_dir / "results" / "quant_results"
+workflow_params = get_run_params(st.session_state["workspace"])
 analysis_mode = workflow_params.get("analysis-mode", "LFQ")
 
 if not quant_dir.exists():
@@ -48,8 +46,8 @@ if not csv_files:
     st.stop()
 
 csv_file = csv_files[0]
-cache_dir = workflow_dir / "results" / "insight_cache"
-table_sources = [csv_file, workflow_dir / "params.json"]
+cache_dir = run_dir / "results" / "insight_cache"
+table_sources = [csv_file, get_workflow_dir(st.session_state["workspace"]) / "params.json"]
 
 show_contaminants = st.toggle(
     "Show contaminants",

@@ -9,6 +9,7 @@ from src.common.guide import needs_results, next_steps, page_intro
 from src.common.postprocessing_plots import pvalue_histogram
 from src.common.insight_tables import show_insight_table
 from src.common.results_helpers import (
+    run_picker,
     get_abundance_data,
     get_id_column,
     get_sample_group_map,
@@ -20,6 +21,7 @@ from src.common.results_helpers import (
 from openms_insight.analysis.statistics import calculate_statistical_tests, adjust_fdr_lazy
 
 params = page_setup()
+run_picker()
 st.title("Fine-tune 4 of 4: Statistical test")
 
 page_intro(

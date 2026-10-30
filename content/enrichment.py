@@ -7,11 +7,12 @@ import streamlit as st
 from src.common.common import page_setup, follow_app_theme
 from src.common.guide import ensure_group_comparison, needs_results, next_steps, page_intro, show_comparison_settings
 from src.common.insight_tables import show_insight_table
-from src.common.results_helpers import get_abundance_data, get_id_column
+from src.common.results_helpers import get_abundance_data, get_id_column, run_picker
 # Import GO Enrichment modules from openms_insight engine
 from openms_insight.analysis.enrichment import calculate_go_enrichment
 
 params = page_setup()
+run_picker()
 st.title("GO enrichment")
 
 page_intro(

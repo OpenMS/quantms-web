@@ -3,12 +3,13 @@ import streamlit as st
 from pathlib import Path
 from src.common.common import page_setup
 from src.common.guide import needs_results, next_steps, page_intro
-from src.common.results_helpers import get_workflow_dir
+from src.common.results_helpers import run_picker, get_run_dir, get_run_params
 from src.common.spectrum_view import psm_mzml_files, show_selected_psm_spectrum
 from src.common.sequence_display import psm_table, sequence_mode_selector
 from openms_insight import Heatmap, SequenceView, StateManager
 
 params = page_setup()
+run_picker()
 st.title("Raw search hits (Comet)")
 
 page_intro(
@@ -34,9 +35,10 @@ if "workspace" not in st.session_state:
     st.warning("Please initialize your workspace first.")
     st.stop()
 
-workflow_dir = get_workflow_dir(st.session_state["workspace"])
-comet_dir = workflow_dir / "results" / "comet_results"
-cache_dir = workflow_dir / "results" / "insight_cache"
+run_dir = get_run_dir(st.session_state["workspace"])
+run_params = get_run_params(st.session_state["workspace"])
+comet_dir = run_dir / "results" / "comet_results"
+cache_dir = run_dir / "results" / "insight_cache"
 
 if not comet_dir.exists():
     needs_results()
@@ -86,7 +88,7 @@ st.caption(
 )
 show_selected_psm_spectrum(
     cache_dir, selected_file, state_manager, seqview_key=f"seqview_{cache_id_prefix}",
-    workflow_dir=workflow_dir, mzml_files=psm_mzml_files(),
+    workflow_params=run_params, mzml_files=psm_mzml_files(run_params),
 )
 
 next_steps(

@@ -8,11 +8,12 @@ from src.common.common import page_setup
 from src.common.guide import needs_results, next_steps, page_intro
 from src.common.insight_tables import show_insight_table
 from src.common.protein_table import build_tables, collect_psms, coverage_html, read_fasta
-from src.common.results_helpers import get_workflow_dir
+from src.common.results_helpers import run_picker, get_run_dir, get_run_params
 from src.common.spectrum_view import fragment_tolerance, show_spectrum
 from src.WorkflowTest import WorkflowTest
 
 params = page_setup()
+run_picker()
 wf = WorkflowTest()
 
 st.title("Identified proteins")
@@ -33,24 +34,25 @@ page_intro(
     background_title="How identification evidence works",
 )
 
-workflow_dir = get_workflow_dir(st.session_state["workspace"])
-filter_dir = workflow_dir / "results" / "psm_filter"
-cache_dir = workflow_dir / "results" / "insight_cache"
+run_dir = get_run_dir(st.session_state["workspace"])
+run_params = get_run_params(st.session_state["workspace"])
+filter_dir = run_dir / "results" / "psm_filter"
+cache_dir = run_dir / "results" / "insight_cache"
 idxml_files = sorted(filter_dir.glob("*.idXML")) if filter_dir.exists() else []
 
 if not idxml_files:
     needs_results()
 
 fasta_path = None
-if wf.params.get("fasta-file"):
+if run_params.get("fasta-file"):
     try:
-        fasta_path = Path(wf.file_manager.get_files([wf.params["fasta-file"]])[0])
+        fasta_path = Path(wf.file_manager.get_files([run_params["fasta-file"]])[0])
     except (ValueError, IndexError):
         fasta_path = None
 if fasta_path is None or not fasta_path.is_file():
     st.warning("The FASTA database of this run was not found, so coverage and descriptions cannot be shown.")
 
-mzml_names = [Path(f).name for f in wf.params.get("mzML-files", []) or []]
+mzml_names = [Path(f).name for f in run_params.get("mzML-files", []) or []]
 source_files = [*idxml_files, *([fasta_path] if fasta_path and fasta_path.is_file() else [])]
 
 
@@ -153,9 +155,9 @@ if not match.empty:
         SequenceView(cache_id=f"seqview_{run}", cache_path=str(cache_dir))(
             key="proteins_seqview", state_manager=viewer_state, height=420,
         )
-        tolerance, ppm = fragment_tolerance(workflow_dir)
+        tolerance, ppm = fragment_tolerance(run_params)
         mzml_path = next(
-            (Path(f) for f in wf.file_manager.get_files(wf.params["mzML-files"]) if Path(f).name == psm["file"]), None,
+            (Path(f) for f in wf.file_manager.get_files(run_params["mzML-files"]) if Path(f).name == psm["file"]), None,
         )
         show_spectrum(
             cache_dir, run, viewer_state, peptide=psm["peptide"], charge=int(psm["charge"]),

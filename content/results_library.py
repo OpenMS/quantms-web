@@ -2,9 +2,10 @@
 import streamlit as st
 from pathlib import Path
 from src.common.common import page_setup
-from src.common.results_helpers import get_workflow_dir
+from src.common.results_helpers import run_picker, get_run_dir
 
 params = page_setup()
+run_picker()
 
 st.title("Spectral Library")
 
@@ -19,13 +20,13 @@ if "workspace" not in st.session_state:
     st.warning("Please initialize your workspace first.")
     st.stop()
 
-workflow_dir = get_workflow_dir(st.session_state["workspace"])
+run_dir = get_run_dir(st.session_state["workspace"])
 
-if not workflow_dir.exists():
+if not run_dir.exists():
     st.warning("No workspace found. Please run a workflow first.")
     st.stop()
 
-library_dir = workflow_dir / "results" / "library"
+library_dir = run_dir / "results" / "library"
 library_tsv = library_dir / "spectral_library.tsv"
 
 if library_tsv.exists():
