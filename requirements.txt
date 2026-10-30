@@ -156,3 +156,8 @@ statsmodels
 # Redis Queue dependencies (for online mode)
 redis>=5.0.0
 rq>=1.16.0
+
+# Predicted fragment spectra next to measured PSMs (AlphaPeptDeep). torch comes
+# from the CPU index: the default Linux wheel pulls in several GB of CUDA libraries.
+--extra-index-url https://download.pytorch.org/whl/cpu
+peptdeep==1.5.1
