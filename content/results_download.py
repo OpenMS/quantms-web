@@ -8,7 +8,7 @@ params = page_setup()
 
 wf = WorkflowTest()
 
-st.title("Runs and downloads")
+st.title("Runs and exports" if st.session_state.location == "local" else "Runs and downloads")
 
 page_intro(
     """

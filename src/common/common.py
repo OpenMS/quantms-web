@@ -31,6 +31,11 @@ from src.common.admin import (
 # Detect system platform
 OS_PLATFORM = sys.platform
 
+# Demo and example files are symlinked on Linux to save space. An AppImage
+# mounts the app under a new path on every launch, so links into it would
+# dangle after a restart; it copies them instead.
+LINK_EXAMPLE_FILES = OS_PLATFORM == "linux" and "APPIMAGE" not in os.environ
+
 # Default legal/GDPR page links. These point to the centrally maintained
 # official OpenMS pages. Forks that self-host should override them via the
 # "legal_links" key in settings.json (an Impressum must name the actual
@@ -77,6 +82,25 @@ def is_safe_workspace_name(name: str) -> bool:
         return False
     # Reject path separators and parent directory references
     return "/" not in name and "\\" not in name and name not in ("..", ".")
+
+
+def local_workspaces_dir(settings: dict) -> Path:
+    """
+    Resolve the directory holding workspaces in local mode.
+
+    ``LOCAL_WORKSPACES_DIR`` wins when set, so a desktop launcher (the
+    Electron shell) can keep workspaces in the user profile instead of next
+    to a read-only install folder. Otherwise ``workspaces_dir`` from
+    settings.json is used, falling back to the parent directory.
+    """
+    override = os.environ.get("LOCAL_WORKSPACES_DIR")
+    if override:
+        return Path(override)
+    if settings.get("workspaces_dir"):
+        return Path(
+            settings["workspaces_dir"], "workspaces-" + settings["repository-name"]
+        )
+    return Path("..")
 
 
 def get_demo_source_dirs() -> list[Path]:
@@ -204,8 +228,8 @@ def copy_demo_workspace(demo_name: str, target_path: Path) -> bool:
         if target_path.exists():
             shutil.rmtree(target_path)
 
-        # Use symlinks on Linux for efficiency
-        if OS_PLATFORM == "linux":
+        # Use symlinks on Linux for efficiency (not in an AppImage)
+        if LINK_EXAMPLE_FILES:
             _symlink_tree(demo_path, target_path)
         else:
             shutil.copytree(demo_path, target_path)
@@ -473,14 +497,8 @@ def page_setup(page: str = "") -> dict[str, Any]:
         if "windows" in sys.argv:
             os.chdir("../streamlit-template")
         # Define the directory where all workspaces will be stored
-        if (
-            st.session_state.settings["workspaces_dir"]
-            and st.session_state.location == "local"
-        ):
-            workspaces_dir = Path(
-                st.session_state.settings["workspaces_dir"],
-                "workspaces-" + st.session_state.settings["repository-name"],
-            )
+        if st.session_state.location == "local":
+            workspaces_dir = local_workspaces_dir(st.session_state.settings)
         elif st.session_state.location == "online":
             workspaces_dir = Path(
                 os.environ.get("WORKSPACES_DIR", "/workspaces-streamlit-template")
@@ -550,6 +568,12 @@ def page_setup(page: str = "") -> dict[str, Any]:
     # Render the sidebar
     params = render_sidebar(page)
 
+    # A local install has no captcha or consent banner. Set this on every run,
+    # not only when the workspace is first resolved: the workspace switcher
+    # drops every params.json key from the session, "controllo" included.
+    if st.session_state.location == "local":
+        st.session_state["controllo"] = True
+
     captcha_control(privacy_policy_url=get_legal_links()["privacy"])
 
     # If run in hosted mode, show captcha as long as it has not been solved
@@ -591,14 +615,8 @@ def render_sidebar(page: str = "") -> None:
         # Display workspace switcher if workspace is enabled in local mode
         if st.session_state.settings["enable_workspaces"]:
             # Workspaces directory specified in the settings.json
-            if (
-                st.session_state.settings["workspaces_dir"]
-                and st.session_state.location == "local"
-            ):
-                workspaces_dir = Path(
-                    st.session_state.settings["workspaces_dir"],
-                    "workspaces-" + st.session_state.settings["repository-name"],
-                )
+            if st.session_state.location == "local":
+                workspaces_dir = local_workspaces_dir(st.session_state.settings)
             else:
                 workspaces_dir = ".."
             # Online: show current workspace name in info text and option to change to other existing workspace
@@ -665,8 +683,8 @@ def render_sidebar(page: str = "") -> None:
                                     if item.is_dir():
                                         if target.exists():
                                             shutil.rmtree(target)
-                                        # Use symlinks on Linux for efficiency
-                                        if OS_PLATFORM == "linux":
+                                        # Use symlinks on Linux for efficiency (not in an AppImage)
+                                        if LINK_EXAMPLE_FILES:
                                             _symlink_tree(item, target)
                                         else:
                                             shutil.copytree(item, target)
@@ -674,7 +692,7 @@ def render_sidebar(page: str = "") -> None:
                                         if target.exists():
                                             target.unlink()
                                         # Copy config files so they can be modified independently
-                                        if OS_PLATFORM == "linux" and item.name != "params.json" and item.suffix != ".ini":
+                                        if LINK_EXAMPLE_FILES and item.name != "params.json" and item.suffix != ".ini":
                                             target.symlink_to(item.resolve())
                                         else:
                                             shutil.copy2(item, target)
@@ -1094,6 +1112,72 @@ def tk_file_dialog(
     )
     root.destroy()
     return file_path
+
+
+def export_folder_input(key: str) -> Path:
+    """
+    Show the folder that local exports are written to, with a browse button.
+
+    The folder is kept in ``st.session_state["export_dir"]``, so every export
+    page starts from the last folder chosen. It defaults to
+    ``~/Documents/<app-name>`` and is created on the first export.
+
+    Args:
+        key (str): Prefix for the widget keys, unique on the page.
+
+    Returns:
+        Path: The chosen folder (not checked for existence).
+    """
+    if "export_dir" not in st.session_state:
+        st.session_state["export_dir"] = str(
+            Path.home() / "Documents" / st.session_state.settings["app-name"]
+        )
+    widget_key = f"{key}-export-dir"
+    if widget_key not in st.session_state:
+        st.session_state[widget_key] = st.session_state["export_dir"]
+    c1, c2 = st.columns([0.05, 0.95], gap="small")
+    with c1:
+        st.write("\n")
+        st.write("\n")
+        if st.button(
+            "📁",
+            key=f"{key}-export-browse",
+            help="Choose the export folder.",
+            disabled=not TK_AVAILABLE,
+        ):
+            chosen = tk_directory_dialog(
+                "Select the export folder", st.session_state["export_dir"]
+            )
+            if chosen:
+                st.session_state[widget_key] = chosen
+    with c2:
+        folder = st.text_input("Export folder", key=widget_key)
+    st.session_state["export_dir"] = folder
+    return Path(folder).expanduser()
+
+
+def export_files(files: list[tuple[Path, Path]], target: Path) -> bool:
+    """
+    Copy files into an export folder, keeping their relative paths.
+
+    Args:
+        files (list[tuple[Path, Path]]): Pairs of (source file, path relative to ``target``).
+        target (Path): Folder to write into; created if missing.
+
+    Returns:
+        bool: True if every file was copied, otherwise False (with an error shown).
+    """
+    try:
+        with st.spinner(f"Exporting {len(files)} files..."):
+            for source, rel in files:
+                dest = Path(target, rel)
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, dest)
+    except OSError as e:
+        st.error(f"Export failed: {e}")
+        return False
+    st.success(f"Exported {len(files)} files to **{target}**.")
+    return True
 
 
 # General warning/error messages

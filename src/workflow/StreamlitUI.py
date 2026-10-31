@@ -18,6 +18,8 @@ from datetime import datetime
 from src.common.common import (
     OS_PLATFORM,
     TK_AVAILABLE,
+    export_files,
+    export_folder_input,
     tk_directory_dialog,
     tk_file_dialog,
 )
@@ -697,10 +699,20 @@ class StreamlitUI:
         # argument is still hashed into the widget's element id. Since this method feeds
         # the persisted parameter straight back in as that argument, the id changed on
         # every interaction, the following interaction arrived under the now-stale id and
-        # was silently dropped: selecting six mzML files kept only three. Seed the widget
-        # on first render only; from then on session state owns the value.
+        # was silently dropped: selecting six mzML files kept only three. Passing it on
+        # the first render only is not enough either: the second render then has another
+        # id, and the widget restarts from its built-in default (a checkbox seeded True
+        # came back False on the next rerun). So the initial value never goes into the
+        # call; it is written to session state once, and session state owns it from then on.
         def seed(**kwargs: Any) -> dict:
-            return {} if key in st.session_state else kwargs
+            if key not in st.session_state:
+                ((arg, initial),) = kwargs.items()
+                if arg == "index":
+                    initial = options[initial] if options else None
+                elif arg == "default":
+                    initial = [v for v in (initial or []) if v in options]
+                st.session_state[key] = initial
+            return {}
 
         if widget_type == "text":
             st.text_input(name, key=key, help=help, on_change=on_change, **seed(value=value))
@@ -1444,6 +1456,9 @@ class StreamlitUI:
     def file_upload_section(self, custom_upload_function) -> None:
         self.upload_targets = {}
         custom_upload_function()
+        # A local install already has the input files on disk.
+        if st.session_state.location == "local":
+            return
         c1, _ = st.columns(2)
         if c1.button("⬇️ Download files", use_container_width=True):
             self.zip_and_download_files(Path(self.workflow_dir, "input-files"))
@@ -1695,6 +1710,9 @@ Started: {status.get('started_at', 'N/A')}""")
         ZIP of the chosen result folders on request. Only the selected file (or
         the ZIP) is read into memory, so large result sets stay cheap to render.
 
+        A local install exports instead: the user sets a folder at the top and
+        one button copies every listed file to ``<folder>/<workflow>-results``.
+
         Args:
             exclude: Names of files or folders to leave out (matched against
                 every part of a file's path relative to the results directory,
@@ -1717,7 +1735,7 @@ Started: {status.get('started_at', 'N/A')}""")
                     files.append(rel)
 
         if not files:
-            st.info("No results to download yet. Run the workflow first.")
+            st.info("No results yet. Run the workflow first.")
             return
 
         def folder_of(rel: Path) -> str:
@@ -1728,6 +1746,11 @@ Started: {status.get('started_at', 'N/A')}""")
                 if n_bytes < 1024 or unit == "GB":
                     return f"{n_bytes:.0f} {unit}" if unit == "B" else f"{n_bytes:.1f} {unit}"
                 n_bytes /= 1024
+
+        key_prefix = f"results-download-{Path(self.workflow_dir).name}"
+        local = st.session_state.get("location") == "local"
+        if local:
+            export_dir = export_folder_input(key_prefix)
 
         st.dataframe(
             [
@@ -1745,7 +1768,19 @@ Started: {status.get('started_at', 'N/A')}""")
             width="stretch",
         )
 
-        key_prefix = f"results-download-{Path(self.workflow_dir).name}"
+        if local:
+            if st.button(
+                "📤 Export",
+                type="primary",
+                key=f"{key_prefix}-export",
+                width="stretch",
+            ):
+                export_files(
+                    [(Path(results_dir, rel), rel) for rel in files],
+                    Path(export_dir, f"{Path(self.workflow_dir).name}-results"),
+                )
+            return
+
         c1, c2 = st.columns(2)
 
         with c1:
