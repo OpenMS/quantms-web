@@ -9,7 +9,9 @@ const FILES = [
 ];
 
 async function checkTables(t, page) {
-  await t.open(page);
+  // The first visit after a run draws the result components from their
+  // caches, which took over two minutes on a macOS runner.
+  await t.open(page, { timeout: 10 * 60 * 1000 });
   const frame = await t.waitForComponent(".tabulator-row", { timeout: 5 * 60 * 1000 });
   const rows = await frame.locator(".tabulator-row").count();
   t.log(`${page}: ${rows} table rows`);
