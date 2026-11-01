@@ -39,7 +39,7 @@ Open http://localhost:8501.
 
 ## Windows installer
 
-Download the latest `.msi` from [Releases](https://github.com/OpenMS/quantms-web/releases) and double-click to install. Standalone — no Python or Docker required.
+Download the latest `*-Setup.exe` from [Releases](https://github.com/OpenMS/quantms-web/releases) and run it; it installs per user without admin rights. Standalone — no Python or Docker required.
 
 ## Workspaces
 
