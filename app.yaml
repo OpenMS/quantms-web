@@ -1,0 +1,188 @@
+# App spec: what this app is. Schema and checker come from the template
+# (utils/app_spec.schema.json, `python -m utils.app_spec`); the weekly
+# template-sync job reads `template:` and `sync.app_owned` from here.
+# App-owned: template syncs never overwrite this file.
+spec_version: 1
+template:
+  repository: OpenMS/streamlit-template
+  branch: main
+app:
+  slug: quantms-ddalfq
+  name: OpenDDA
+  description: 'Quantitative DDA proteomics: label-free (LFQ) and isobaric (TMT/iTRAQ) quantification
+    with Comet, Percolator and ProteomicsLFQ, followed by statistics and GO enrichment.'
+  repository: OpenMS/quantms-web
+  domain: proteomics
+  image: ghcr.io/openms/quantms-web
+inputs:
+  mzML-files:
+    types:
+    - mzML
+    multiple: true
+    description: DDA LC-MS/MS runs.
+  fasta-file:
+    types:
+    - fasta
+    - fa
+    multiple: false
+    description: Protein database; decoys and contaminants are added.
+workflows:
+- name: TOPP Workflow
+  class: src/WorkflowTest.py:WorkflowTest
+  inputs:
+  - mzML-files
+  - fasta-file
+  multi_run: true
+  presets: true
+  steps:
+  - tool: DecoyDatabase
+    in: fasta-file
+  - tool: DecoyDatabase
+    instance: DecoyDatabase-contaminants
+    optional: true
+    note: appends contaminants
+  - tool: CometAdapter
+    in: mzML-files
+    note: LFQ mode
+  - tool: PercolatorAdapter
+    in: CometAdapter
+    note: LFQ mode
+  - tool: IDFilter
+    in: PercolatorAdapter
+    note: LFQ mode
+  - tool: ProteomicsLFQ
+    in: IDFilter
+    collect: true
+    note: LFQ mode
+  - tool: IsobaricAnalyzer
+    instance: IsobaricAnalyzer-TMT
+    in: mzML-files
+    optional: true
+    note: TMT mode
+  - tool: CometAdapter
+    instance: CometAdapter-TMT
+    in: mzML-files
+    optional: true
+    note: TMT mode
+  - tool: PercolatorAdapter
+    instance: PercolatorAdapter-TMT
+    optional: true
+    note: TMT mode
+  - tool: IDFilter
+    instance: IDFilter-strict
+    optional: true
+    note: TMT mode
+  - tool: IDMapper
+    instance: IDMapper-TMT
+    optional: true
+    note: TMT mode
+  - tool: FileMerger
+    instance: FileMerger-TMT
+    collect: true
+    optional: true
+    note: TMT mode
+  - tool: ProteinInference
+    instance: ProteinInference-TMT
+    optional: true
+    note: TMT mode
+  - tool: IDFilter
+    instance: IDFilter-lenient
+    optional: true
+    note: TMT mode
+  - tool: IDConflictResolver
+    instance: IDConflictResolver-TMT
+    optional: true
+    note: TMT mode
+  - tool: ProteinQuantifier
+    instance: ProteinQuantifier-TMT
+    optional: true
+    note: TMT mode
+results:
+- role: table
+  title: Identified proteins
+  page: content/results_proteins.py
+- role: table
+  title: Peptide-spectrum matches
+  page: content/results_filtered.py
+- role: volcano
+  title: Volcano plot
+  page: content/results_volcano.py
+- role: heatmap
+  title: Clustered heatmap
+  page: content/results_heatmap_clustered.py
+- role: custom
+  title: Sample similarity (PCA)
+  page: content/results_pca.py
+- role: custom
+  title: GO enrichment
+  page: content/enrichment.py
+pages:
+- content/quickstart.py
+- content/workflow_fileupload.py
+- content/workflow_configure.py
+- content/workflow_run.py
+- content/results_overview.py
+- content/compare_groups.py
+- content/results_volcano.py
+- content/results_proteins.py
+- content/results_pca.py
+- content/enrichment.py
+- content/results_heatmap_clustered.py
+- content/results_abundance.py
+- content/results_samples.py
+- content/results_heatmap.py
+- content/results_download.py
+- content/filtering.py
+- content/imputation.py
+- content/normalization.py
+- content/statistical.py
+- content/results_qc.py
+- content/results_filtered.py
+- content/results_mass_shifts.py
+- content/results_rescoring.py
+- content/results_database_search.py
+deploy:
+  k8s:
+    enabled: true
+    hosts:
+    - opendda.webapps.openms.de
+    - opendda.webapps.openms.org
+    worker_tier: high
+  docker_compose: true
+  desktop:
+  - windows
+  online_deployment: false
+sync:
+  app_owned:
+  - app.yaml
+  - app.py
+  - settings.json
+  - default-parameters.json
+  - presets.json
+  - README.md
+  - content/*
+  - src/python-tools/*
+  - example-data/*
+  - assets/*
+  - k8s/overlays/*
+  - src/Workflow.py
+  - src/WorkflowTest.py
+  - src/common/contaminants.py
+  - src/common/differential.py
+  - src/common/fragment_plots.py
+  - src/common/guide.py
+  - src/common/insight_tables.py
+  - src/common/isobaric.py
+  - src/common/mass_shifts.py
+  - src/common/ms2_prediction.py
+  - src/common/overview.py
+  - src/common/peptide_format.py
+  - src/common/postprocessing_plots.py
+  - src/common/protein_table.py
+  - src/common/qc_plots.py
+  - src/common/results_helpers.py
+  - src/common/samples.py
+  - src/common/sequence_display.py
+  - src/common/spectrum_view.py
+  - src/pride.py
+  - src/pride_ui.py
