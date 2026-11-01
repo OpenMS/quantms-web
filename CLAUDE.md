@@ -91,6 +91,10 @@ Decorate `configure()` and `results()` with `@st.fragment` for partial reruns.
 
 For conditional UI (a widget that shows/hides other widgets), pass `reactive=True` to `input_widget`, `select_input_file`, or `input_TOPP` so a change reruns the parent `configure()` instead of only its isolated fragment. Read the changed value from `st.session_state` (not `self.params`, which is stale within the rerun) via `parameter_manager.param_prefix` for custom-widget keys or `topp_param_prefix` for TOPP keys (`"<Tool>:1:<param path>"`).
 
+### Import from a link
+
+`src/data_import/` (from streamlit-template #428) adds an **Import from a link** section below the upload tabs: HTTPS files (incl. presigned), public S3/Swift folders such as CSC Allas, OneDrive/SharePoint, Zenodo and Figshare, with tar/zip listed in place. Files land in the `upload_widget()` folder whose types match (`mzML-files`, `fasta-file`) via a background process reporting through `<workflow_dir>/link-import/`; online an SSRF guard and `data_import.max_download_gb_online` apply. It sits next to the PRIDE import (`src/pride.py`), which still handles PRIDE accessions, RAW conversion and SDRF.
+
 ### Python Tools
 
 Custom scripts in `src/python-tools/` define a `DEFAULTS` list for auto-generated UI:

@@ -1,5 +1,6 @@
 import streamlit as st
 import pyopenms as poms
+import pandas as pd
 from pathlib import Path
 import shutil
 import subprocess
@@ -24,6 +25,16 @@ from src.common.common import (
     tk_file_dialog,
 )
 from src.workflow._log_status import classify_log_outcome
+from src.data_import import ui as data_import_ui
+from src.workflow.ExperimentalDesign import (
+    align_design,
+    check_design,
+    design_path,
+    load_design,
+    read_design,
+    save_design,
+    to_openms_design,
+)
 
 
 def _mounted_data_root() -> Union[Path, None]:
@@ -63,6 +74,9 @@ class StreamlitUI:
     # Methods for Streamlit UI components
     def __init__(self, workflow_dir, logger, executor, parameter_manager):
         self.workflow_dir = workflow_dir
+        # upload key -> name, file types, folder and example files of each
+        # upload_widget() on the page, for "Import from a link"
+        self.upload_targets = {}
         self.logger = logger
         self.executor = executor
         self.parameter_manager = parameter_manager
@@ -102,6 +116,14 @@ class StreamlitUI:
 
         if not name:
             name = key.replace("-", " ")
+
+        # Where "Import from a link" can put files, see file_upload_section()
+        self.upload_targets[key] = {
+            "name": name,
+            "file_types": [file_types] if isinstance(file_types, str) else list(file_types),
+            "dir": str(files_dir),
+            "fallback": [str(Path(f).resolve()) for f in ([fallback] if isinstance(fallback, str) else fallback or [])],
+        }
 
         c1, c2 = st.columns(2)
 
@@ -1352,6 +1374,94 @@ class StreamlitUI:
                     cols = st.columns(num_cols)
         self.parameter_manager.save_parameters()
 
+    def experimental_design(self, key: str, name: str = "Experimental design") -> None:
+        """
+        Table assigning each selected input file a condition, biological replicate and fraction.
+
+        Edits are saved to ``<workflow_dir>/experimental-design.tsv`` in the
+        OpenMS design format, so ``execution()`` can pass that file to a TOPP
+        tool's ``-design`` or read it with ``ExperimentalDesign.load_design()``.
+        A design.tsv (one- or two-table) or SDRF file can be imported, and
+        spreadsheet cells can be pasted into the table. Inconsistencies such as
+        missing fractions are shown as notices, not errors.
+
+        Args:
+            key (str): The input file key whose selection the design covers
+                (the key passed to ``select_input_file``). Pass ``reactive=True``
+                to that ``select_input_file`` so the table follows the selection.
+            name (str, optional): The heading shown above the table.
+        """
+        files = st.session_state.get(
+            f"{self.parameter_manager.param_prefix}{key}", self.params.get(key, [])
+        )
+        if isinstance(files, str):
+            files = [files]
+        st.markdown(f"**{name}**")
+        if not files:
+            st.info("Select input files to define the experimental design.")
+            return
+
+        # Widget state keys stay outside param_prefix: save_parameters() writes
+        # every session key with that prefix to params.json.
+        version_key = f"_design-{Path(self.workflow_dir).name}-{key}"
+        st.session_state.setdefault(version_key, 0)
+        stored = load_design(self.workflow_dir, files)
+
+        uploaded = st.file_uploader(
+            "Import design.tsv or SDRF",
+            type=["tsv", "txt", "sdrf"],
+            key=f"{version_key}-import",
+            help="An OpenMS experimental design (one- or two-table) or an SDRF file. "
+            "Files are matched by name; files it does not list keep their current row.",
+        )
+        applied_key = f"{version_key}-applied"
+        if uploaded is not None and st.session_state.get(applied_key) != uploaded.file_id:
+            st.session_state[applied_key] = uploaded.file_id
+            try:
+                imported = read_design(uploaded.getvalue())
+            except (ValueError, KeyError, pd.errors.ParserError) as e:
+                st.error(f"Could not read {uploaded.name}: {e}")
+            else:
+                listed = set(imported["file"])
+                kept = stored[~stored["file"].isin(listed)]
+                stored = align_design(pd.concat([imported, kept]), files)
+                matched = len(listed & set(stored["file"]))
+                save_design(self.workflow_dir, stored, files)
+                st.session_state[version_key] += 1
+                st.toast(f"Imported the design of {matched} of {len(files)} file(s)")
+
+        edited = st.data_editor(
+            stored,
+            key=f"{version_key}-{st.session_state[version_key]}",
+            hide_index=True,
+            num_rows="fixed",
+            disabled=["file"],
+            column_config={
+                "file": st.column_config.TextColumn("File"),
+                "condition": st.column_config.TextColumn(
+                    "Condition", help="The group this file is compared as, e.g. control or treated."
+                ),
+                "replicate": st.column_config.NumberColumn(
+                    "Replicate", help="Biological replicate within the condition.", min_value=1, step=1
+                ),
+                "fraction": st.column_config.NumberColumn(
+                    "Fraction", help="Fraction number; 1 for unfractionated samples.", min_value=1, step=1
+                ),
+            },
+        )
+        path = design_path(self.workflow_dir)
+        if not path.is_file() or path.read_text(encoding="utf-8") != to_openms_design(edited, files):
+            save_design(self.workflow_dir, edited, files)
+
+        for notice in check_design(edited):
+            st.info(notice, icon="ℹ️")
+        st.download_button(
+            "Download design.tsv",
+            to_openms_design(edited, files),
+            file_name="design.tsv",
+            mime="text/tab-separated-values",
+        )
+
     def zip_and_download_files(self, directory: str):
         """
         Creates a zip archive of all files within a specified directory,
@@ -1442,6 +1552,7 @@ class StreamlitUI:
                 cols = st.columns(num_cols)
 
     def file_upload_section(self, custom_upload_function) -> None:
+        self.upload_targets = {}
         custom_upload_function()
         # A local install already has the input files on disk.
         if st.session_state.location == "local":
@@ -1449,6 +1560,8 @@ class StreamlitUI:
         c1, _ = st.columns(2)
         if c1.button("⬇️ Download files", use_container_width=True):
             self.zip_and_download_files(Path(self.workflow_dir, "input-files"))
+        if data_import_ui.enabled():
+            data_import_ui.link_import_section(self.workflow_dir, self.upload_targets)
 
     def parameter_section(self, custom_parameter_function) -> None:
         st.toggle("Show advanced parameters", value=False, key="advanced")
