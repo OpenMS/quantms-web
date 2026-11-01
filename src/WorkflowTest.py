@@ -18,6 +18,8 @@ from src.common.results_helpers import get_abundance_data
 from src.common.results_helpers import parse_idxml, build_spectra_cache, load_idxml, write_psm_exports
 from src.common.contaminants import CONTAMINANT_PREFIX, append_fasta, write_contaminants
 from src.common.isobaric import ISOBARIC_CHANNELS
+from src.common.lfq_design import groups_from_design, initial_groups, is_fractionated, seed_design
+from src.workflow.ExperimentalDesign import design_path, load_design, save_design, to_openms_design
 from src.pride_ui import pride_import_section
 from openms_insight import Table, Heatmap, LinePlot, SequenceView
 
@@ -477,12 +479,18 @@ class WorkflowTest(WorkflowManager):
             )
 
     def render_lfq_groups(self):
-        """Per-file group names; the group comparison needs at least two groups."""
+        """Experimental design: group, biological replicate and fraction of every file."""
         st.markdown(
-            "Give every file the name of its experimental group, for example **control** and "
-            "**treated**. Files with the same name are replicates of one condition, and the group "
-            "comparison tests every protein between the groups. Use at least two groups, ideally "
-            "with three or more replicates each."
+            "Give every file the name of its experimental group (**Condition**), for example "
+            "**control** and **treated**. Files of one condition are its replicates, and the group "
+            "comparison tests every protein between the conditions. Use at least two conditions, "
+            "ideally with three or more biological replicates each."
+        )
+        st.markdown(
+            "If a sample was **fractionated** before the MS run (for example by high-pH reversed "
+            "phase), give its files the same condition and replicate and number them as fractions "
+            "1, 2, 3, ...; their signals are then combined into one sample. Unfractionated samples "
+            "keep fraction 1. You can also import a design.tsv or an SDRF file."
         )
 
         mzml_keys = self.params.get("mzML-files")
@@ -500,16 +508,35 @@ class WorkflowTest(WorkflowManager):
         # Current mzML filenames
         current_filenames = {Path(mz).name for mz in mzml_files}
 
-        # Per-file group input using input_widget (auto-saves to params.json)
-        for mz in mzml_files:
-            filename = Path(mz).name
-            self.ui.input_widget(
-                key=f"mzML-group-{filename}",
-                default=demo_group(filename),
-                name=f"Group of {filename}",
-                widget_type="text",
-                help="The condition this sample belongs to, e.g. control or treated. Spelling must match exactly between replicates.",
-            )
+        # The table edits the design file; the groups stay in the mzML-group-<file>
+        # parameters, which the results pages read. Bring the table up to date with
+        # them first, as they can also be set elsewhere (PRIDE import).
+        files = st.session_state.get(
+            f"{self.parameter_manager.param_prefix}mzML-files", mzml_keys
+        )
+        if isinstance(files, str):
+            files = [files]
+        path = design_path(self.workflow_dir)
+        saved = path.read_text(encoding="utf-8") if path.is_file() else None
+        stored = load_design(self.workflow_dir, files)
+        groups = initial_groups(stored["file"], self.params, demo_group)
+        seeded = seed_design(stored, groups, renumber=saved is None)
+        if to_openms_design(seeded, files) != saved:
+            save_design(self.workflow_dir, seeded, files)
+            # A new editor key, so the table shows the file instead of earlier edits
+            version_key = f"_design-{Path(self.workflow_dir).name}-mzML-files"
+            st.session_state[version_key] = st.session_state.get(version_key, 0) + 1
+
+        self.ui.experimental_design("mzML-files", name="Samples")
+
+        prefix = self.parameter_manager.param_prefix
+        changed = False
+        for filename, group in groups_from_design(load_design(self.workflow_dir, files)).items():
+            if self.params.get(f"mzML-group-{filename}") != group:
+                st.session_state[f"{prefix}mzML-group-{filename}"] = group
+                changed = True
+        if changed:
+            self.parameter_manager.save_parameters()
 
         # Reload params to get current values
         self.params = self.parameter_manager.get_parameters_from_json()
@@ -1377,6 +1404,15 @@ class WorkflowTest(WorkflowManager):
             quant_cxml = str(quant_dir / "openms.consensusXML")
             quant_msstats = str(quant_dir / "openms_msstats.csv")
 
+            # A fractionated experiment needs the design, so ProteomicsLFQ combines
+            # the fractions of each sample; otherwise every file is its own sample.
+            design = load_design(self.workflow_dir, self.params["mzML-files"])
+            lfq_design = {}
+            if is_fractionated(design):
+                design_file = save_design(quant_dir, design, in_mzML)
+                lfq_design = {"design": str(design_file)}
+                self.logger.log(f"Experimental design with fractions: {design_file}")
+
             with st.spinner("ProteomicsLFQ"):
                     combined_in = " ".join(in_mzML)
                     combined_ids = " ".join(filter_results)
@@ -1404,6 +1440,7 @@ class WorkflowTest(WorkflowManager):
                             },
                             {
                                 "fasta": str(database_fasta),
+                                **lfq_design,
                                 "threads": 12,
                                 # Disable FAIMS/IM handling to avoid segfault in OpenMS 3.5.0
                                 "PeptideQuantification:extract:IM_window": "0.0",
