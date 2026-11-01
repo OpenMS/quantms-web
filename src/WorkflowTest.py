@@ -15,7 +15,7 @@ from scipy.stats import fisher_exact
 from src.workflow.WorkflowManager import WorkflowManager
 from src.common.common import page_setup
 from src.common.results_helpers import get_abundance_data
-from src.common.results_helpers import parse_idxml, build_spectra_cache, load_idxml, write_psm_exports
+from src.common.results_helpers import parse_idxml, build_spectra_cache, load_idxml, psm_table_columns, write_psm_exports
 from src.common.contaminants import CONTAMINANT_PREFIX, append_fasta, write_contaminants
 from src.common.isobaric import ISOBARIC_CHANNELS
 from src.pride_ui import pride_import_section
@@ -1027,15 +1027,7 @@ class WorkflowTest(WorkflowManager):
                     data=id_df.lazy(),
                     cache_path=str(cache_dir),
                     interactivity={"file": "file_index", "spectrum": "scan_id", "identification": "id_idx"},
-                    column_definitions=[
-                        {"field": "sequence", "title": "Sequence"},
-                        {"field": "charge", "title": "Z", "sorter": "number"},
-                        {"field": "mz", "title": "m/z", "sorter": "number"},
-                        {"field": "rt", "title": "RT", "sorter": "number"},
-                        {"field": "score", "title": "Score", "sorter": "number"},
-                        {"field": "protein_accession", "title": "Proteins"},
-                        {"field": "contaminant", "title": "Contaminant", "formatter": "tickCross", "sorter": "boolean"},
-                    ],
+                    column_definitions=psm_table_columns(),
                     initial_sort=[{"column": "score", "dir": "asc"}],
                     index_field="id_idx",
                 )
@@ -1128,15 +1120,7 @@ class WorkflowTest(WorkflowManager):
                     data=id_df.lazy(),
                     cache_path=str(cache_dir),
                     interactivity={"file": "file_index", "spectrum": "scan_id", "identification": "id_idx"},
-                    column_definitions=[
-                        {"field": "sequence", "title": "Sequence"},
-                        {"field": "charge", "title": "Z", "sorter": "number"},
-                        {"field": "mz", "title": "m/z", "sorter": "number"},
-                        {"field": "rt", "title": "RT", "sorter": "number"},
-                        {"field": "score", "title": "Score", "sorter": "number"},
-                        {"field": "protein_accession", "title": "Proteins"},
-                        {"field": "contaminant", "title": "Contaminant", "formatter": "tickCross", "sorter": "boolean"},
-                    ],
+                    column_definitions=psm_table_columns(),
                     initial_sort=[{"column": "score", "dir": "asc"}],
                     index_field="id_idx",
                 )
@@ -1222,15 +1206,7 @@ class WorkflowTest(WorkflowManager):
                     data=id_df.lazy(),
                     cache_path=str(cache_dir),
                     interactivity={"file": "file_index", "spectrum": "scan_id", "identification": "id_idx"},
-                    column_definitions=[
-                        {"field": "sequence", "title": "Sequence"},
-                        {"field": "charge", "title": "Z", "sorter": "number"},
-                        {"field": "mz", "title": "m/z", "sorter": "number"},
-                        {"field": "rt", "title": "RT", "sorter": "number"},
-                        {"field": "score", "title": "Score", "sorter": "number"},
-                        {"field": "protein_accession", "title": "Proteins"},
-                        {"field": "contaminant", "title": "Contaminant", "formatter": "tickCross", "sorter": "boolean"},
-                    ],
+                    column_definitions=psm_table_columns(),
                     initial_sort=[{"column": "score", "dir": "asc"}],
                     index_field="id_idx",
                 )
@@ -1543,15 +1519,7 @@ class WorkflowTest(WorkflowManager):
                     data=id_df.lazy(),
                     cache_path=str(cache_dir),
                     interactivity={"file": "file_index", "spectrum": "scan_id", "identification": "id_idx"},
-                    column_definitions=[
-                        {"field": "sequence", "title": "Sequence"},
-                        {"field": "charge", "title": "Z", "sorter": "number"},
-                        {"field": "mz", "title": "m/z", "sorter": "number"},
-                        {"field": "rt", "title": "RT", "sorter": "number"},
-                        {"field": "score", "title": "Score", "sorter": "number"},
-                        {"field": "protein_accession", "title": "Proteins"},
-                        {"field": "contaminant", "title": "Contaminant", "formatter": "tickCross", "sorter": "boolean"},
-                    ],
+                    column_definitions=psm_table_columns(),
                     initial_sort=[{"column": "score", "dir": "asc"}],
                     index_field="id_idx",
                 )
@@ -1640,15 +1608,7 @@ class WorkflowTest(WorkflowManager):
                     data=id_df.lazy(),
                     cache_path=str(cache_dir),
                     interactivity={"file": "file_index", "spectrum": "scan_id", "identification": "id_idx"},
-                    column_definitions=[
-                        {"field": "sequence", "title": "Sequence"},
-                        {"field": "charge", "title": "Z", "sorter": "number"},
-                        {"field": "mz", "title": "m/z", "sorter": "number"},
-                        {"field": "rt", "title": "RT", "sorter": "number"},
-                        {"field": "score", "title": "Score", "sorter": "number"},
-                        {"field": "protein_accession", "title": "Proteins"},
-                        {"field": "contaminant", "title": "Contaminant", "formatter": "tickCross", "sorter": "boolean"},
-                    ],
+                    column_definitions=psm_table_columns(),
                     initial_sort=[{"column": "score", "dir": "asc"}],
                     index_field="id_idx",
                 )
@@ -1731,15 +1691,7 @@ class WorkflowTest(WorkflowManager):
                     data=id_df.lazy(),
                     cache_path=str(cache_dir),
                     interactivity={"file": "file_index", "spectrum": "scan_id", "identification": "id_idx"},
-                    column_definitions=[
-                        {"field": "sequence", "title": "Sequence"},
-                        {"field": "charge", "title": "Z", "sorter": "number"},
-                        {"field": "mz", "title": "m/z", "sorter": "number"},
-                        {"field": "rt", "title": "RT", "sorter": "number"},
-                        {"field": "score", "title": "Score", "sorter": "number"},
-                        {"field": "protein_accession", "title": "Proteins"},
-                        {"field": "contaminant", "title": "Contaminant", "formatter": "tickCross", "sorter": "boolean"},
-                    ],
+                    column_definitions=psm_table_columns(),
                     initial_sort=[{"column": "score", "dir": "asc"}],
                     index_field="id_idx",
                 )
