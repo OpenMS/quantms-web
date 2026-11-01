@@ -227,7 +227,28 @@ ID_DF_SCHEMA = {
     "score": pl.Float64,
     "protein_accession": pl.Utf8,
     "contaminant": pl.Boolean,
+    "proforma": pl.Utf8,
 }
+
+# Columns of the PSM tables. The ones with "visible": False start hidden and can
+# be shown from the table's column menu; the CSV download has every column.
+PSM_TABLE_COLUMNS = [
+    {"field": "sequence", "title": "Sequence"},
+    {"field": "charge", "title": "Z", "sorter": "number"},
+    {"field": "mz", "title": "m/z", "sorter": "number"},
+    {"field": "rt", "title": "RT", "sorter": "number"},
+    {"field": "score", "title": "Score", "sorter": "number"},
+    {"field": "protein_accession", "title": "Proteins"},
+    {"field": "contaminant", "title": "Contaminant", "formatter": "tickCross", "sorter": "boolean"},
+    {"field": "proforma", "title": "ProForma", "visible": False},
+    {"field": "filename", "title": "File", "visible": False},
+    {"field": "scan_id", "title": "Scan", "sorter": "number", "visible": False},
+]
+
+
+def psm_table_columns() -> list[dict]:
+    """A fresh copy of PSM_TABLE_COLUMNS for one Table."""
+    return [dict(col) for col in PSM_TABLE_COLUMNS]
 
 
 def parse_idxml(idxml_path: Path, filename_to_index: dict | None = None) -> tuple[pl.DataFrame, list[str]]:
@@ -272,6 +293,7 @@ def parse_idxml(idxml_path: Path, filename_to_index: dict | None = None) -> tupl
                 "file_index": file_index,
                 "filename": Path(filename).name if filename else "",
                 "sequence": h.getSequence().toString(),
+                "proforma": to_proforma(h.getSequence().toString()),
                 "charge": h.getCharge(),
                 "mz": pep.getMZ(),
                 "rt": pep.getRT(),
@@ -339,7 +361,7 @@ def write_psm_exports(id_df: pl.DataFrame, seq_view, export_dir: Path, prefix: s
     """
     export_dir.mkdir(parents=True, exist_ok=True)
     # Exports carry the ProForma form next to the OpenMS string, for other tools
-    if "sequence" in id_df.columns:
+    if "sequence" in id_df.columns and "proforma" not in id_df.columns:
         id_df = id_df.with_columns(
             pl.col("sequence").map_elements(to_proforma, return_dtype=pl.Utf8).alias("proforma")
         )

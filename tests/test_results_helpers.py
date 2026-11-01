@@ -124,3 +124,27 @@ def test_parse_idxml_assigns_each_run_its_own_file_index(tmp_path):
     assert id_df["file_index"].to_list() == [1, 1]
     assert id_df["filename"].to_list() == ["B.mzML", "B.mzML"]
     assert id_df["scan_id"].to_list() == [1, 2]
+
+
+def test_parse_idxml_adds_proforma(tmp_path):
+    """The PSM table carries the ProForma form, so its CSV download has it."""
+    from src.common.peptide_format import to_proforma
+
+    idxml = tmp_path / "A_comet_perc_filter.idXML"
+    _write_idxml(idxml)
+
+    id_df, _ = parse_idxml(idxml, {"A.mzML": 0})
+
+    assert id_df["proforma"].to_list() == [to_proforma(s) for s in id_df["sequence"].to_list()]
+
+
+def test_psm_table_columns_exist_and_optional_ones_start_hidden():
+    from src.common.results_helpers import ID_DF_SCHEMA, psm_table_columns
+
+    columns = psm_table_columns()
+    assert {c["field"] for c in columns} <= set(ID_DF_SCHEMA)
+    hidden = [c["field"] for c in columns if c.get("visible") is False]
+    assert hidden == ["proforma", "filename", "scan_id"]
+    # Each Table gets its own copy
+    columns[0]["title"] = "changed"
+    assert psm_table_columns()[0]["title"] == "Sequence"
