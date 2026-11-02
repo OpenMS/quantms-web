@@ -5,6 +5,14 @@ import os
 # is imported anywhere (including transitively via openms_insight).
 os.environ.setdefault("POLARS_MAX_THREADS", "1")
 
+# Start workflow processes with "spawn", not Linux's default "fork". A fork
+# copies the server's polars and torch thread pools without their threads, so
+# a workflow started after a results page had used them hung in its first
+# polars call (the second run of a session never finished).
+import multiprocessing
+if multiprocessing.get_start_method(allow_none=True) != "spawn":
+    multiprocessing.set_start_method("spawn", force=True)
+
 import streamlit as st
 from pathlib import Path
 import json
