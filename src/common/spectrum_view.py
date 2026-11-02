@@ -10,8 +10,10 @@ import streamlit as st
 from openms_insight import LinePlot, MirrorPlot
 
 from src.common.ms2_prediction import (
-    instrument_of, load_model, match_peaks, mirror_frame, peptdeep_available, predict_fragments, spectral_angle,
+    cosine_similarity, instrument_of, load_model, match_peaks, mirror_frame, peptdeep_available, predict_fragments,
+    spectral_angle,
 )
+from src.common.psm_features import features_by_id, features_frame
 from src.common.results_helpers import parse_idxml
 
 
@@ -97,14 +99,20 @@ def show_spectrum(cache_dir: Path, run: str, state_manager, *, peptide: str, cha
         measured["mass"].to_numpy(), measured["intensity"].to_numpy(), predicted["mz"].to_numpy(), tolerance, ppm,
     )
     similarity = spectral_angle(observed, predicted["intensity"].to_numpy())
+    cosine = cosine_similarity(observed, predicted["intensity"].to_numpy())
     found = int((observed > 0).sum())
-    c1, c2 = st.columns(2)
+    c1, c2, c3 = st.columns(3)
     c1.metric(
         "Similarity to prediction", f"{similarity:.2f}",
         help="Normalised spectral angle between the measured and predicted fragment intensities: 1 means identical, "
              "0 nothing in common. Correct matches usually score above 0.7.",
     )
-    c2.metric("Predicted ions found", f"{found} of {len(predicted)}",
+    c2.metric(
+        "Cosine similarity", f"{cosine:.2f}",
+        help="Cosine of the measured and predicted fragment intensities, the other common measure: 1 means "
+             "identical, 0 nothing in common. It runs higher than the spectral angle for the same pair.",
+    )
+    c3.metric("Predicted ions found", f"{found} of {len(predicted)}",
               help=f"Predicted fragment ions with a measured peak within ±{tolerance:g} {'ppm' if ppm else 'Da'}.")
 
     data = mirror_frame(measured, predicted)
@@ -152,6 +160,34 @@ def show_selected_psm_spectrum(cache_dir: Path, idxml: Path, state_manager, *, s
         file_index=int(file_index), scan=int(scan), seqview_key=seqview_key, key=seqview_key,
         tolerance=tolerance, ppm=ppm, mzml_path=mzml,
     )
+    show_psm_features(idxml, int(psm_id))
+
+
+@st.cache_data(show_spinner="Reading scores and features...")
+def _features(idxml: str, mtime: float) -> dict:
+    # mtime only keys the cache, so a re-run of the workflow invalidates it
+    return features_by_id(Path(idxml))
+
+
+def show_psm_features(idxml: Path, psm_id: int) -> None:
+    """Every score and feature the search and rescoring gave one PSM, in an expander."""
+    rows = _features(str(idxml), idxml.stat().st_mtime).get(psm_id)
+    if not rows:
+        return
+    with st.expander(f"All scores and features of this PSM ({len(rows)})"):
+        st.caption(
+            "What Comet and Percolator recorded for this match. Percolator combines the Comet values into its "
+            "score; the q-value and PEP come from that score."
+        )
+        st.dataframe(
+            features_frame(rows), hide_index=True, use_container_width=True,
+            height=min(38 + 35 * len(rows), 600),
+            column_config={
+                "Source": st.column_config.TextColumn(width="small"),
+                "Feature": st.column_config.TextColumn(width="medium"),
+                "Meaning": st.column_config.TextColumn(width="large"),
+            },
+        )
 
 
 def psm_mzml_files(workflow_params: dict) -> list[Path]:

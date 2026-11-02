@@ -2,7 +2,7 @@
 import streamlit as st
 import polars as pl
 from src.common.common import page_setup
-from src.common.differential import comparison_groups
+from src.common.differential import comparison_groups, raw_p_cutoff
 from src.common.guide import ensure_group_comparison, needs_results, next_steps, page_intro, show_comparison_settings
 from src.common.results_helpers import get_abundance_data, get_id_column, get_sample_group_map, run_picker
 from src.common.insight_tables import plot_cache
@@ -19,8 +19,9 @@ page_intro(
     background="""
 - **x-axis, log2 fold change**: +1 means twice as abundant in the compared group, +2 four times,
   −1 half as abundant.
-- **y-axis, −log10 adjusted p-value**: 1.3 corresponds to an adjusted p-value of 0.05, 2 to 0.01.
-  The adjustment (Benjamini-Hochberg) accounts for testing thousands of proteins at once.
+- **y-axis, −log10 p-value**: 2 corresponds to a p-value of 0.01, 3 to 0.001.
+- **Dashed horizontal line**: where the adjusted p-value (Benjamini-Hochberg, which accounts for
+  testing thousands of proteins at once) reaches the slider's value. Proteins above it pass.
 - **Cut-offs**: a protein is called up (red) or down (blue) when it passes both sliders.
   |log2 fold change| ≥ 1 and adjusted p ≤ 0.05 are common choices; loosen them to explore,
   tighten them for a short, high-confidence list.
@@ -54,7 +55,9 @@ if direction:
     st.markdown(f"Right: higher in **{direction[1]}**. Left: higher in **{direction[0]}**.")
 
 # 2. Clean data and convert to Polars for component input
-volcano_df = statistics_df.dropna(subset=["log2FC", "p-adj"]).copy()
+volcano_df = statistics_df.dropna(subset=["log2FC", "p-value", "p-adj"]).copy()
+# Short labels: "sp|P05161|ISG15_HUMAN" -> "ISG15_HUMAN", so neighbouring labels overlap less
+volcano_df["label"] = volcano_df[id_col].astype(str).str.split("|").str[-1]
 volcano_pl_lazy = pl.from_pandas(volcano_df).lazy()
 
 # 3. Configure UI sliders (changing thresholds does not invalidate cache)
@@ -81,8 +84,9 @@ volcano_plot_component = VolcanoPlot(
     **plot_cache("quantms_volcano_plot", volcano_df),
     data=volcano_pl_lazy,
     log2fc_column="log2FC",
-    pvalue_column="p-adj",
-    label_column=id_col,
+    pvalue_column="p-value",
+    label_column="label",
+    y_label="-log10(p-value)",
     up_color="#E74C3C",
     down_color="#3498DB",
     ns_color="#95A5A6",
@@ -96,7 +100,8 @@ state_manager = st.session_state.get("state")  # Inject the project state manage
 volcano_plot_component(
     state_manager=state_manager,
     fc_threshold=fc_thresh,
-    p_threshold=p_thresh,
+    # The adjusted-p cut-off as a raw p-value, since the y-axis is the raw p-value
+    p_threshold=raw_p_cutoff(volcano_df, p_thresh),
     max_labels=10,  # Display labels for the top N significant proteins
     height=600,
 )

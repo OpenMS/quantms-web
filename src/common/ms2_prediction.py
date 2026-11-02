@@ -188,6 +188,15 @@ def spectral_angle(observed: np.ndarray, predicted: np.ndarray) -> float:
     return 1 - 2 * np.arccos(cosine) / np.pi
 
 
+def cosine_similarity(observed: np.ndarray, predicted: np.ndarray) -> float:
+    """Cosine of the measured and predicted fragment intensities: 1 identical, 0 nothing in common."""
+    a, b = np.asarray(observed, float), np.asarray(predicted, float)
+    na, nb = np.linalg.norm(a), np.linalg.norm(b)
+    if na == 0 or nb == 0:
+        return 0.0
+    return float(np.clip(a @ b / (na * nb), 0.0, 1.0))
+
+
 def mirror_frame(measured: pl.DataFrame, predicted: pd.DataFrame) -> pl.DataFrame:
     """One frame for MirrorPlot: measured peaks (side 0, their own peak_id) and
     predicted ions (side 1, negative peak_id), both scaled to 100 % of their base peak.

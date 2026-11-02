@@ -123,3 +123,23 @@ def test_tmt_group_map_marks_ungrouped_channels(tmp_path):
     assert group_metadata(mapping, sample_columns(pivot, mapping))["sample_id"].to_list() == [
         "sample1[126]", "sample2[127N]",
     ]
+
+
+def test_raw_p_cutoff_matches_adjusted_p():
+    import numpy as np
+    from scipy.stats import false_discovery_control
+    from src.common.differential import raw_p_cutoff
+
+    p = np.array([1e-6, 2e-5, 3e-4, 0.004, 0.02, 0.2, 0.5, 0.9])
+    df = pd.DataFrame({"p-value": p, "p-adj": false_discovery_control(p)})
+
+    cut = raw_p_cutoff(df, 0.05)
+    # Same proteins pass "p-value < cut" (the volcano's rule) as "p-adj <= 0.05"
+    assert ((df["p-value"] < cut) == (df["p-adj"] <= 0.05)).all()
+
+
+def test_raw_p_cutoff_without_hits():
+    from src.common.differential import raw_p_cutoff
+
+    df = pd.DataFrame({"p-value": [0.3, 0.6], "p-adj": [0.6, 0.6]})
+    assert raw_p_cutoff(df, 0.05) == 0.025
