@@ -19,6 +19,7 @@ from src.common.results_helpers import parse_idxml, build_spectra_cache, load_id
 from src.common.contaminants import CONTAMINANT_PREFIX, append_fasta, write_contaminants
 from src.common.isobaric import ISOBARIC_CHANNELS
 from src.common.lfq_design import groups_from_design, initial_groups, is_fractionated, seed_design
+from src.common.combined_exports import combined_paths, write_design
 from src.workflow.ExperimentalDesign import design_path, load_design, save_design, to_openms_design
 from src.pride_ui import pride_import_section
 from openms_insight import Table, Heatmap, LinePlot, SequenceView
@@ -852,6 +853,25 @@ class WorkflowTest(WorkflowManager):
         self.logger.log("Workflow stopped due to error")
         return False
 
+    def write_combined_exports(self, filtered_idxmls: list, design=None) -> None:
+        """Merge every file's filtered PSMs into one idXML and write the run's design.tsv.
+
+        Both are exports for other software; a failure is logged and the run goes on.
+        """
+        paths = combined_paths(self.results_dir)
+        paths["idxml"].parent.mkdir(parents=True, exist_ok=True)
+        self.logger.log("🔗 Merging the filtered PSMs of all files into one idXML...")
+        if not self.executor.run_topp(
+            "IDMerger",
+            {"in": [list(filtered_idxmls)], "out": [str(paths["idxml"])]},
+            {"annotate_file_origin": "true"},
+        ):
+            self.logger.log("⚠️ IDMerger failed; the merged idXML is not available for this run")
+        try:
+            write_design(self.results_dir, self.params, design)
+        except (OSError, ValueError) as e:
+            self.logger.log(f"⚠️ Could not write design.tsv: {e}")
+
     def prepare_search_database(self, fasta_path: Path):
         """Build the database to search: the FASTA, the cRAP contaminants and decoys.
 
@@ -1383,6 +1403,7 @@ class WorkflowTest(WorkflowManager):
             # A fractionated experiment needs the design, so ProteomicsLFQ combines
             # the fractions of each sample; otherwise every file is its own sample.
             design = load_design(self.workflow_dir, self.params["mzML-files"])
+            self.write_combined_exports(filter_results, design)
             lfq_design = {}
             if is_fractionated(design):
                 design_file = save_design(quant_dir, design, in_mzML)
@@ -1784,6 +1805,8 @@ class WorkflowTest(WorkflowManager):
                 # Downloadable exports: every PSM, and every PSM's matched
                 # fragment ions against its own spectrum
                 write_psm_exports(id_df, seq_view, results_dir_path / "exports", cache_id_prefix)
+
+            self.write_combined_exports(psm_filtered)
 
             # --- IDMapper ---
             self.logger.log("🗺️ Mapping IDs to isobaric consensus features...")

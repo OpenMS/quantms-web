@@ -22,7 +22,7 @@ env:
   # Name of the installer
   APP_NAME: OpenDDA
   # Define needed TOPP tools here
-  TOPP_TOOLS: "DecoyDatabase CometAdapter PercolatorAdapter IDFilter ProteomicsLFQ IsobaricAnalyzer IDMapper FileMerger ProteinInference IDConflictResolver ProteinQuantifier"
+  TOPP_TOOLS: "DecoyDatabase CometAdapter PercolatorAdapter IDFilter ProteomicsLFQ IsobaricAnalyzer IDMapper FileMerger ProteinInference IDConflictResolver ProteinQuantifier IDMerger"
 
 jobs:
   build-openms:
