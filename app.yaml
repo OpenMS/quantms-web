@@ -192,3 +192,6 @@ sync:
   - src/common/spectrum_view.py
   - src/pride.py
   - src/pride_ui.py
+  - tests/test_tasks.py
+  - tests/test_workspace_sync.py
+  - tests/test_workspace_selector.py
