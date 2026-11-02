@@ -161,3 +161,9 @@ rq>=1.16.0
 # from the CPU index: the default Linux wheel pulls in several GB of CUDA libraries.
 --extra-index-url https://download.pytorch.org/whl/cpu
 peptdeep==1.5.1
+# Reads Bruker timsTOF .d folders (TDF) for the conversion to mzML
+# (src/python-tools/bruker_to_mzml.py). Open-source, no vendor library.
+timsrust_pyo3==0.4.1
+
+# Reads app.yaml, the app spec (utils/app_spec.py)
+pyyaml>=6.0
