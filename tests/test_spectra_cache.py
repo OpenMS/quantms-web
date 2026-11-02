@@ -1,9 +1,11 @@
-"""build_spectra_cache: one row per MS2 peak, MS1 skipped, columns typed."""
+"""build_spectra_cache and peaks_for_identifications."""
 from pathlib import Path
 
 import pyopenms as oms
 
-from src.common.results_helpers import build_spectra_cache
+import polars as pl
+
+from src.common.results_helpers import build_spectra_cache, peaks_for_identifications
 
 
 def _write_mzml(path: Path) -> None:
@@ -43,3 +45,18 @@ def test_no_files(tmp_path):
     df, index = build_spectra_cache(tmp_path, {}, [])
     assert df.height == 0
     assert index == {}
+
+
+def test_peaks_for_identifications_keeps_identified_spectra_only():
+    spectra = pl.DataFrame({
+        "peak_id": [0, 1, 2, 3, 4],
+        "file_index": [0, 0, 0, 1, 1],
+        "scan_id": [2, 2, 3, 2, 3],
+        "mass": [100.0, 200.0, 150.0, 100.0, 150.0],
+        "intensity": [1.0, 2.0, 5.0, 1.0, 5.0],
+    })
+    ids = pl.DataFrame({"file_index": [0, 0, 1], "scan_id": [2, 2, 3]})
+
+    out = peaks_for_identifications(spectra, ids).collect()
+
+    assert out["peak_id"].to_list() == [0, 1, 4]

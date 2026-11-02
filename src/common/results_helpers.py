@@ -285,6 +285,18 @@ def parse_idxml(idxml_path: Path, filename_to_index: dict | None = None) -> tupl
     return pl.DataFrame(records, schema=ID_DF_SCHEMA), spectra_data
 
 
+def peaks_for_identifications(spectra_df: pl.DataFrame, id_df: pl.DataFrame) -> pl.LazyFrame:
+    """Peaks of only the spectra that ``id_df`` identifies.
+
+    ``spectra_df`` holds every MS2 peak of every input file. A SequenceView
+    only ever shows identified spectra, and each one writes its peaks to its
+    own cache, so passing the whole frame stored all files' peaks once per
+    file and search stage.
+    """
+    keys = id_df.lazy().select(["file_index", "scan_id"]).unique()
+    return spectra_df.lazy().join(keys, on=["file_index", "scan_id"], how="semi")
+
+
 def build_spectra_cache(mzml_dir: Path, filename_to_index: dict, mzml_files=None) -> tuple[pl.DataFrame, dict]:
     """Extract MS2 spectra from mzML files and return DataFrame.
 
