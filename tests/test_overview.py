@@ -115,3 +115,22 @@ def test_run_overview(tmp_path):
     assert figures["Peptides"] == 1
     assert figures["PSMs per MS2 (%)"] == round(100 * 2 / 14, 1)
     assert figures["Files"] == 2
+
+
+def test_run_overview_file_without_psms(tmp_path):
+    """A file whose PSMs were all filtered out counts as zero, not as a crash."""
+    from src.common.overview import run_overview
+
+    wf = tmp_path / "topp-workflow"
+    a, b = tmp_path / "a.mzML", tmp_path / "b.mzML"
+    _mzml(a, n_ms2=4)
+    _mzml(b, n_ms2=4)
+    _idxml(wf / "results" / "psm_filter" / "a_filter.idXML", [("PEPTIDEK", 2, _mz("PEPTIDEK", 2), "target")])
+    _idxml(wf / "results" / "psm_filter" / "b_filter.idXML", [])
+
+    per_file, figures = run_overview(wf, [str(a), str(b)])
+
+    row_a, row_b = per_file.to_dict("records")
+    assert row_a["Target PSMs"] == 1
+    assert row_b["Target PSMs"] == 0 and row_b["Peptides"] == 0
+    assert figures["Target PSMs"] == 1

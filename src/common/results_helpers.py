@@ -1,4 +1,5 @@
 """Helper functions for results pages."""
+import copy
 import json
 import re
 import pandas as pd
@@ -79,11 +80,13 @@ def get_run_params(workspace, run_id: str | None = None) -> dict:
     return params | {k: v for k, v in current.items() if k.startswith(GROUP_PREFIXES)}
 
 
-def run_picker(workspace=None) -> str | None:
+def run_picker(workspace=None, explain_empty: bool = True) -> str | None:
     """Picker for the run the results pages show. Returns its id.
 
     Results derived from another run (the group comparison, GO enrichment) are
-    dropped when the pick changes, including when a new run has finished.
+    dropped when the pick changes, including when a new run has finished. When
+    the newest run stopped without any PSM or protein, it says why (and stops the
+    page if there is no finished run to show); explain_empty=False skips that.
     """
     workspace = workspace or st.session_state.get("workspace")
     if workspace is None:
@@ -101,6 +104,10 @@ def run_picker(workspace=None) -> str | None:
         for key in RUN_DERIVED_KEYS:
             st.session_state.pop(key, None)
         st.session_state["_results_run"] = run_id
+    if explain_empty:
+        from src.common.guide import explain_empty_run  # guide imports this module
+
+        explain_empty_run(workspace, run_id)
     return run_id
 
 
@@ -271,6 +278,7 @@ ID_DF_SCHEMA = {
     "score": pl.Float64,
     "protein_accession": pl.Utf8,
     "contaminant": pl.Boolean,
+    "decoy": pl.Boolean,
     "proforma": pl.Utf8,
 }
 
@@ -282,6 +290,10 @@ PSM_TABLE_COLUMNS = [
     {"field": "mz", "title": "m/z", "sorter": "number"},
     {"field": "rt", "title": "RT", "sorter": "number"},
     {"field": "score", "title": "Score", "sorter": "number"},
+    # Only decoys get a mark (a tick, no cross on targets), so they stand out. Next to
+    # the score, so it stays in view when a narrow table folds the last columns away.
+    {"field": "decoy", "title": "Decoy", "formatter": "tickCross", "formatterParams": {"crossElement": False},
+     "sorter": "boolean", "hozAlign": "center"},
     {"field": "protein_accession", "title": "Proteins"},
     {"field": "contaminant", "title": "Contaminant", "formatter": "tickCross", "sorter": "boolean"},
     {"field": "proforma", "title": "ProForma", "visible": False},
@@ -292,7 +304,22 @@ PSM_TABLE_COLUMNS = [
 
 def psm_table_columns() -> list[dict]:
     """A fresh copy of PSM_TABLE_COLUMNS for one Table."""
-    return [dict(col) for col in PSM_TABLE_COLUMNS]
+    return copy.deepcopy(PSM_TABLE_COLUMNS)
+
+
+def is_decoy_hit(hit) -> bool:
+    """Whether a PeptideHit matched only decoy proteins.
+
+    PeptideIndexer (run by CometAdapter) sets ``target_decoy`` to ``target``,
+    ``decoy`` or ``target+decoy``. A peptide found in both a target and a decoy
+    protein counts as a target in the FDR, so only ``decoy`` is a decoy here.
+    """
+    if not hit.metaValueExists("target_decoy"):
+        return False
+    value = hit.getMetaValue("target_decoy")
+    if isinstance(value, bytes):
+        value = value.decode()
+    return value == "decoy"
 
 
 def parse_idxml(idxml_path: Path, filename_to_index: dict | None = None) -> tuple[pl.DataFrame, list[str]]:
@@ -344,6 +371,7 @@ def parse_idxml(idxml_path: Path, filename_to_index: dict | None = None) -> tupl
                 "score": h.getScore(),
                 "protein_accession": accessions,
                 "contaminant": is_contaminant(accessions),
+                "decoy": is_decoy_hit(h),
             })
 
     # Keep the columns when nothing was identified, so callers selecting

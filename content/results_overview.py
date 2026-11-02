@@ -4,6 +4,7 @@ from pathlib import Path
 import streamlit as st
 
 from src.common.common import page_setup
+from src.common.empty_result import fdr_summary
 from src.common.guide import needs_results, next_steps, page_intro
 from src.common.insight_tables import show_insight_table
 from src.common.overview import run_overview
@@ -79,6 +80,7 @@ def _show(value, unit: str = "") -> str:
 
 
 st.subheader("Key figures")
+st.caption(f"Filters of this run: {fdr_summary(workflow_params)}.")
 row1 = st.columns(4)
 row1[0].metric("Quantified proteins", _show(proteins), help="Proteins in the quantification result.")
 row1[1].metric("Peptides", _show(figures["Peptides"]), help=f"Distinct target peptide sequences at {fdr:g} % PSM FDR, over all files.")

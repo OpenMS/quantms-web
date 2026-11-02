@@ -6,7 +6,7 @@ and TMT) and guidance for getting started with the analysis pipeline.
 """
 
 import streamlit as st
-from src.common.common import page_setup
+from src.common.common import get_branding, page_setup
 from src.common.guide import page_link
 from src.common.installers import installers_available, render_installer_buttons
 
@@ -64,7 +64,11 @@ def render_desktop_download_box() -> None:
 
 page_setup(page="main")
 
-st.markdown("# OpenDDA: Find differentially abundant proteins in your samples")
+title_col, logo_col = st.columns([6, 1], vertical_alignment="center")
+with title_col:
+    st.markdown("# OpenDDA: Find differentially abundant proteins in your samples")
+with logo_col:
+    st.image(get_branding()["app_icon"], width=120)
 
 render_desktop_download_box()
 

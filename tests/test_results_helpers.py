@@ -45,8 +45,11 @@ def test_extract_filename_from_idxml_prefers_input_names():
     assert extract_filename_from_idxml(Path("sample_comet_perc_filter.idXML"), names) == "sample.mzML"
 
 
-def _write_idxml(path):
-    """Write a small idXML with one protein and two peptide hits."""
+def _write_idxml(path, target_decoy=None):
+    """Write a small idXML with one protein and two peptide hits.
+
+    ``target_decoy`` gives each hit's PeptideIndexer ``target_decoy`` value.
+    """
     prot = poms.ProteinIdentification()
     prot.setIdentifier("SEARCH_1")
     hit = poms.ProteinHit()
@@ -63,6 +66,8 @@ def _write_idxml(path):
         pep_hit = poms.PeptideHit()
         pep_hit.setSequence(poms.AASequence.fromString(seq))
         pep_hit.setCharge(2)
+        if target_decoy is not None:
+            pep_hit.setMetaValue("target_decoy", target_decoy[i])
         evidence = poms.PeptideEvidence()
         evidence.setProteinAccession("sp|P12345|TEST")
         pep_hit.setPeptideEvidences([evidence])
@@ -151,6 +156,30 @@ def test_psm_table_columns_exist_and_optional_ones_start_hidden():
     # Each Table gets its own copy
     columns[0]["title"] = "changed"
     assert psm_table_columns()[0]["title"] == "Sequence"
+
+
+def test_parse_idxml_marks_decoys(tmp_path):
+    """Only hits PeptideIndexer marked "decoy" are decoys; target+decoy is a target."""
+    idxml = tmp_path / "A_comet.idXML"
+    _write_idxml(idxml, target_decoy=["decoy", "target+decoy"])
+    id_df, _ = parse_idxml(idxml, {"A.mzML": 0})
+    assert id_df["decoy"].to_list() == [True, False]
+
+    unindexed = tmp_path / "B_comet.idXML"
+    _write_idxml(unindexed)
+    id_df, _ = parse_idxml(unindexed, {"B.mzML": 0})
+    assert id_df["decoy"].to_list() == [False, False]
+
+
+def test_psm_table_marks_only_decoys():
+    """The Decoy column ticks decoys and leaves targets blank, so decoys stand out."""
+    from src.common.results_helpers import psm_table_columns
+
+    decoy = next(c for c in psm_table_columns() if c["field"] == "decoy")
+    assert decoy["formatter"] == "tickCross"
+    assert decoy["formatterParams"] == {"crossElement": False}
+    decoy["formatterParams"]["crossElement"] = True
+    assert next(c for c in psm_table_columns() if c["field"] == "decoy")["formatterParams"]["crossElement"] is False
 
 
 def test_search_results_dir_falls_back_to_earlier_runs(tmp_path):

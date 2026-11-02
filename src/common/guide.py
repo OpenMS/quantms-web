@@ -4,6 +4,8 @@ Every page opens with ``page_intro`` (what the page answers and, folded away,
 the background a non-specialist needs to read it) and ends with ``next_steps``
 (where to go from here), so the app reads as one path from upload to biology.
 """
+from pathlib import Path
+
 import streamlit as st
 
 from src.common.differential import STEPS, describe_settings, resolve_settings, run_differential
@@ -132,3 +134,104 @@ def show_comparison_settings() -> None:
         for col, key in zip(cols, ["filtering", "imputation", "normalization", "statistics"]):
             with col:
                 page_link(key)
+
+
+@st.cache_data(show_spinner="Checking the run...")
+def _empty_run_diagnosis(run_dir: str, mzml_files: tuple, params_json: str, mtimes: tuple):
+    """diagnose_empty_run, cached on the run's result files."""
+    import json
+
+    from src.common.empty_result import diagnose_empty_run
+    from src.common.overview import count_ms2_spectra
+
+    def ms2_total():
+        counts = [count_ms2_spectra(f) for f in mzml_files]
+        known = [c for c in counts if c is not None]
+        return sum(known) if known else None
+
+    return diagnose_empty_run(Path(run_dir), json.loads(params_json), ms2_total)
+
+
+def latest_empty_run(workspace) -> tuple[str, str, dict] | None:
+    """(run id, run name, diagnosis) when the newest run stopped without results, else None.
+
+    A run that keeps no PSM (or no protein) stops with an error, so the results pages,
+    which list finished runs only, would show an older run or nothing at all.
+    """
+    import json
+
+    from src.common.results_helpers import get_run_dir, get_run_params, get_runs
+    from src.workflow.RunManager import FAILED
+
+    runs = get_runs(workspace)
+    newest = runs.list_runs()
+    if not newest or newest[0].get("status") != FAILED:
+        return None
+    run = newest[0]
+    run_dir = get_run_dir(workspace, run["id"])
+    files = sorted((run_dir / "results").glob("*/*.idXML"))
+    if not files:
+        return None
+    params = get_run_params(workspace, run["id"])
+    mzml_files = tuple(str(f) for f in params.get("mzML-files", []))
+    mtimes = tuple((str(f), f.stat().st_mtime) for f in files)
+    diagnosis = _empty_run_diagnosis(
+        str(run_dir), mzml_files, json.dumps(params, sort_keys=True, default=str), mtimes
+    )
+    if diagnosis is None:
+        return None
+    diagnosis["files"] = len(mzml_files)
+    return run["id"], run.get("name") or run["id"], diagnosis
+
+
+def show_empty_run(name: str, diagnosis: dict, links: bool = True) -> None:
+    """Say which step emptied the run, at which FDR, and the likely causes."""
+    if diagnosis["what"] == "protein":
+        st.warning(
+            f"**{name} identified no proteins.** Peptide-spectrum matches passed the PSM FDR, "
+            "but the protein FDR filter left no protein, so there is nothing to quantify."
+        )
+    else:
+        st.warning(
+            f"**{name} found no peptide-spectrum matches.** The {diagnosis['step']} left no "
+            "target PSM, so there are no peptides, proteins or quantities to show."
+        )
+    ms2 = diagnosis["ms2_spectra"]
+    st.markdown(
+        f"**Settings used:** PSM FDR {diagnosis['psm_fdr']} · protein FDR "
+        f"{diagnosis['protein_fdr']}"
+        + (f" · {ms2:,} MS2 spectra in {diagnosis['files']} file(s)" if ms2 is not None else "")
+    )
+    st.markdown(
+        "**Target PSMs after each step:** "
+        + " → ".join(
+            f"{c['step']} **{c['targets']:,}{' ' + c['unit'] if c.get('unit') else ''}**"
+            for c in diagnosis["counts"]
+        )
+    )
+    st.markdown("**Likely causes**, most likely first:")
+    st.markdown("\n".join(f"{i}. {cause}" for i, cause in enumerate(diagnosis["causes"], 1)))
+    if links:
+        cols = st.columns(3)
+        with cols[0]:
+            page_link("configure", "Change the settings")
+        with cols[1]:
+            page_link("run", "Run again")
+
+
+def explain_empty_run(workspace, shown_run: str | None) -> None:
+    """On a results page: explain a newest run that ended without results.
+
+    With no finished run to show instead, the explanation is the page and it stops.
+    Otherwise it is folded above the older run the page goes on to show.
+    """
+    found = latest_empty_run(workspace)
+    if found is None:
+        return
+    _, name, diagnosis = found
+    if shown_run is None:
+        show_empty_run(name, diagnosis)
+        st.stop()
+    what = "no proteins" if diagnosis["what"] == "protein" else "no peptide-spectrum matches"
+    with st.expander(f"⚠️ The newest run, {name}, ended with {what}. Why?"):
+        show_empty_run(name, diagnosis)

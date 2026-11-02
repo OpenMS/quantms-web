@@ -125,7 +125,9 @@ def run_overview(workflow_dir, mzml_files) -> tuple[pd.DataFrame, dict]:
         name = Path(mzml).name
         ms2 = count_ms2_spectra(mzml)
         psms = read_psms(filtered[name]) if name in filtered else None
-        targets = psms[~psms["decoy"]] if psms is not None else None
+        # astype(bool): an empty file gives an object column, and indexing with an
+        # empty object Series selects columns instead of rows
+        targets = psms[~psms["decoy"].astype(bool)] if psms is not None else None
         if targets is not None:
             all_psms.append(targets)
         rows.append({
