@@ -3,6 +3,7 @@ from pathlib import Path
 import re
 import json
 import shutil
+import sys
 import pandas as pd
 import plotly.express as px
 from streamlit_plotly_events import plotly_events
@@ -17,8 +18,9 @@ from src.common.common import page_setup
 from src.common.results_helpers import get_abundance_data
 from src.common.results_helpers import parse_idxml, build_spectra_cache, load_idxml, psm_table_columns, write_psm_exports, peaks_for_identifications
 from src.common.contaminants import CONTAMINANT_PREFIX, append_fasta, write_contaminants
-from src.common.fdr_display import FDR_QUICK_CHOICES, fdr_applied, matching_quick_choice, percent_label, q_label
+from src.common.fdr_display import FDR_QUICK_CHOICES, fdr_applied, fdr_label, matching_quick_choice, percent_label, q_label
 from src.common.isobaric import ISOBARIC_CHANNELS
+from src.common.ms2_prediction import peptdeep_available
 from src.common.lfq_design import groups_from_design, initial_groups, is_fractionated, seed_design
 from src.common.qpx_export import app_version, export_run
 from src.workflow.ExperimentalDesign import design_path, load_design, save_design, to_openms_design
@@ -430,6 +432,7 @@ class WorkflowTest(WorkflowManager):
                 flag_parameters=["post_processing_tdc"],
                 exclude_parameters=["out_type"],
             )
+            self.render_prediction_features_widget()
 
         with t[3]:
             st.info(FDR_INFO)
@@ -714,6 +717,7 @@ class WorkflowTest(WorkflowManager):
                 flag_parameters=["post_processing_tdc"],
                 tool_instance_name="PercolatorAdapter-TMT",
             )
+            self.render_prediction_features_widget()
 
         with t[4]:
             st.info(FDR_INFO)
@@ -880,6 +884,87 @@ class WorkflowTest(WorkflowManager):
                     del self.params[k]
                 self.parameter_manager.save_parameters()
 
+    def render_prediction_features_widget(self) -> None:
+        """Opt-in switch: AlphaPeptDeep features for Percolator (shared by both modes)."""
+        st.markdown("**Rescore with predicted spectra and retention times** (AlphaPeptDeep)")
+        available = peptdeep_available()
+        self.ui.input_widget(
+            key="rescore-predictions",
+            default=False,
+            name="Add predicted-spectrum features",
+            widget_type="checkbox",
+            help=(
+                "Predicts every match's fragment intensities and retention time with AlphaPeptDeep "
+                "and gives Percolator three more features: spectral angle and cosine similarity "
+                "between the measured and the predicted spectrum, and the retention-time "
+                "difference. Correct matches look like their prediction; wrong ones rarely do, "
+                "so more matches pass the same FDR. On a CPU it adds about 15 s to load the models "
+                "plus roughly 4 s per 1,000 matches."
+            ),
+            reactive=True,
+        )
+        if not available:
+            st.caption("AlphaPeptDeep (the peptdeep package) is not installed here, so this option has no effect.")
+            return
+        self.params = self.parameter_manager.get_parameters_from_json()
+        if self.params.get("rescore-predictions", False):
+            self.ui.input_widget(
+                key="rescore-instrument",
+                default="auto",
+                name="Instrument model",
+                widget_type="selectbox",
+                options=["auto", "QE", "Lumos", "Exploris", "Astral", "timsTOF", "SciexTOF", "Velos", "Elite"],
+                help=(
+                    "The instrument group whose fragmentation AlphaPeptDeep predicts. **auto** reads "
+                    "it from each mzML header and falls back to Lumos. The collision energy is "
+                    "calibrated on each file's confident matches."
+                ),
+            )
+
+    def add_prediction_features(self, search_results: list, in_mzML: list, comet_instance: str):
+        """Annotate the search results with AlphaPeptDeep features when the option is on.
+
+        Returns the idXMLs Percolator should read: the search results unchanged
+        when the option is off, the annotated copies when it is on, and None when
+        it is on but failed (the run stops).
+        """
+        if not self.params.get("rescore-predictions", False):
+            return search_results
+        if not peptdeep_available():
+            self.logger.log("❌ Predicted-spectrum features need the peptdeep package, which is not installed.")
+            self.logger.log("Workflow stopped due to error")
+            return None
+        out_dir = Path(self.results_dir, "prediction_features")
+        out_dir.mkdir(parents=True, exist_ok=True)
+        annotated = [str(out_dir / f"{Path(f).stem}_pd.idXML") for f in search_results]
+        comet_params = self.parameter_manager.get_topp_parameters("CometAdapter", comet_instance)
+        params_file = out_dir / "params.json"
+        summary_file = out_dir / "summary.json"
+        params_file.write_text(json.dumps({
+            "in": search_results,
+            "mzml": in_mzML,
+            "out": annotated,
+            "summary": str(summary_file),
+            "fragment_tolerance": float(comet_params.get("fragment_mass_tolerance", 0.02)),
+            "fragment_ppm": comet_params.get("fragment_error_units", "Da") != "Da",
+            "instrument": self.params.get("rescore-instrument", "auto"),
+        }, indent=2), encoding="utf-8")
+        self.logger.log("🧠 Predicting spectra and retention times (AlphaPeptDeep)...")
+        script = Path("src", "python-tools", "peptdeep_rescore.py")
+        ok = self.executor.run_command([sys.executable, str(script), str(params_file)])
+        params_file.unlink(missing_ok=True)
+        if not ok or not all(Path(f).exists() for f in annotated):
+            self.logger.log("Workflow stopped due to error")
+            return None
+        for s in json.loads(summary_file.read_text(encoding="utf-8")):
+            self.logger.log(
+                f"  {s['file']}: {s['instrument']}, NCE {s['nce']:g}, {s['predicted']} of {s['psms']} matches "
+                f"predicted; median spectral angle targets {s['median_angle_targets'] or 0:.2f}, "
+                f"decoys {s['median_angle_decoys'] or 0:.2f}"
+            )
+        self.logger.log("✅ Prediction features added")
+        return annotated
+
     def _has_identifications(self, idxml_files: list, stage: str) -> bool:
         """Return False, and log why, when no idXML file holds a peptide hit.
 
@@ -896,12 +981,21 @@ class WorkflowTest(WorkflowManager):
         )
         if n_hits > 0:
             return True
-        self.logger.log(
-            f"❌ No peptide identifications left after {stage}. "
-            "Check that the FASTA database matches the sample species, that the "
-            "precursor and fragment tolerances and enzyme fit the data, and that "
-            "the FDR threshold is not too strict."
-        )
+        if stage == "FDR filtering":
+            reason = (
+                f" at PSM FDR {fdr_label(self.psm_fdr() * 100)}. The threshold may be "
+                "stricter than any match reached (try 1 % or 5 %), there may be too few "
+                "spectra to estimate an FDR, or most matches are wrong: check that the "
+                "FASTA database matches the sample species and that the tolerances and "
+                "enzyme fit the data."
+            )
+        else:
+            reason = (
+                ". Check that the FASTA database matches the sample species, that the "
+                "precursor and fragment tolerances and enzyme fit the data, and that the "
+                "files hold enough MS2 spectra."
+            )
+        self.logger.log(f"❌ No peptide identifications left after {stage}{reason}")
         self.logger.log("Workflow stopped due to error")
         return False
 
@@ -1180,13 +1274,18 @@ class WorkflowTest(WorkflowManager):
             #     st.error(f"CometAdapter failed for {stem}")
             #     st.stop()
 
+            # --- Optional AlphaPeptDeep features ---
+            percolator_in = self.add_prediction_features(comet_results, in_mzML, "CometAdapter")
+            if percolator_in is None:
+                return False
+
             # --- PercolatorAdapter ---
             self.logger.log("📊 Running rescoring...")
             with st.spinner(f"PercolatorAdapter ({stem})"):
                 if not self.executor.run_topp(
                     "PercolatorAdapter",
                     {
-                        "in": comet_results,
+                        "in": percolator_in,
                         "out": percolator_results,
                     },
                     {"decoy_pattern": decoy_string},  # Always propagated from upstream
@@ -1680,13 +1779,18 @@ class WorkflowTest(WorkflowManager):
 
             self.logger.log("✅ Peptide search complete")
 
+            # --- Optional AlphaPeptDeep features ---
+            percolator_in = self.add_prediction_features(comet_results, in_mzML, "CometAdapter-TMT")
+            if percolator_in is None:
+                return False
+
             # --- PercolatorAdapter ---
             self.logger.log("📊 Running rescoring...")
             with st.spinner(f"PercolatorAdapter"):
                 if not self.executor.run_topp(
                     "PercolatorAdapter",
                     {
-                        "in": comet_results,
+                        "in": percolator_in,
                         "out": percolator_results,
                     },
                     {"decoy_pattern": decoy_string},  # Always propagated from upstream

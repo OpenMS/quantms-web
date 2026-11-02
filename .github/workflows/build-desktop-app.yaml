@@ -353,10 +353,11 @@ jobs:
 
     - name: End-to-end test in the Electron window
       # Drives the installed app with Playwright and opens every page, then runs this app's
-      # workflows and checks their results (tests/e2e/electron-workflows.js).
+      # workflows and checks their results (tests/e2e/electron-workflows.js, then
+      # tests/e2e/electron-rescoring.js with the AlphaPeptDeep features on).
       run: |
         $inst = Join-Path $env:LOCALAPPDATA "Programs/${{ env.APP_NAME }}"
-        node electron/scripts/e2e.js --exe "$inst/${{ env.APP_NAME }}.exe" --out e2e-output --scenario tests/e2e/electron-workflows.js
+        node electron/scripts/e2e.js --exe "$inst/${{ env.APP_NAME }}.exe" --out e2e-output --scenario tests/e2e/electron-workflows.js --scenario tests/e2e/electron-rescoring.js
         $code = $LASTEXITCODE
         $log = Join-Path $env:APPDATA "${{ env.APP_NAME }}/logs/streamlit.log"
         if (Test-Path $log) { Get-Content $log -Tail 200 }
@@ -607,18 +608,19 @@ jobs:
     - name: End-to-end test in the app window
       timeout-minutes: 120
       # Drives the installed app with Playwright and opens every page, then runs this app's
-      # workflows and checks their results (tests/e2e/electron-workflows.js).
+      # workflows and checks their results (tests/e2e/electron-workflows.js, then
+      # tests/e2e/electron-rescoring.js with the AlphaPeptDeep features on).
       run: |
         if [[ $RUNNER_OS == macOS ]]; then
           exe="$RUNNER_TEMP/dmg/$APP_NAME.app/Contents/MacOS/$APP_NAME"
           log="$HOME/Library/Application Support/$APP_NAME/logs/streamlit.log"
-          node electron/scripts/e2e.js --exe "$exe" --out e2e-output --scenario tests/e2e/electron-workflows.js && code=0 || code=$?
+          node electron/scripts/e2e.js --exe "$exe" --out e2e-output --scenario tests/e2e/electron-workflows.js --scenario tests/e2e/electron-rescoring.js && code=0 || code=$?
         else
           # The extracted AppImage, with APPIMAGE set as its runtime would.
           exe="$RUNNER_TEMP/squashfs-root/$(tr '[:upper:]' '[:lower:]' <<<"$APP_NAME")"
           log="$HOME/.config/$APP_NAME/logs/streamlit.log"
           APPIMAGE="$PWD/electron/dist/$APP_NAME-Linux-x86_64.AppImage" \
-            xvfb-run -a node electron/scripts/e2e.js --exe "$exe" --out e2e-output --scenario tests/e2e/electron-workflows.js && code=0 || code=$?
+            xvfb-run -a node electron/scripts/e2e.js --exe "$exe" --out e2e-output --scenario tests/e2e/electron-workflows.js --scenario tests/e2e/electron-rescoring.js && code=0 || code=$?
         fi
         tail -n 200 "$log" || true
         exit $code

@@ -3,6 +3,22 @@
     "github-user": "OpenMS",
     "version": "1.2.2",
     "repository-name": "quantms-web",
+    "branding": {
+        "page_icon": "assets/opendda-icon-small-light.svg",
+        "logo": {
+            "light": "assets/opendda-logo-horizontal-light.svg",
+            "dark": "assets/opendda-logo-horizontal-white.svg"
+        },
+        "logo_icon": {
+            "light": "assets/opendda-icon-small-light.svg",
+            "dark": "assets/opendda-icon-small.svg"
+        },
+        "app_icon": {
+            "light": "assets/opendda-icon-light.svg",
+            "dark": "assets/opendda-icon.svg"
+        },
+        "logo_size": "large"
+    },
     "legal_links": {
         "impressum": "https://openms.de/impressum",
         "privacy": "https://openms.de/privacy",
