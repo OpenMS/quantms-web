@@ -17,7 +17,7 @@ from src.common.common import page_setup
 from src.common.results_helpers import get_abundance_data
 from src.common.results_helpers import parse_idxml, build_spectra_cache, load_idxml, psm_table_columns, write_psm_exports, peaks_for_identifications
 from src.common.contaminants import CONTAMINANT_PREFIX, append_fasta, write_contaminants
-from src.common.fdr_display import FDR_QUICK_CHOICES, fdr_applied, matching_quick_choice, percent_label, q_label
+from src.common.fdr_display import FDR_QUICK_CHOICES, fdr_applied, fdr_label, matching_quick_choice, percent_label, q_label
 from src.common.isobaric import ISOBARIC_CHANNELS
 from src.common.lfq_design import groups_from_design, initial_groups, is_fractionated, seed_design
 from src.workflow.ExperimentalDesign import design_path, load_design, save_design, to_openms_design
@@ -895,12 +895,21 @@ class WorkflowTest(WorkflowManager):
         )
         if n_hits > 0:
             return True
-        self.logger.log(
-            f"❌ No peptide identifications left after {stage}. "
-            "Check that the FASTA database matches the sample species, that the "
-            "precursor and fragment tolerances and enzyme fit the data, and that "
-            "the FDR threshold is not too strict."
-        )
+        if stage == "FDR filtering":
+            reason = (
+                f" at PSM FDR {fdr_label(self.psm_fdr() * 100)}. The threshold may be "
+                "stricter than any match reached (try 1 % or 5 %), there may be too few "
+                "spectra to estimate an FDR, or most matches are wrong: check that the "
+                "FASTA database matches the sample species and that the tolerances and "
+                "enzyme fit the data."
+            )
+        else:
+            reason = (
+                ". Check that the FASTA database matches the sample species, that the "
+                "precursor and fragment tolerances and enzyme fit the data, and that the "
+                "files hold enough MS2 spectra."
+            )
+        self.logger.log(f"❌ No peptide identifications left after {stage}{reason}")
         self.logger.log("Workflow stopped due to error")
         return False
 

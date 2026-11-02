@@ -78,11 +78,13 @@ def get_run_params(workspace, run_id: str | None = None) -> dict:
     return params | {k: v for k, v in current.items() if k.startswith(GROUP_PREFIXES)}
 
 
-def run_picker(workspace=None) -> str | None:
+def run_picker(workspace=None, explain_empty: bool = True) -> str | None:
     """Picker for the run the results pages show. Returns its id.
 
     Results derived from another run (the group comparison, GO enrichment) are
-    dropped when the pick changes, including when a new run has finished.
+    dropped when the pick changes, including when a new run has finished. When
+    the newest run stopped without any PSM or protein, it says why (and stops the
+    page if there is no finished run to show); explain_empty=False skips that.
     """
     workspace = workspace or st.session_state.get("workspace")
     if workspace is None:
@@ -100,6 +102,10 @@ def run_picker(workspace=None) -> str | None:
         for key in RUN_DERIVED_KEYS:
             st.session_state.pop(key, None)
         st.session_state["_results_run"] = run_id
+    if explain_empty:
+        from src.common.guide import explain_empty_run  # guide imports this module
+
+        explain_empty_run(workspace, run_id)
     return run_id
 
 
