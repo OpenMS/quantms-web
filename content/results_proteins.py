@@ -172,11 +172,10 @@ if selected in coverage and selected in fasta_entries:
 st.subheader("Peptides of the selected protein")
 show_insight_table(
     peptides, name="protein_peptides", cache_dir=cache_dir, source_files=source_files,
-    extra_key=f"q|{q_max}",
+    extra_key=f"q|{q_max}|{'per-sample' if fractions else ''}",
     title="peptides", height=350, state_manager=state_manager,
     filters={"protein": "accession"}, interactivity={"peptide": "peptide"},
     column_overrides={"accession": HIDDEN},
-    extra_key="per-sample" if fractions else "",
 )
 
 st.subheader("PSMs of the selected peptide")
