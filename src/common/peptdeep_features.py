@@ -5,7 +5,7 @@ engine score cannot see:
 
 - ``peptdeep:spectral_angle``: normalised spectral contrast angle between the
   measured spectrum and AlphaPeptDeep's predicted b/y intensities (1 identical,
-  0 nothing in common), as in Prosit/MS2Rescore;
+  0 nothing in common);
 - ``peptdeep:cosine``: cosine similarity of the same two vectors;
 - ``peptdeep:delta_rt``: absolute difference in seconds between the measured
   retention time and the predicted one, after a linear calibration of the
