@@ -40,15 +40,6 @@ def render_desktop_download_box() -> None:
 
         render_installer_buttons(app_name="OpenDDA")
 
-        st.markdown(
-            """
-            <div style="text-align: center; margin-top: 1rem; color: #6c757d;">
-                Even offline, it's still a web app - just packaged so you can use it without an internet connection.
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
     st.markdown(
         f"""
         <style>
