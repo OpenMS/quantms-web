@@ -8,6 +8,7 @@ from src.common.common import page_setup
 from src.common.guide import needs_results, next_steps, page_intro
 from src.common.insight_tables import show_insight_table
 from src.common.protein_table import build_tables, collect_psms, coverage_html, read_fasta
+from src.common.fractions import fraction_samples
 from src.common.results_helpers import run_picker, get_run_dir, get_run_params
 from src.common.spectrum_view import fragment_tolerance, show_spectrum
 from src.WorkflowTest import WorkflowTest
@@ -57,12 +58,19 @@ source_files = [*idxml_files, *([fasta_path] if fasta_path and fasta_path.is_fil
 
 
 @st.cache_data(show_spinner="Building protein tables...")
-def load_tables(paths: tuple[str, ...], fasta: str | None, mtimes: tuple[float, ...], mzml_names: tuple[str, ...]):
+def load_tables(
+    paths: tuple[str, ...], fasta: str | None, mtimes: tuple[float, ...], mzml_names: tuple[str, ...],
+    samples: tuple[tuple[str, str], ...] = (),
+):
     # mtimes only key the cache, so a re-run of the workflow invalidates it
     psms = collect_psms([Path(p) for p in paths], list(mzml_names))
     fasta_entries = read_fasta(fasta) if fasta else {}
     files = sorted(psms["file"].unique())
-    return (*build_tables(psms, fasta_entries, files), fasta_entries)
+    return (*build_tables(psms, fasta_entries, files, dict(samples) or None), fasta_entries)
+
+
+# A run whose samples were split into fractions counts per sample, not per file
+fractions = fraction_samples(filter_dir.parent, run_params) or {}
 
 
 proteins, peptides, psms_long, coverage, fasta_entries = load_tables(
@@ -70,6 +78,7 @@ proteins, peptides, psms_long, coverage, fasta_entries = load_tables(
     str(fasta_path) if fasta_path and fasta_path.is_file() else None,
     tuple(p.stat().st_mtime for p in source_files),
     tuple(mzml_names),
+    tuple(sorted((f, info["sample"]) for f, info in fractions.items())),
 )
 
 if proteins.empty:
@@ -96,6 +105,8 @@ show_insight_table(
     title="proteins", height=450, state_manager=state_manager,
     interactivity={"protein": "accession"},
     column_overrides={"coverage (%)": decimals(1)},
+    # per-sample columns for fractionated runs; the cache follows the source files only
+    extra_key="per-sample" if fractions else "",
 )
 
 selected = state_manager.get_selection("protein")
@@ -115,6 +126,7 @@ show_insight_table(
     title="peptides", height=350, state_manager=state_manager,
     filters={"protein": "accession"}, interactivity={"peptide": "peptide"},
     column_overrides={"accession": HIDDEN},
+    extra_key="per-sample" if fractions else "",
 )
 
 st.subheader("PSMs of the selected peptide")

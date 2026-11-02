@@ -7,6 +7,7 @@ from src.common.guide import needs_results, next_steps, page_intro
 from src.common.results_helpers import get_workflow_dir, get_abundance_data, run_picker, get_run_dir, get_run_params
 from src.common.insight_tables import show_insight_table
 from src.common.contaminants import CONTAMINANT_PREFIX, contaminant_mask
+from src.common.fractions import fraction_samples, sample_of
 
 params = page_setup()
 run_picker()
@@ -140,6 +141,14 @@ try:
                 "state, with its protein, sequence and intensity in every sample."
             )
             psm_df = df.copy()
+            fractions = fraction_samples(run_dir / "results", workflow_params)
+            if fractions and "Reference" in psm_df.columns:
+                # Name the sample each fraction file belongs to, as the protein table does
+                psm_df.insert(
+                    psm_df.columns.get_loc("Reference") + 1,
+                    "Sample",
+                    psm_df["Reference"].map(lambda ref: sample_of(ref, fractions)),
+                )
             if "ProteinName" in psm_df.columns:
                 is_con = contaminant_mask(psm_df["ProteinName"]).to_numpy()
                 psm_df.insert(1, "Contaminant", is_con)
@@ -150,7 +159,7 @@ try:
                 name="abundance_psm",
                 cache_dir=cache_dir,
                 source_files=table_sources,
-                extra_key=contaminant_key,
+                extra_key=f"{contaminant_key};samples={bool(fractions)}",
                 title="psm_quantification",
             )
 

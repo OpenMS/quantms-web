@@ -17,8 +17,10 @@ from src.common.common import page_setup
 from src.common.results_helpers import get_abundance_data
 from src.common.results_helpers import parse_idxml, build_spectra_cache, load_idxml, psm_table_columns, write_psm_exports, peaks_for_identifications
 from src.common.contaminants import CONTAMINANT_PREFIX, append_fasta, write_contaminants
+from src.common.fdr_display import FDR_QUICK_CHOICES, fdr_applied, fdr_label, matching_quick_choice, percent_label, q_label
 from src.common.isobaric import ISOBARIC_CHANNELS
 from src.common.lfq_design import groups_from_design, initial_groups, is_fractionated, seed_design
+from src.common.qpx_export import app_version, export_run
 from src.workflow.ExperimentalDesign import design_path, load_design, save_design, to_openms_design
 from src.pride_ui import pride_import_section
 from openms_insight import Table, Heatmap, LinePlot, SequenceView
@@ -86,8 +88,8 @@ at the same error rate. The defaults suit every experiment.
 
 FDR_INFO = """
 **How many wrong matches you accept.** The false discovery rate (FDR) is the share of
-reported matches expected to be wrong. **1 %** is the community standard and what journals
-expect; raise it only for exploration. 100 % switches the filter off.
+reported matches expected to be wrong. **1 %** (q ≤ 0.01) is the community standard and what journals
+expect; raise it only for exploration. 100 % switches the filter off.
 """
 
 
@@ -230,18 +232,69 @@ class WorkflowTest(WorkflowManager):
         self.params = params
         self.ui.params = params
 
+    @st.fragment
     def render_psm_fdr_widget(self) -> None:
-        self.ui.input_widget(
-            key="psm-fdr-percent",
-            default=1.0,
-            name="False discovery rate for peptide matches (%)",
-            widget_type="number",
-            min_value=0.001,
-            max_value=100.0,
-            step_size=1.0,
-            help="Keep peptide-spectrum matches (PSMs) with a q-value up to this level. 1 % is the "
-                 "standard; 100 % disables the filter and passes every PSM on.",
-        )
+        """PSM FDR as quick choices (0.1 / 1 / 5 %) plus a number field, read back as a q-value.
+
+        The level is stored as "psm-fdr-percent"; the chips only write that field, so a
+        value typed in the field and one picked from a chip are the same parameter.
+        """
+        number_key = f"{self.parameter_manager.param_prefix}psm-fdr-percent"
+        chip_key = "psm-fdr-quick-choice"  # outside param_prefix: not a parameter
+
+        def chip_changed():
+            choice = st.session_state.get(chip_key)
+            if choice is not None:
+                st.session_state[number_key] = float(choice)
+
+        def number_changed():
+            st.session_state[chip_key] = matching_quick_choice(st.session_state.get(number_key))
+
+        current = st.session_state.get(number_key, self.params.get("psm-fdr-percent", 1.0))
+        if chip_key not in st.session_state:
+            st.session_state[chip_key] = matching_quick_choice(current)
+
+        st.markdown("**False discovery rate for peptide-spectrum matches (PSMs)**")
+        c1, c2, c3 = st.columns([2, 2, 3], vertical_alignment="bottom")
+        with c1:
+            st.segmented_control(
+                "Common choices",
+                options=list(FDR_QUICK_CHOICES),
+                format_func=percent_label,
+                key=chip_key,
+                on_change=chip_changed,
+                help="0.1 % for a strict list, 1 % is the community standard, "
+                     "5 % for exploration.",
+            )
+        with c2:
+            self.ui.input_widget(
+                key="psm-fdr-percent",
+                default=1.0,
+                name="PSM FDR (%)",
+                widget_type="number",
+                min_value=0.001,
+                max_value=100.0,
+                step_size=1.0,
+                help="Keep PSMs with a q-value up to this level: 1 % keeps q ≤ 0.01. "
+                     "100 % switches the filter off and passes every PSM on.",
+                on_change=number_changed,
+                reactive=True,
+            )
+        level = st.session_state.get(number_key, current)
+        with c3:
+            if fdr_applied(level):
+                st.markdown(
+                    f"<div style='font-size:1.15rem;padding-bottom:0.45rem'>"
+                    f"<b>{percent_label(level)}</b> &nbsp;=&nbsp; keep PSMs with "
+                    f"<b>{q_label(level)}</b></div>",
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.markdown(
+                    "<div style='padding-bottom:0.45rem'><b>100 %</b>: PSM FDR filter "
+                    "<b>not applied</b>, every PSM is passed on</div>",
+                    unsafe_allow_html=True,
+                )
 
     def psm_fdr(self) -> float:
         """PSM FDR threshold as a fraction (1.0 means no filtering)."""
@@ -843,14 +896,37 @@ class WorkflowTest(WorkflowManager):
         )
         if n_hits > 0:
             return True
-        self.logger.log(
-            f"❌ No peptide identifications left after {stage}. "
-            "Check that the FASTA database matches the sample species, that the "
-            "precursor and fragment tolerances and enzyme fit the data, and that "
-            "the FDR threshold is not too strict."
-        )
+        if stage == "FDR filtering":
+            reason = (
+                f" at PSM FDR {fdr_label(self.psm_fdr() * 100)}. The threshold may be "
+                "stricter than any match reached (try 1 % or 5 %), there may be too few "
+                "spectra to estimate an FDR, or most matches are wrong: check that the "
+                "FASTA database matches the sample species and that the tolerances and "
+                "enzyme fit the data."
+            )
+        else:
+            reason = (
+                ". Check that the FASTA database matches the sample species, that the "
+                "precursor and fragment tolerances and enzyme fit the data, and that the "
+                "files hold enough MS2 spectra."
+            )
+        self.logger.log(f"❌ No peptide identifications left after {stage}{reason}")
         self.logger.log("Workflow stopped due to error")
         return False
+
+    def write_qpx(self) -> None:
+        """Export the filtered PSMs and the run's provenance as QPX Parquet (an export; failures are logged)."""
+        self.logger.log("📦 Writing the QPX export (PSMs and provenance)...")
+        try:
+            log = Path(self.workflow_dir, "logs", "commands-and-run-times.log")
+            out = export_run(
+                self.results_dir, self.workflow_dir, self.params,
+                log.read_text(encoding="utf-8", errors="ignore") if log.is_file() else "",
+                app_version(),
+            )
+            self.logger.log(f"✅ QPX export: {out['psms']} PSMs in {Path(out['psm']).name}")
+        except Exception as e:  # an export must not fail the run
+            self.logger.log(f"⚠️ QPX export failed: {e}")
 
     def prepare_search_database(self, fasta_path: Path):
         """Build the database to search: the FASTA, the cRAP contaminants and decoys.
@@ -1431,6 +1507,8 @@ class WorkflowTest(WorkflowManager):
             #     st.error("ProteomicsLFQ failed: mzTab not created")
             #     st.stop()
 
+            self.write_qpx()
+
             # ================================
             # 5️⃣ Final report
             # # ================================
@@ -1883,7 +1961,8 @@ class WorkflowTest(WorkflowManager):
                     return False
             self.logger.log("✅ ProteinQuantifier complete")
             self.logger.log("📄 Generating protein table...")
-            
+            self.write_qpx()
+
             self.logger.log("🎉 WORKFLOW FINISHED")
 
     @st.fragment

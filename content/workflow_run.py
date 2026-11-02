@@ -1,7 +1,7 @@
 import streamlit as st
 from pathlib import Path
 from src.common.common import page_setup
-from src.common.guide import page_intro
+from src.common.guide import latest_empty_run, page_intro, show_empty_run
 from src.common.run_estimate import estimate, format_minutes, total_memory
 from src.WorkflowTest import WorkflowTest
 
@@ -81,4 +81,12 @@ def show_estimate() -> None:
 
 
 show_estimate()
+# A run that kept no PSM or protein stops with an error; say why in plain words
+if "workspace" in st.session_state:
+    empty = latest_empty_run(st.session_state["workspace"])
+    if empty is not None:
+        _, run_name, diagnosis = empty
+        show_empty_run(run_name, diagnosis, links=False)
+
 wf.show_execution_section()
+

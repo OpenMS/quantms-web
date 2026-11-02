@@ -4,7 +4,7 @@ import pandas as pd
 import polars as pl
 import pytest
 
-from src.common.ms2_prediction import match_peaks, mirror_frame, spectral_angle
+from src.common.ms2_prediction import cosine_similarity, match_peaks, mirror_frame, spectral_angle
 
 pytest.importorskip("alphabase")
 
@@ -34,6 +34,15 @@ def test_spectral_angle_bounds():
     assert spectral_angle(np.array([1.0, 2.0]), np.array([2.0, 4.0])) == pytest.approx(1.0)
     assert spectral_angle(np.array([1.0, 0.0]), np.array([0.0, 1.0])) == pytest.approx(0.0)
     assert spectral_angle(np.zeros(2), np.array([0.0, 1.0])) == 0.0
+
+
+def test_cosine_similarity_bounds_and_relation_to_angle():
+    assert cosine_similarity(np.array([1.0, 2.0]), np.array([2.0, 4.0])) == pytest.approx(1.0)
+    assert cosine_similarity(np.array([1.0, 0.0]), np.array([0.0, 1.0])) == pytest.approx(0.0)
+    assert cosine_similarity(np.zeros(2), np.array([0.0, 1.0])) == 0.0
+    a, b = np.array([1.0, 0.5, 0.0]), np.array([0.8, 1.0, 0.3])
+    # the cosine is never below the normalised spectral angle of the same pair
+    assert cosine_similarity(a, b) >= spectral_angle(a, b)
 
 
 def test_mirror_frame_keeps_measured_peak_ids_and_scales_both_sides():
