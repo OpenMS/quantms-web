@@ -54,11 +54,6 @@ _MOCKED_MODULES = {
     # Local submodules with their own heavy deps (e.g. the captcha image library).
     "src.common.captcha_": MagicMock(),
     "src.common.admin": MagicMock(),
-    # Imported by common.py and bound to whatever `streamlit` is in sys.modules
-    # at that moment. Imported here for the first time (this module sorts
-    # before tests/test_developer_mode.py), it would stay cached with the mock
-    # and break every AppTest page that reads st.session_state.settings.
-    "src.common.developer": MagicMock(),
 }
 _saved_modules = {name: sys.modules.get(name) for name in _MOCKED_MODULES}
 sys.modules.update(_MOCKED_MODULES)
