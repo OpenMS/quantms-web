@@ -88,6 +88,9 @@ sys.modules.update(_MOCKED_MODULES)
 _package = sys.modules.get("src.common")
 _saved_attribute = getattr(_package, "common", None) if _package is not None else None
 _saved_common = sys.modules.pop("src.common.common", None)
+# common.py imports src.common.developer, which binds `st` at import time, so
+# it must be re-imported under the mock too and restored afterwards.
+_saved_developer = sys.modules.pop("src.common.developer", None)
 
 common = importlib.import_module("src.common.common")  # noqa: E402
 
@@ -96,6 +99,10 @@ for _name, _original in _saved_modules.items():
         sys.modules.pop(_name, None)
     else:
         sys.modules[_name] = _original
+if _saved_developer is None:
+    sys.modules.pop("src.common.developer", None)
+else:
+    sys.modules["src.common.developer"] = _saved_developer
 if _saved_common is None:
     sys.modules.pop("src.common.common", None)
 else:
