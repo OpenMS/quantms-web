@@ -76,9 +76,10 @@ def test_variant_follows_a_rebuilt_base(tmp_path):
     assert data["sequence_display"].to_list() == ["ELVISK"]
 
 
-def test_filtered_table_adds_q_values_and_searches(tmp_path):
+def test_filtered_table_adds_q_values_and_a_filter_menu(tmp_path):
     import pyopenms as poms
-    from src.common.sequence_display import CLEAN_FIELD, Q_FIELD, Q_IDENTIFIER, filtered_table_id
+    from openms_insight import Table
+    from src.common.sequence_display import CLEAN_FIELD, Q_FIELD, filtered_table_id
 
     _base_table(tmp_path)
     # The run's idXML, hits in id_idx order with their q-values
@@ -98,18 +99,26 @@ def test_filtered_table_adds_q_values_and_searches(tmp_path):
     idxml = tmp_path / "run.idXML"
     poms.IdXMLFile().store(str(idxml), [poms.ProteinIdentification()], peptides)
 
-    variant = filtered_table_id(tmp_path, "table_run", "ProForma", idxml)
+    suggestions = [{"value": 0.01, "label": "1 % (run)"}, {"value": 0.001, "label": "0.1 %"}]
+    variant = filtered_table_id(tmp_path, "table_run", "ProForma", idxml, suggestions)
     data = pl.read_parquet(tmp_path / variant / "preprocessed" / "data.parquet").sort("id_idx")
     assert data[Q_FIELD].to_list() == pytest.approx([0.004, 0.0002])
     assert data[CLEAN_FIELD].to_list() == [True, True]
-    manifest = json.loads((tmp_path / variant / "manifest.json").read_text())
-    assert manifest["config"]["range_filters"] == {Q_IDENTIFIER: [Q_FIELD, "q_ceiling"]}
-    assert manifest["config"]["toggle_filters"][0]["column"] == CLEAN_FIELD
-    fields = [c["field"] for c in manifest["config"]["column_definitions"]]
+    config = json.loads((tmp_path / variant / "manifest.json").read_text())["config"]
+    assert config["toggle_filters"][0]["column"] == CLEAN_FIELD
+    assert config["numeric_filters"][Q_FIELD]["op"] == "<="
+    assert [s["value"] for s in config["numeric_filters"][Q_FIELD]["suggestions"]] == [0.01, 0.001]
+    assert "sequence" in config["search"] and "sequence_display" in config["search"]
+    fields = [c["field"] for c in config["column_definitions"]]
     assert fields.index(Q_FIELD) == fields.index("score") + 1
+    # Built once: the same id while the run and its FDR stay
+    assert filtered_table_id(tmp_path, "table_run", "ProForma", idxml, suggestions) == variant
 
-    # A search keeps the matching rows (any modification form) and replaces the variant
-    searched = filtered_table_id(tmp_path, "table_run", "ProForma", idxml, "m[oxidation]")
-    assert searched != variant and not (tmp_path / variant).exists()
-    data = pl.read_parquet(tmp_path / searched / "preprocessed" / "data.parquet")
-    assert data["id_idx"].to_list() == [0]
+    # The table searches and thresholds itself, in any modification form
+    table = Table(cache_id=variant, cache_path=str(tmp_path))
+    page = table._pagination_identifier
+    rows = table._prepare_vue_data({page: {"page": 1, "search": "m[oxidation]"}})["tableData"]
+    assert rows["id_idx"].tolist() == [0]
+    q_filter = [{"field": Q_FIELD, "type": "<=", "value": 0.001}]
+    rows = table._prepare_vue_data({page: {"page": 1, "column_filters": q_filter}})["tableData"]
+    assert rows["id_idx"].tolist() == [1]

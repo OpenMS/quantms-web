@@ -89,33 +89,36 @@ def psm_table(cache_dir: Path, table_id: str, mode: str, state_manager, height: 
     table(state_manager=state_manager, height=height)
 
 
-# Filter bar of the PSM page: q-value and contaminant columns, and the rows matching a search
+# The PSM page's table menu: a q-value column with thresholds, a contaminant
+# switch, and a search over the sequence (in every written form) and proteins
 Q_FIELD = "q_value"
-Q_CEILING_FIELD = "q_ceiling"
 CLEAN_FIELD = "not_contaminant"
-Q_IDENTIFIER = "psm_q_max"
 SEARCH_FIELDS = ("sequence", DISPLAY_FIELD, "proforma", "protein_accession")
+SEARCH_PLACEHOLDER = "Peptide or protein"
 
 
-def filtered_table_id(cache_dir: Path, table_id: str, mode: str, idxml_path: Path, query: str = "") -> str:
-    """Cache id of the PSM table with a q-value column, a contaminant switch and only
-    the rows matching ``query``; built on first use, from the table in ``mode``.
+def filtered_table_id(
+    cache_dir: Path, table_id: str, mode: str, idxml_path: Path, q_suggestions: list | None = None,
+) -> str:
+    """Cache id of the PSM table with a q-value column, a contaminant switch, a
+    search box and q-value thresholds in its filter dialog; built on first use,
+    from the table in ``mode``.
 
-    The q-value threshold is a range filter on the ``psm_q_max`` selection
-    (q_value <= threshold <= q_ceiling), so changing it needs no new cache.
+    The table filters itself (in Python, over every row), so neither a search
+    nor a threshold needs a new cache.
     """
     import hashlib
 
-    from src.common.result_filters import q_value_per_hit, text_mask
+    from src.common.result_filters import q_value_per_hit
     from src.common.results_helpers import load_idxml
 
     source_id = display_table_id(cache_dir, table_id, mode)
     source = Path(cache_dir) / source_id
     manifest = json.loads((source / "manifest.json").read_text())
     generation = str(manifest.get("cache_generation", ""))[:8]
-    query = " ".join((query or "").split())
-    digest = hashlib.sha1(f"{source_id}|{query}".encode()).hexdigest()[:8]
-    prefix = f"{table_id}__f2"  # bump when the variant's layout changes
+    q_suggestions = list(q_suggestions or [])
+    digest = hashlib.sha1(f"{source_id}|{json.dumps(q_suggestions, sort_keys=True)}".encode()).hexdigest()[:8]
+    prefix = f"{table_id}__f3"  # bump when the variant's layout changes
     variant_id = f"{prefix}{digest}_{generation}"
     if (Path(cache_dir) / variant_id).is_dir():
         return variant_id
@@ -129,12 +132,8 @@ def filtered_table_id(cache_dir: Path, table_id: str, mode: str, idxml_path: Pat
     q = [float(q_values[i]) if ok else None for i, ok in zip(ids, in_range)]
     data = data.with_columns(
         pl.Series(Q_FIELD, q, dtype=pl.Float64).fill_nan(None),
-        pl.lit(1.0).alias(Q_CEILING_FIELD),
         (~pl.col("contaminant")).alias(CLEAN_FIELD) if "contaminant" in data.columns else pl.lit(True).alias(CLEAN_FIELD),
     )
-    if query:
-        frame = data.select([c for c in SEARCH_FIELDS if c in data.columns]).to_pandas()
-        data = data.filter(pl.Series(text_mask(frame, frame.columns, query).to_numpy()))
 
     config = manifest["config"]
     # Rounded for display (the cache holds float32 noise like 494.2902526855469),
@@ -162,25 +161,18 @@ def filtered_table_id(cache_dir: Path, table_id: str, mode: str, idxml_path: Pat
         layout=config.get("layout", "fitDataFill"),
         page_size=config.get("page_size", 100),
         toggle_filters=[{"label": "Hide contaminants", "column": CLEAN_FIELD, "default": False}],
-        range_filters={Q_IDENTIFIER: [Q_FIELD, Q_CEILING_FIELD]},
+        search=[c for c in SEARCH_FIELDS if c in data.columns],
+        search_placeholder=SEARCH_PLACEHOLDER,
+        numeric_filters={Q_FIELD: {"op": "<=", "suggestions": q_suggestions}},
     )
     return variant_id
 
 
 def filtered_psm_table(
     cache_dir: Path, table_id: str, mode: str, state_manager, idxml_path: Path,
-    query: str = "", q_max: float | None = None, height: int = 533,
-) -> int:
-    """Render the PSM table through the filter bar's search and q-value threshold.
-
-    Returns the number of rows matching the search (before the q-value and
-    contaminant filters, which the table applies itself).
-    """
-    variant_id = filtered_table_id(cache_dir, table_id, mode, idxml_path, query)
-    if q_max is None:
-        state_manager.clear_selection(Q_IDENTIFIER)
-    else:
-        state_manager.set_selection(Q_IDENTIFIER, q_max)
+    q_suggestions: list | None = None, height: int = 533,
+) -> None:
+    """Render the PSM table with its search box, q-value thresholds and contaminant switch."""
+    variant_id = filtered_table_id(cache_dir, table_id, mode, idxml_path, q_suggestions)
     table = Table(cache_id=variant_id, cache_path=str(cache_dir))
     table(state_manager=state_manager, height=height)
-    return pl.scan_parquet(Path(cache_dir) / variant_id / "preprocessed" / "data.parquet").select(pl.len()).collect().item()

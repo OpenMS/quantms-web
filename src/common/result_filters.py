@@ -1,18 +1,19 @@
-"""Filters of the filter bars on the PSM and protein pages, without Streamlit.
+"""Filters of the PSM and protein tables, without Streamlit.
 
+The tables filter themselves (openms-insight's search box and filter dialog);
+this module adds the columns they filter on and the thresholds they offer.
 Every table on those pages holds only what passed the run's PSM FDR, so a
-q-value threshold here can only tighten it; the choices offered never exceed
-the run's level.
+q-value threshold can only tighten it: the values offered never exceed the
+run's level.
 """
 
 from __future__ import annotations
-
-import re
 
 import numpy as np
 import pandas as pd
 
 from src.common.contaminants import is_contaminant
+from src.common.fdr_display import percent_label
 
 # Tighter q-value levels offered below the run's PSM FDR, in percent
 STANDARD_LEVELS = (5.0, 1.0, 0.5, 0.1, 0.01)
@@ -28,28 +29,28 @@ def q_choices(run_fdr_percent: float | None) -> list[float]:
     return [top] + [level for level in STANDARD_LEVELS if level < top - 1e-12]
 
 
-def text_mask(df: pd.DataFrame, columns, query: str) -> pd.Series:
-    """Rows where any of ``columns`` contains ``query`` (case-insensitive, literal).
+def q_suggestions(run_fdr_percent: float | None) -> list[dict]:
+    """q-value thresholds for the PSM table's filter dialog, the run's own level first.
 
-    Several words must all match, each in any of the columns.
+    Each is ``{"value": q, "label": ...}``, as openms-insight's ``numeric_filters``
+    takes them; without a run level (PSM FDR off) the standard levels are offered.
     """
-    mask = pd.Series(True, index=df.index)
-    for word in (query or "").split():
-        pattern = re.escape(word)
-        hit = pd.Series(False, index=df.index)
-        for column in columns:
-            if column in df.columns:
-                hit |= df[column].astype(str).str.contains(pattern, case=False, regex=True, na=False)
-        mask &= hit
-    return mask
+    choices = q_choices(run_fdr_percent)
+    suggestions = []
+    for i, level in enumerate(choices):
+        if i == 0 and run_fdr_percent is None:
+            continue  # "no threshold" is the dialog's own "Any"
+        label = f"{percent_label(level)} (run)" if i == 0 else percent_label(level)
+        suggestions.append({"value": level / 100.0, "label": label})
+    return suggestions
 
 
-def filter_psms_by_q(psms: pd.DataFrame, q_max: float | None) -> pd.DataFrame:
-    """PSMs with q-value <= q_max (a fraction); PSMs without a q-value are kept."""
-    if q_max is None:
-        return psms
-    q = psms["q_value"]
-    return psms[q.isna() | (q <= q_max + 1e-12)]
+def protein_numeric_filters(max_replicates: int) -> dict:
+    """``numeric_filters`` of the protein table: min. peptides and, with conditions, replicates."""
+    filters = {"peptides": {"op": ">=", "suggestions": [2, 3, 5]}}
+    if max_replicates >= 1:
+        filters["replicates"] = {"op": ">=", "suggestions": list(range(1, max_replicates + 1))}
+    return filters
 
 
 def file_conditions(files, group_of) -> dict:
@@ -90,21 +91,6 @@ def add_protein_flags(
         at = proteins.columns.get_loc("found in") + 1 if "found in" in proteins.columns else len(proteins.columns)
         proteins.insert(at, "replicates", replicates)
     return proteins
-
-
-def filter_proteins(
-    proteins: pd.DataFrame,
-    query: str = "",
-    min_peptides: int = 1,
-    min_replicates: int = 0,
-) -> pd.DataFrame:
-    """Proteins matching the search, with at least ``min_peptides`` peptides and, if
-    the table has a ``replicates`` column, found in ``min_replicates`` files of one condition."""
-    keep = text_mask(proteins, ("accession", "gene", "description"), query)
-    keep &= proteins["peptides"] >= int(min_peptides)
-    if min_replicates and "replicates" in proteins.columns:
-        keep &= proteins["replicates"] >= int(min_replicates)
-    return proteins[keep]
 
 
 def max_replicates(conditions: dict, sample_of: dict | None = None) -> int:

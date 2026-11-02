@@ -1,9 +1,9 @@
-"""Filter bars on the PSM and protein pages."""
+"""Filters of the PSM and protein tables."""
 import pandas as pd
 
 from src.common.result_filters import (
-    add_protein_flags, file_conditions, filter_proteins, filter_psms_by_q, max_replicates,
-    q_choices, replicates_found, text_mask,
+    add_protein_flags, file_conditions, max_replicates, protein_numeric_filters,
+    q_choices, q_suggestions, replicates_found,
 )
 
 
@@ -16,21 +16,20 @@ def test_q_choices_never_loosen_the_run():
     assert q_choices(None) == [100.0, 5.0, 1.0, 0.5, 0.1, 0.01]
 
 
-def test_text_mask_matches_every_word_in_any_column():
-    df = pd.DataFrame({"a": ["ALBU_HUMAN", "KRT1", None], "b": ["Serum albumin", "Keratin", "x"]})
-    assert text_mask(df, ["a", "b"], "albu").tolist() == [True, False, False]
-    assert text_mask(df, ["a", "b"], "serum ALBU").tolist() == [True, False, False]
-    assert text_mask(df, ["a", "b"], "serum keratin").tolist() == [False, False, False]
-    assert text_mask(df, ["a", "b"], "").tolist() == [True, True, True]
-    # literal, not a regular expression
-    assert text_mask(df, ["a"], "KRT1(").tolist() == [False, False, False]
+def test_q_suggestions_start_at_the_run():
+    assert q_suggestions(1.0) == [
+        {"value": 0.01, "label": "1 % (run)"},
+        {"value": 0.005, "label": "0.5 %"},
+        {"value": 0.001, "label": "0.1 %"},
+        {"value": 0.0001, "label": "0.01 %"},
+    ]
+    # PSM filter off: the standard levels; "no threshold" is the dialog's "Any"
+    assert [s["value"] for s in q_suggestions(None)] == [0.05, 0.01, 0.005, 0.001, 0.0001]
 
 
-def test_filter_psms_by_q():
-    psms = pd.DataFrame({"q_value": [0.0001, 0.004, 0.009, float("nan")]})
-    assert len(filter_psms_by_q(psms, None)) == 4
-    assert filter_psms_by_q(psms, 0.005)["q_value"].tolist()[:2] == [0.0001, 0.004]
-    assert len(filter_psms_by_q(psms, 0.005)) == 3  # no q-value: kept
+def test_protein_numeric_filters():
+    assert protein_numeric_filters(0) == {"peptides": {"op": ">=", "suggestions": [2, 3, 5]}}
+    assert protein_numeric_filters(3)["replicates"] == {"op": ">=", "suggestions": [1, 2, 3]}
 
 
 def _long():
@@ -49,7 +48,7 @@ def test_replicates_found_is_the_best_condition():
     assert replicates_found(_long(), {}).empty
 
 
-def test_protein_filters():
+def test_protein_flags():
     proteins = pd.DataFrame({
         "accession": ["P1", "P2", "CON__sp|K1C10_HUMAN|"],
         "gene": ["ALB", "KRT1", ""],
@@ -61,13 +60,8 @@ def test_protein_filters():
     assert flagged["contaminant"].tolist() == [False, False, True]
     assert flagged["replicates"].tolist() == [2, 1, 1]
     assert list(flagged.columns).index("replicates") == list(flagged.columns).index("found in") + 1
-    assert filter_proteins(flagged, "keratin")["accession"].tolist() == ["P2", "CON__sp|K1C10_HUMAN|"]
-    assert filter_proteins(flagged, min_peptides=2)["accession"].tolist() == ["P1", "CON__sp|K1C10_HUMAN|"]
-    assert filter_proteins(flagged, min_replicates=2)["accession"].tolist() == ["P1"]
-    # without conditions there is no replicates column, and the threshold is ignored
-    plain = add_protein_flags(proteins, _long(), {})
-    assert "replicates" not in plain.columns
-    assert len(filter_proteins(plain, min_replicates=2)) == 3
+    # without conditions there is no replicates column
+    assert "replicates" not in add_protein_flags(proteins, _long(), {}).columns
 
 
 def test_replicates_count_samples_not_fractions():

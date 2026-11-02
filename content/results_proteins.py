@@ -8,12 +8,9 @@ from src.common.common import page_setup
 from src.common.guide import needs_results, next_steps, page_intro
 from src.common.insight_tables import show_insight_table
 from src.common.contaminants import is_contaminant
-from src.common.filter_bar import protein_filter_bar
 from src.common.protein_table import build_tables, collect_psms, coverage_html, read_fasta
 from src.common.fractions import fraction_samples
-from src.common.result_filters import (
-    add_protein_flags, file_conditions, filter_proteins, filter_psms_by_q, max_replicates,
-)
+from src.common.result_filters import add_protein_flags, file_conditions, max_replicates, protein_numeric_filters
 from src.common.results_helpers import run_picker, get_run_dir, get_run_params
 from src.common.spectrum_view import fragment_tolerance, show_spectrum
 from src.WorkflowTest import WorkflowTest, demo_group
@@ -27,7 +24,8 @@ page_intro(
     "Every protein found in any sample, with the evidence behind it. **Click a protein** to see "
     "which parts of its sequence were covered by peptides; **click a peptide** to list the spectra "
     "that identified it, and **click one of those** to see the spectrum with its fragment ions "
-    "annotated. Use the search fields in the table header to look up your protein of interest.",
+    "annotated. Search for your protein of interest with the box in the table's toolbar, and narrow the list "
+    "(e.g. at least 2 peptides) with its filter button.",
     background="""
 - A protein is identified through its **peptides**, and each peptide through one or more
   **PSMs** (peptide-spectrum matches: a fragmentation spectrum explained by that peptide).
@@ -77,9 +75,8 @@ sample_of = {f: info["sample"] for f, info in fractions.items()}
 
 @st.cache_data(show_spinner="Building protein tables...")
 def load_tables(paths: tuple[str, ...], fasta: str | None, mtimes: tuple[float, ...], mzml_names: tuple[str, ...],
-                q_max: float | None, conditions: tuple, samples: tuple = ()):
+                conditions: tuple, samples: tuple = ()):
     psms, fasta_entries = load_psms(paths, fasta, mtimes, mzml_names)
-    psms = filter_psms_by_q(psms, q_max)
     files = sorted(psms["file"].unique())
     proteins, peptides, psms_long, coverage = build_tables(psms, fasta_entries, files, dict(samples) or None)
     if not proteins.empty:
@@ -93,48 +90,25 @@ conditions = file_conditions(
     lambda name: (fractions.get(name) or {}).get("condition")
     or run_params.get(f"mzML-group-{name}") or demo_group(name),
 )
-run_fdr = min(float(run_params.get("psm-fdr-percent", 1.0)), 100.0)
-query, q_max, min_peptides, min_replicates = protein_filter_bar(
-    "protein-filter", run_fdr if run_fdr < 100.0 else None, max_replicates(conditions, sample_of)
-)
-
 proteins, peptides, psms_long, coverage, fasta_entries = load_tables(
     tuple(str(p) for p in idxml_files),
     str(fasta_path) if fasta_path and fasta_path.is_file() else None,
     tuple(p.stat().st_mtime for p in source_files),
     tuple(mzml_names),
-    q_max,
     tuple(sorted(conditions.items())),
     tuple(sorted(sample_of.items())),
 )
 
 if proteins.empty:
-    st.info("No target proteins were identified at this q-value.")
+    st.info("No target proteins were identified.")
     st.stop()
 
-shown = filter_proteins(proteins, query, min_peptides, min_replicates)
-shown_psms = psms_long[psms_long["accession"].isin(shown["accession"])]
-clean = ~shown["contaminant"]
-c1, c2, c3 = st.columns(3)
-c1.metric(
-    "Proteins", f"{int(clean.sum()):,}",
-    help=f"Matching the filters, without the {int((~clean).sum())} contaminants among them. "
-         f"{len(proteins):,} proteins in total at this q-value.",
-)
-c2.metric("Peptides", f"{shown_psms.loc[~shown_psms['accession'].map(is_contaminant), 'peptide'].nunique():,}")
-c3.metric(
-    "Target PSMs",
-    f"{shown_psms[~shown_psms['accession'].map(is_contaminant)].drop_duplicates(['file', 'scan', 'peptide']).shape[0]:,}",
-)
-if shown.empty:
-    st.info("No protein matches these filters. Loosen them above.")
-
+# The key figures count the proteins the table's filters leave, so they are
+# filled in once the table has been drawn with the viewer's filters
+figures = st.container()
 state_manager = StateManager("proteins_page")
 # Columns the linked tables filter on: already shown by the selection above them
 HIDDEN = {"visible": False}
-# A protein the filters hide is no longer selected, so its peptides go too
-if state_manager.get_selection("protein") not in set(shown["accession"]):
-    state_manager.clear_selection("protein")
 
 
 def decimals(n: int) -> dict:
@@ -142,10 +116,10 @@ def decimals(n: int) -> dict:
 
 
 st.subheader("Proteins")
-show_insight_table(
-    shown.assign(not_contaminant=~shown["contaminant"]),
+protein_table = show_insight_table(
+    proteins.assign(not_contaminant=~proteins["contaminant"]),
     name="proteins", cache_dir=cache_dir, source_files=source_files,
-    extra_key=f"filters-v2|{'per-sample' if fractions else ''}|{query}|{q_max}|{min_peptides}|{min_replicates}|{sorted(conditions.items())}",
+    extra_key=f"menu-v1|{'per-sample' if fractions else ''}|{sorted(conditions.items())}",
     title="proteins", height=450, state_manager=state_manager,
     interactivity={"protein": "accession"},
     column_overrides={
@@ -153,10 +127,31 @@ show_insight_table(
         "contaminant": {"formatter": "tickCross", "sorter": "boolean", "visible": False},
         "not_contaminant": HIDDEN,
         **({"replicates": {"headerTooltip": "Most files of one condition with a PSM of this protein"}}
-           if "replicates" in shown.columns else {}),
+           if "replicates" in proteins.columns else {}),
     },
     toggle_filters=[{"label": "Hide contaminants", "column": "not_contaminant", "default": True}],
+    search=[c for c in ("accession", "gene", "description") if c in proteins.columns],
+    search_placeholder="Accession, gene or name",
+    numeric_filters=protein_numeric_filters(
+        max_replicates(conditions, sample_of) if "replicates" in proteins.columns else 0
+    ),
 )
+
+shown = protein_table.export_data(state_manager.get_all_selections())
+shown_psms = psms_long[psms_long["accession"].isin(shown["accession"].to_list())]
+clean_psms = shown_psms[~shown_psms["accession"].map(is_contaminant)]
+contaminants = int(shown["contaminant"].sum())
+with figures:
+    c1, c2, c3 = st.columns(3)
+    c1.metric(
+        "Proteins", f"{shown.height - contaminants:,}",
+        help=f"Matching the table's filters, without the {contaminants} contaminants among them. "
+             f"{len(proteins):,} proteins in total.",
+    )
+    c2.metric("Peptides", f"{clean_psms['peptide'].nunique():,}")
+    c3.metric("Target PSMs", f"{clean_psms.drop_duplicates(['file', 'scan', 'peptide']).shape[0]:,}")
+if shown.is_empty():
+    st.info("No protein matches the table's filters. Remove one with its × above the table.")
 
 selected = state_manager.get_selection("protein")
 if selected in coverage and selected in fasta_entries:
@@ -172,7 +167,7 @@ if selected in coverage and selected in fasta_entries:
 st.subheader("Peptides of the selected protein")
 show_insight_table(
     peptides, name="protein_peptides", cache_dir=cache_dir, source_files=source_files,
-    extra_key=f"q|{q_max}|{'per-sample' if fractions else ''}",
+    extra_key="per-sample" if fractions else "",
     title="peptides", height=350, state_manager=state_manager,
     filters={"protein": "accession"}, interactivity={"peptide": "peptide"},
     column_overrides={"accession": HIDDEN},
@@ -185,7 +180,7 @@ show_insight_table(
     title="psms", height=350, state_manager=state_manager,
     filters={"protein": "accession", "peptide": "peptide"},
     interactivity={"psm": "psm"}, layout="fitColumns",
-    extra_key=f"with-psm-id-v2|q|{q_max}",  # the cache follows the source files; name the newer psm column and layout
+    extra_key="with-psm-id-v2",  # the cache follows the source files; name the newer psm column and layout
     column_overrides={
         "accession": HIDDEN, "peptide": HIDDEN, "psm": HIDDEN,
         "RT (s)": decimals(1), "m/z": decimals(4),
