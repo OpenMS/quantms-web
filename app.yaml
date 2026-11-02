@@ -166,6 +166,7 @@ sync:
   - assets/*
   - k8s/*
   - .github/workflows/build-and-test.yml
+  - .github/kind-config.yaml
   - .github/workflows/build-desktop-app.yaml
   - docker-compose.yml
   - docs/kubernetes-deployment.md
