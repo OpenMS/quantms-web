@@ -152,7 +152,7 @@ def test_generated_decoys_cover_the_contaminants(tmp_path):
 def test_fasta_with_decoys_gets_contaminants_in_its_decoy_style(tmp_path):
     fasta = tmp_path / "db.fasta"
     _fasta(fasta, [("sp|P1|A", "PEPTIDEK"), ("DECOY_sp|P1|A", "KEDITPEP")])
-    params = {"generate-decoys": False, "CometAdapter": {"PeptideIndexing:decoy_string": "DECOY_"}}
+    params = {"generate-decoys": False, "decoy-prefix": "DECOY_"}
     wf, calls = _workflow(tmp_path, params)
 
     database, decoy_string = wf.prepare_search_database(fasta)

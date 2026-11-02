@@ -14,7 +14,8 @@ permissions:
   contents: read
 
 env:
-  OPENMS_VERSION: 3.5.0
+  # ProSE, the search engine of the workflow, ships with OpenMS 3.6.0 and later.
+  OPENMS_VERSION: 3.6.0
   # Override to pin contrib to a specific release when OPENMS_VERSION is a non-release branch (e.g. "develop").
   # Leave empty to use OPENMS_VERSION.
   OPENMS_CONTRIB_VERSION: ""
@@ -22,7 +23,7 @@ env:
   # Name of the installer
   APP_NAME: OpenDDA
   # Define needed TOPP tools here
-  TOPP_TOOLS: "DecoyDatabase CometAdapter PercolatorAdapter IDFilter ProteomicsLFQ IsobaricAnalyzer IDMapper FileMerger ProteinInference IDConflictResolver ProteinQuantifier"
+  TOPP_TOOLS: "DecoyDatabase ProSE PercolatorAdapter IDFilter ProteomicsLFQ IsobaricAnalyzer IDMapper FileMerger ProteinInference IDConflictResolver ProteinQuantifier"
 
 jobs:
   build-openms:

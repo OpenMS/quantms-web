@@ -98,7 +98,7 @@ st.subheader("Files")
 st.caption(
     f"PSM counts are at {fdr:g} % PSM FDR. ID rate is target PSMs per MS2 spectrum. Mass error is "
     "the median precursor m/z error of the file's target PSMs. Percolator is whether it rescored "
-    "the file. Search is CometAdapter's run time in seconds in the last run."
+    "the file. Search is the database search's (ProSE) run time in seconds in the last run."
 )
 # One row per file; the fractional columns go as text, since the table stores
 # floats as float32 and would show 36.8 as 36.79999923706055

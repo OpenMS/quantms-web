@@ -8,7 +8,7 @@ quantms-web mirrors the **dda-lfq branch of the [quantms Nextflow workflow](http
 
 | Stage | Tool | What it does |
 |---|---|---|
-| 1. Identification | Comet | Peptide-spectrum matching against a protein database |
+| 1. Identification | ProSE | Peptide-spectrum matching against a protein database |
 | 2. Rescoring | Percolator | ML-based statistical validation of PSMs |
 | 3. Filtering | IDFilter | FDR-controlled peptide identification filtering |
 | 4. Quantification | ProteomicsLFQ | Label-free quantification across samples |
@@ -25,7 +25,7 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-The full pipeline runs locally once the [OpenMS Command Line Tools](https://openms.readthedocs.io/en/latest/about/installation.html) are on your `PATH` — they provide Comet, Percolator, ProteomicsLFQ, and the rest of the TOPP suite. With Python alone, the pyOpenMS-backed parts of the UI still work.
+The full pipeline runs locally once the [OpenMS Command Line Tools](https://openms.readthedocs.io/en/latest/about/installation.html) are on your `PATH`: OpenMS 3.6.0 or later, which provides ProSE, Percolator, ProteomicsLFQ, and the rest of the TOPP suite. With Python alone, the pyOpenMS-backed parts of the UI still work.
 
 ## Run with Docker
 

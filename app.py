@@ -62,7 +62,7 @@ if __name__ == '__main__':
             st.Page(Path("content", "results_filtered.py"), title="Peptide-spectrum matches", icon="🎯"),
             st.Page(Path("content", "results_mass_shifts.py"), title="Mass shifts", icon="📐"),
             st.Page(Path("content", "results_rescoring.py"), title="Rescored hits (Percolator)", icon="📈"),
-            st.Page(Path("content", "results_database_search.py"), title="Raw search hits (Comet)", icon="🔬"),
+            st.Page(Path("content", "results_database_search.py"), title="Raw search hits (ProSE)", icon="🔬"),
         ],
     }
 

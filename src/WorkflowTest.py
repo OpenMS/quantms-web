@@ -15,7 +15,7 @@ from scipy.stats import fisher_exact
 from src.workflow.WorkflowManager import WorkflowManager
 from src.common.common import page_setup
 from src.common.results_helpers import get_abundance_data
-from src.common.results_helpers import parse_idxml, build_spectra_cache, load_idxml, psm_table_columns, write_psm_exports, peaks_for_identifications
+from src.common.results_helpers import parse_idxml, build_spectra_cache, load_idxml, psm_table_columns, write_psm_exports, peaks_for_identifications, search_results_dir
 from src.common.contaminants import CONTAMINANT_PREFIX, append_fasta, write_contaminants
 from src.common.fdr_display import FDR_QUICK_CHOICES, fdr_applied, matching_quick_choice, percent_label, q_label
 from src.common.isobaric import ISOBARIC_CHANNELS
@@ -55,32 +55,76 @@ shuffled. Every decoy hit is a known false match, so the number of decoy hits te
 many false matches hide among the real ones. *Reverse* is the standard choice.
 """
 
-COMET_INFO = """
-**How peptides are identified.** Comet compares every fragmentation (MS2) spectrum with
-the spectra expected for the peptides of your FASTA database. The defaults fit a tryptic
-digest with carbamidomethylated cysteines. Pick the **instrument preset** at the top of the
-page to set the tolerances for your mass spectrometer; change the rest only if your sample
-preparation differs:
+SEARCH_INFO = """
+**How peptides are identified.** ProSE, the OpenMS search engine, compares every
+fragmentation (MS2) spectrum with the fragment ions of the peptides of your FASTA database.
+The defaults fit a tryptic digest with carbamidomethylated cysteines. Pick the **instrument
+preset** at the top of the page to set the tolerances for your mass spectrometer; change the
+rest only if your sample preparation differs:
 
 * **enzyme**: the protease you digested with (usually Trypsin/P).
 * **missed_cleavages**: how many cut sites the enzyme may skip within one peptide (2 is typical).
-* **fixed_modifications**: changes present on every copy of an amino acid, e.g.
+* **fixed**: modifications present on every copy of an amino acid, e.g.
   *Carbamidomethyl (C)* after reduction and alkylation with iodoacetamide.
-* **variable_modifications**: changes that may or may not be present, e.g. *Oxidation (M)*
+* **variable**: modifications that may or may not be present, e.g. *Oxidation (M)*
   or *Phospho (STY)*. Each one added makes the search slower and less sensitive, so add only
   those you expect.
 * **precursor / fragment mass tolerance**: how far a measured mass may lie from the expected
-  one. Set by the instrument preset.
+  one. Set by the instrument preset. A precursor tolerance above 1 Da searches openly for
+  unexpected mass shifts (see the *Open Search* preset).
 """
 
-COMET_DECOY_INFO = """* **PeptideIndexing:decoy_string**: the label that marks decoy proteins in your FASTA
-  file (detected automatically, e.g. *rev_* or *DECOY_*).
+SEARCH_DECOY_INFO = """* **Decoys**: your FASTA file already has decoy proteins (accessions starting with
+  *{prefix}*), so they are searched as they are.
 """
+
+# ProSE settings shown by default; the rest is under "Show advanced parameters".
+SEARCH_INCLUDE = [
+    "Search:enzyme", "Search:peptide:missed_cleavages",
+    "Search:modifications:fixed", "Search:modifications:variable",
+    "Search:precursor:mass_tolerance_lower", "Search:precursor:mass_tolerance_upper",
+    "Search:precursor:mass_tolerance_unit", "Search:precursor:isotopes",
+    "Search:fragment:mass_tolerance", "Search:fragment:mass_tolerance_unit",
+]
+# Decoys come from the database step, rescoring and FDR from the steps after the search.
+SEARCH_EXCLUDE = [
+    "Search:decoys", "Search:decoy_prefix", "Search:FDR:PSM", "Search:FDR:protein",
+    "percolator_executable",
+]
+# Orbitrap HCD (the "Orbitrap HCD" preset), the most common DDA setup.
+SEARCH_DEFAULTS = {
+    "threads": 8,
+    "Search:enzyme": "Trypsin/P",
+    "Search:decoys": "auto",
+    "Search:peptide:missed_cleavages": 2,
+    "Search:peptide:min_size": 6,
+    "Search:peptide:max_size": 40,
+    "Search:modifications:fixed": "Carbamidomethyl (C)",
+    "Search:modifications:variable": "Oxidation (M)\nAcetyl (Protein N-term)",
+    "Search:modifications:variable_max_per_peptide": 3,
+    "Search:precursor:mass_tolerance_lower": 20.0,
+    "Search:precursor:mass_tolerance_upper": 20.0,
+    "Search:precursor:mass_tolerance_unit": "ppm",
+    "Search:precursor:isotopes": "0\n1",
+    "Search:precursor:min_charge": 2,
+    "Search:precursor:max_charge": 4,
+    "Search:fragment:mass_tolerance": 20.0,
+    "Search:fragment:mass_tolerance_unit": "ppm",
+    "Search:report:top_hits": 1,
+    "Search:FDR:PSM": 0.0,
+    "Search:FDR:protein": 0.0,
+}
+SEARCH_DEFAULTS_TMT = {
+    **SEARCH_DEFAULTS,
+    "Search:precursor:mass_tolerance_lower": 4.5,
+    "Search:precursor:mass_tolerance_upper": 4.5,
+    "Search:modifications:variable": "Oxidation (M)\nAcetyl (Protein N-term)\nTMT6plex (K)\nTMT6plex (N-term)",
+}
 
 
 PERCOLATOR_INFO = """
 **Telling right from wrong matches.** Percolator learns, from many features of each
-match (score, mass error, peptide length, ...), what distinguishes real matches from the
+match (ProSE's score, mass errors, matched ions, peptide length, ...), what distinguishes real matches from the
 decoy ones, and re-scores every match. This typically identifies 20 to 50 % more peptides
 at the same error rate. The defaults suit every experiment.
 """
@@ -193,8 +237,8 @@ class WorkflowTest(WorkflowManager):
         """Default decoy generation to on, unless the selected FASTA already has decoys.
 
         Runs once per database: a user's choice is kept until another FASTA is
-        selected. When decoys are found, their prefix becomes Comet's decoy_string
-        so PeptideIndexing, Percolator and IDFilter recognise them.
+        selected. When decoys are found, their prefix is kept as "decoy-prefix" so
+        Percolator and IDFilter recognise them (ProSE detects them itself).
         """
         prefix = self.parameter_manager.param_prefix
         fasta_key = st.session_state.get(f"{prefix}fasta-file", self.params.get("fasta-file"))
@@ -217,13 +261,7 @@ class WorkflowTest(WorkflowManager):
         params["decoy-check"] = marker
         params["generate-decoys"] = generate
         if decoy_prefix:
-            for tool in ("CometAdapter", "CometAdapter-TMT"):
-                params.setdefault(tool, {})["PeptideIndexing:decoy_string"] = decoy_prefix
-                # Drop the widget's session value so it re-renders from params.json
-                st.session_state.pop(
-                    f"{self.parameter_manager.topp_param_prefix}{tool}:1:PeptideIndexing:decoy_string",
-                    None,
-                )
+            params["decoy-prefix"] = decoy_prefix
         with open(self.parameter_manager.params_file, "w", encoding="utf-8") as f:
             json.dump(params, f, indent=4)
         st.session_state[f"{prefix}decoy-check"] = marker
@@ -329,6 +367,35 @@ class WorkflowTest(WorkflowManager):
             ),
         )
 
+    def render_search_settings(self, instance: str, defaults: dict) -> None:
+        """ProSE database search settings (label-free: "ProSE", TMT: "ProSE-TMT")."""
+        info = SEARCH_INFO
+        if not self.params.get("generate-decoys", True):
+            info += SEARCH_DECOY_INFO.format(prefix=self.params.get("decoy-prefix", "rev_"))
+        st.info(info)
+        self.ui.input_TOPP(
+            "ProSE",
+            custom_defaults=defaults,
+            include_parameters=SEARCH_INCLUDE,
+            exclude_parameters=SEARCH_EXCLUDE,
+            tool_instance_name=instance,
+        )
+
+    def search_tolerance(self, instance: str) -> tuple:
+        """Fragment tolerance of the search and whether it is in ppm, for the spectrum views."""
+        params = self.parameter_manager.get_topp_parameters("ProSE", tool_instance_name=instance)
+        tolerance = float(params.get("Search:fragment:mass_tolerance", 20.0))
+        return tolerance, params.get("Search:fragment:mass_tolerance_unit", "ppm") == "ppm"
+
+    def run_search(self, instance: str, in_mzml: list, out_idxml: list, database_fasta: Path) -> bool:
+        """Search the spectra with ProSE against the database (with its decoys)."""
+        return self.executor.run_topp(
+            "ProSE",
+            {"in": in_mzml, "out_idxml": out_idxml},
+            {"database": str(database_fasta), "Search:decoys": "auto"},
+            tool_instance_name=instance,
+        )
+
     def render_lfq_tabs(self):
         st.subheader("Label-free experiment")
         t = st.tabs([
@@ -369,47 +436,7 @@ class WorkflowTest(WorkflowManager):
                     include_parameters=["method"],
                 )
 
-            comet_info = COMET_INFO
-            if not self.params.get("generate-decoys", True):
-                comet_info += COMET_DECOY_INFO
-            st.info(comet_info)
-
-            comet_include = [":enzyme", "missed_cleavages", "fixed_modifications", "variable_modifications",
-                            "instrument", "fragment_mass_tolerance", "fragment_error_units", "fragment_bin_offset",
-                            "precursor_mass_tolerance", "precursor_error_units", "isotope_error"]
-            if not self.params.get("generate-decoys", True):
-                # Only show decoy_string when not generating decoys
-                comet_include.append("PeptideIndexing:decoy_string")
-
-            self.ui.input_TOPP(
-                "CometAdapter",
-                custom_defaults={
-                    "threads": 8,
-                    # Orbitrap HCD (the "Orbitrap HCD" preset), the most common DDA setup
-                    "instrument": "high_res",
-                    "missed_cleavages": 2,
-                    "min_peptide_length": 6,
-                    "max_peptide_length": 40,
-                    "num_hits": 1,
-                    "num_enzyme_termini": "fully",
-                    "isotope_error": "0/1",
-                    "precursor_charge": "2:4",
-                    "precursor_mass_tolerance": 20.0,
-                    "fragment_mass_tolerance": 0.01,
-                    "fragment_bin_offset": 0.0,
-                    "max_variable_mods_in_peptide": 3,
-                    "minimum_peaks": 1,
-                    "clip_nterm_methionine": "true",
-                    "variable_modifications": "Oxidation (M)\nAcetyl (Protein N-term)",
-                    "PeptideIndexing:IL_equivalent": True,
-                    "PeptideIndexing:unmatched_action": "warn",
-                    "PeptideIndexing:decoy_string": "rev_",
-                    "mass_recalibration": False,
-                },
-                include_parameters=comet_include,
-                flag_parameters=["PeptideIndexing:IL_equivalent", "mass_recalibration"],
-                exclude_parameters=["second_enzyme"],
-            )
+            self.render_search_settings("ProSE", SEARCH_DEFAULTS)
 
         with t[2]:
             st.info(PERCOLATOR_INFO)
@@ -664,41 +691,7 @@ class WorkflowTest(WorkflowManager):
                 reactive=True,
             )
         with t[2]:
-            st.info(COMET_INFO)
-            comet_include = [":enzyme", "missed_cleavages", "fixed_modifications", "variable_modifications",
-                            "instrument", "fragment_mass_tolerance", "fragment_error_units", "fragment_bin_offset", "PeptideIndexing:IL_equivalent",
-                            "precursor_mass_tolerance", "precursor_error_units", "isotope_error"]
-            self.ui.input_TOPP(
-                "CometAdapter",
-                custom_defaults={
-                    "PeptideIndexing:IL_equivalent": True,
-                    "clip_nterm_methionine": "true",
-                    "instrument": "high_res",
-                    "missed_cleavages": 2,
-                    "min_peptide_length": 6,
-                    "max_peptide_length": 40,
-                    "enzyme": "Trypsin/P",
-                    "PeptideIndexing:unmatched_action": "warn",
-                    "max_variable_mods_in_peptide": 3,
-                    "precursor_mass_tolerance": 4.5,
-                    "isotope_error": "0/1",
-                    "precursor_error_units": "ppm",
-                    "num_hits": 1,
-                    "num_enzyme_termini": "fully",
-                    "fragment_bin_offset": 0.0,
-                    "minimum_peaks": 10,
-                    "precursor_charge": "2:4",
-                    "fragment_mass_tolerance": 0.015,
-                    "PeptideIndexing:unmatched_action": "warn",
-                    "variable_modifications": "Oxidation (M)\nAcetyl (Protein N-term)\nTMT6plex (K)\nTMT6plex (N-term)",
-                    "debug": 0,
-                    "force": True,
-                },
-                include_parameters=comet_include,
-                flag_parameters=["PeptideIndexing:IL_equivalent", "force"],
-                exclude_parameters=["second_enzyme"],
-                tool_instance_name="CometAdapter-TMT",
-            )
+            self.render_search_settings("ProSE-TMT", SEARCH_DEFAULTS_TMT)
         with t[3]:
             st.info(PERCOLATOR_INFO)
             self.ui.input_TOPP(
@@ -950,9 +943,11 @@ class WorkflowTest(WorkflowManager):
             st.success(f"Using decoy FASTA: {decoy_fasta.name}")
             database_fasta = decoy_fasta
         else:
-            # Get decoy_string from the active mode's CometAdapter params
-            comet_instance = "CometAdapter-TMT" if self.params.get("analysis-mode", "LFQ") == "TMT" else "CometAdapter"
-            decoy_string = self.params.get(comet_instance, {}).get("PeptideIndexing:decoy_string", "rev_")
+            # Prefix detected in the FASTA (workspaces from before: the search engine's setting)
+            legacy = "CometAdapter-TMT" if self.params.get("analysis-mode", "LFQ") == "TMT" else "CometAdapter"
+            decoy_string = self.params.get("decoy-prefix") or self.params.get(legacy, {}).get(
+                "PeptideIndexing:decoy_string", "rev_"
+            )
             self.logger.log("📄 Using existing FASTA database")
             st.info(f"Using original FASTA: {fasta_path.name}")
             database_fasta = fasta_path
@@ -976,7 +971,7 @@ class WorkflowTest(WorkflowManager):
     def execution(self) -> bool:
         """
         Refactored TOPP workflow execution:
-        - Per-sample: CometAdapter -> PercolatorAdapter -> IDFilter
+        - Per-sample: ProSE -> PercolatorAdapter -> IDFilter
         - Cross-sample: ProteomicsLFQ (single combined output)
         """
         # ================================
@@ -1016,14 +1011,14 @@ class WorkflowTest(WorkflowManager):
             # 1️⃣ Directory setup
             # ================================
             results_dir = Path(self.results_dir)
-            comet_dir = results_dir / "comet_results"
+            search_dir = results_dir / "search_results"
             perc_dir = results_dir / "percolator_results"
             filter_dir = results_dir / "psm_filter"
             quant_dir = results_dir / "quant_results"
 
             results_dir = Path(self.workflow_dir, "input-files")
 
-            for d in [comet_dir, perc_dir, filter_dir, quant_dir]:
+            for d in [search_dir, perc_dir, filter_dir, quant_dir]:
                 d.mkdir(parents=True, exist_ok=True)
 
             self.logger.log("📁 Output directories created")
@@ -1031,13 +1026,13 @@ class WorkflowTest(WorkflowManager):
             # ================================
             # 2️⃣ File path definitions (per sample)
             # ================================
-            comet_results = []
+            search_results = []
             percolator_results = []
             filter_results = []
 
             for mz in in_mzML:
                 stem = Path(mz).stem
-                comet_results.append(str(comet_dir / f"{stem}_comet.idXML"))
+                search_results.append(str(search_dir / f"{stem}_prose.idXML"))
                 percolator_results.append(str(perc_dir / f"{stem}_per.idXML"))
                 filter_results.append(str(filter_dir / f"{stem}_filter.idXML"))
 
@@ -1050,34 +1045,20 @@ class WorkflowTest(WorkflowManager):
 
             self.logger.log("🔬 Starting per-sample processing...")
 
-            # --- CometAdapter ---
+            # --- ProSE database search ---
             self.logger.log("🔎 Running peptide search...")
-            with st.spinner(f"CometAdapter ({stem})"):
-                comet_extra_params = {"database": str(database_fasta)}
-                if self.params.get("generate-decoys", True):
-                    # Propagate decoy_string from DecoyDatabase
-                    comet_extra_params["PeptideIndexing:decoy_string"] = decoy_string
-
-                if not self.executor.run_topp(
-                    "CometAdapter",
-                    {
-                        "in": in_mzML,
-                        "out": comet_results,
-                    },
-                    comet_extra_params,
-                ):
+            with st.spinner("ProSE database search"):
+                if not self.run_search("ProSE", in_mzML, search_results, database_fasta):
                     self.logger.log("Workflow stopped due to error")
                     return False
 
-            # Get fragment tolerance from CometAdapter parameters for visualization
-            comet_params = self.parameter_manager.get_topp_parameters("CometAdapter")
-            frag_tol = comet_params.get("fragment_mass_tolerance", 0.02)
-            frag_tol_is_ppm = comet_params.get("fragment_error_units", "Da") != "Da"
+            # Fragment tolerance of the search, for the spectrum views
+            frag_tol, frag_tol_is_ppm = self.search_tolerance("ProSE")
 
-            if not self._has_identifications(comet_results, "peptide search"):
+            if not self._has_identifications(search_results, "peptide search"):
                 return False
 
-            # Build visualization cache for Comet results
+            # Build visualization cache for the search results
             results_dir_path = Path(self.results_dir)
             cache_dir = results_dir_path / "insight_cache"
             cache_dir.mkdir(parents=True, exist_ok=True)
@@ -1090,7 +1071,7 @@ class WorkflowTest(WorkflowManager):
             filename_to_index = {Path(m).name: i for i, m in enumerate(in_mzML)}
             spectra_df, filename_to_index = build_spectra_cache(mzml_dir, filename_to_index, in_mzML)
 
-            for idxml_file in comet_results:
+            for idxml_file in search_results:
                 idxml_path = Path(idxml_file)
                 cache_id_prefix = idxml_path.stem
 
@@ -1107,7 +1088,7 @@ class WorkflowTest(WorkflowManager):
                     cache_path=str(cache_dir),
                     interactivity={"file": "file_index", "spectrum": "scan_id", "identification": "id_idx"},
                     column_definitions=psm_table_columns(),
-                    initial_sort=[{"column": "score", "dir": "asc"}],
+                    initial_sort=[{"column": "score", "dir": "desc"}],  # ln(hyperscore): higher is better
                     index_field="id_idx",
                 )
 
@@ -1161,17 +1142,13 @@ class WorkflowTest(WorkflowManager):
 
             self.logger.log("✅ Peptide search complete")
 
-            # if not Path(comet_results).exists():
-            #     st.error(f"CometAdapter failed for {stem}")
-            #     st.stop()
-
             # --- PercolatorAdapter ---
             self.logger.log("📊 Running rescoring...")
             with st.spinner(f"PercolatorAdapter ({stem})"):
                 if not self.executor.run_topp(
                     "PercolatorAdapter",
                     {
-                        "in": comet_results,
+                        "in": search_results,
                         "out": percolator_results,
                     },
                     {"decoy_pattern": decoy_string},  # Always propagated from upstream
@@ -1501,7 +1478,7 @@ class WorkflowTest(WorkflowManager):
 
             results_dir = Path(self.results_dir)
             iso_dir = results_dir / "isobaric_consensusXML"
-            comet_dir = results_dir / "comet_results"
+            search_dir = results_dir / "search_results"
             perc_dir = results_dir / "percolator_results"
             psm_filter_dir = results_dir / "psm_filter"
             map_dir = results_dir / "idmapper"
@@ -1511,13 +1488,13 @@ class WorkflowTest(WorkflowManager):
             quant_dir = results_dir / "quant_results"
 
             iso_consensus = []
-            comet_results = []
+            search_results = []
             percolator_results = []
             psm_filtered = []
             mapped_ids = []
 
             for d in [
-                iso_dir, comet_dir, perc_dir, psm_filter_dir,
+                iso_dir, search_dir, perc_dir, psm_filter_dir,
                 map_dir, merge_dir, protein_dir, msstats_dir, quant_dir
             ]:
                 d.mkdir(parents=True, exist_ok=True)
@@ -1525,10 +1502,10 @@ class WorkflowTest(WorkflowManager):
             for mz in in_mzML:
                 stem = Path(mz).stem
                 iso_consensus.append(str(iso_dir / f"{stem}_iso.consensusXML"))
-                comet_results.append(str(comet_dir / f"{stem}_comet.idXML"))
-                percolator_results.append(str(perc_dir / f"{stem}_comet_perc.idXML"))
-                psm_filtered.append(str(psm_filter_dir / f"{stem}_comet_perc_filter.idXML"))
-                mapped_ids.append(str(map_dir / f"{stem}_comet_perc_filter_map.consensusXML"))
+                search_results.append(str(search_dir / f"{stem}_prose.idXML"))
+                percolator_results.append(str(perc_dir / f"{stem}_prose_perc.idXML"))
+                psm_filtered.append(str(psm_filter_dir / f"{stem}_prose_perc_filter.idXML"))
+                mapped_ids.append(str(map_dir / f"{stem}_prose_perc_filter_map.consensusXML"))
 
             merged_id = str(merge_dir / "ID_mapper_merge.consensusXML")
             protein_id = str(protein_dir / "ID_mapper_merge_epi.consensusXML")
@@ -1551,35 +1528,21 @@ class WorkflowTest(WorkflowManager):
                     return False
             self.logger.log("✅ IsobaricAnalyzer complete")
 
-            # --- CometAdapter ---
+            # --- ProSE database search ---
             self.logger.log("🔎 Running peptide search...")
-            with st.spinner(f"CometAdapter ({stem})"):
-                comet_extra_params = {"database": str(database_fasta)}
-                if self.params.get("generate-decoys", True):
-                    # Propagate decoy_string from DecoyDatabase
-                    comet_extra_params["PeptideIndexing:decoy_string"] = decoy_string
-                if not self.executor.run_topp(
-                    "CometAdapter",
-                    {
-                        "in": in_mzML,
-                        "out": comet_results,
-                    },
-                    comet_extra_params,
-                    tool_instance_name="CometAdapter-TMT",
-                ):
+            with st.spinner("ProSE database search"):
+                if not self.run_search("ProSE-TMT", in_mzML, search_results, database_fasta):
                     self.logger.log("Workflow stopped due to error")
                     return False
-            self.logger.log("✅ CometAdapter complete")
+            self.logger.log("✅ ProSE search complete")
 
-            # Get fragment tolerance from CometAdapter parameters for visualization
-            comet_params = self.parameter_manager.get_topp_parameters("CometAdapter")
-            frag_tol = comet_params.get("fragment_mass_tolerance", 0.02)
-            frag_tol_is_ppm = comet_params.get("fragment_error_units", "Da") != "Da"
+            # Fragment tolerance of the search, for the spectrum views
+            frag_tol, frag_tol_is_ppm = self.search_tolerance("ProSE-TMT")
 
-            if not self._has_identifications(comet_results, "peptide search"):
+            if not self._has_identifications(search_results, "peptide search"):
                 return False
 
-            # Build visualization cache for Comet results
+            # Build visualization cache for the search results
             results_dir_path = Path(self.results_dir)
             cache_dir = results_dir_path / "insight_cache"
             cache_dir.mkdir(parents=True, exist_ok=True)
@@ -1592,7 +1555,7 @@ class WorkflowTest(WorkflowManager):
             filename_to_index = {Path(m).name: i for i, m in enumerate(in_mzML)}
             spectra_df, filename_to_index = build_spectra_cache(mzml_dir, filename_to_index, in_mzML)
 
-            for idxml_file in comet_results:
+            for idxml_file in search_results:
                 idxml_path = Path(idxml_file)
                 cache_id_prefix = idxml_path.stem
 
@@ -1609,7 +1572,7 @@ class WorkflowTest(WorkflowManager):
                     cache_path=str(cache_dir),
                     interactivity={"file": "file_index", "spectrum": "scan_id", "identification": "id_idx"},
                     column_definitions=psm_table_columns(),
-                    initial_sort=[{"column": "score", "dir": "asc"}],
+                    initial_sort=[{"column": "score", "dir": "desc"}],  # ln(hyperscore): higher is better
                     index_field="id_idx",
                 )
 
@@ -1669,7 +1632,7 @@ class WorkflowTest(WorkflowManager):
                 if not self.executor.run_topp(
                     "PercolatorAdapter",
                     {
-                        "in": comet_results,
+                        "in": search_results,
                         "out": percolator_results,
                     },
                     {"decoy_pattern": decoy_string},  # Always propagated from upstream
@@ -1955,7 +1918,7 @@ class WorkflowTest(WorkflowManager):
         # ================================
         with comet_tab:
 
-            comet_dir = Path(self.results_dir, "comet_results")
+            comet_dir = search_results_dir(Path(self.results_dir))
             comet_files = sorted(comet_dir.glob("*.idXML"))
 
             if not comet_files:

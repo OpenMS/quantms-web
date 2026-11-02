@@ -14,7 +14,7 @@ from src.common.ms2_prediction import (
     spectral_angle,
 )
 from src.common.psm_features import features_by_id, features_frame
-from src.common.results_helpers import parse_idxml
+from src.common.results_helpers import parse_idxml, search_tolerances
 
 
 def fragment_tolerance(workflow_params: dict) -> tuple[float, bool]:
@@ -22,9 +22,8 @@ def fragment_tolerance(workflow_params: dict) -> tuple[float, bool]:
 
     ``workflow_params`` are the parameters of the run shown (``get_run_params``).
     """
-    comet = "CometAdapter-TMT" if workflow_params.get("analysis-mode", "LFQ") == "TMT" else "CometAdapter"
-    comet_params = {**workflow_params.get("_defaults", {}).get(comet, {}), **workflow_params.get(comet, {})}
-    return float(comet_params.get("fragment_mass_tolerance", 0.02)), comet_params.get("fragment_error_units", "Da") != "Da"
+    tolerances = search_tolerances(workflow_params)
+    return tolerances["fragment"], tolerances["fragment_ppm"]
 
 
 @st.cache_resource(show_spinner="Loading the spectrum prediction model (first time only)...")
@@ -176,7 +175,7 @@ def show_psm_features(idxml: Path, psm_id: int) -> None:
         return
     with st.expander(f"All scores and features of this PSM ({len(rows)})"):
         st.caption(
-            "What Comet and Percolator recorded for this match. Percolator combines the Comet values into its "
+            "What ProSE and Percolator recorded for this match. Percolator combines the ProSE values into its "
             "score; the q-value and PEP come from that score."
         )
         st.dataframe(

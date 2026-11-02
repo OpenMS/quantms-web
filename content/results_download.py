@@ -22,7 +22,7 @@ Below the list are the files of one run, singly or as one ZIP. The ones most peo
 - **quant_results/**: the protein and peptide abundance table (CSV, opens in Excel or R).
 - **exports/**: all peptide-spectrum matches per run (`*_psms.tsv`) and each match's
   fragment ions (`*_fragment_ions.tsv`).
-- **psm_filter/**, **percolator_results/**, **comet_results/**: identifications after each
+- **psm_filter/**, **percolator_results/**, **search_results/**: identifications after each
   step in the open idXML format, for OpenMS and other proteomics software.
 - The spectral library, if you built one.
 

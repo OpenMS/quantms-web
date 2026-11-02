@@ -80,14 +80,14 @@ def read_psms(idxml_path) -> pd.DataFrame:
 
 
 def search_times(log_path, mzml_files) -> dict:
-    """Seconds CometAdapter took per input file, from the latest run in the run-time log."""
+    """Seconds the database search (ProSE) took per input file, from the latest run in the run-time log."""
     path = Path(log_path)
     if not path.is_file():
         return {}
     text = path.read_text(encoding="utf-8", errors="ignore")
     times = {}
     blocks = re.findall(
-        r"Process finished:\n(CometAdapter\b.*?)\nTotal time to run command: ([\d.]+) seconds",
+        r"Process finished:\n((?:ProSE|CometAdapter)\b.*?)\nTotal time to run command: ([\d.]+) seconds",
         text,
         flags=re.DOTALL,
     )

@@ -158,7 +158,7 @@ The pipeline mirrors the DDA-LFQ and DDA-ISO (TMT) branches of the
 
 | Stage | What it does | Tool |
 |---|---|---|
-| Identification | Matches each fragmentation spectrum to a peptide from your FASTA file | Comet |
+| Identification | Matches each fragmentation spectrum to a peptide from your FASTA file | ProSE |
 | Rescoring | Re-ranks the matches with machine learning to separate true from false ones | Percolator |
 | Filtering | Keeps matches at a 1 % false discovery rate, judged against reversed "decoy" sequences | IDFilter |
 | Quantification (LFQ) | Measures each peptide's signal in every run and sums it per protein | ProteomicsLFQ |

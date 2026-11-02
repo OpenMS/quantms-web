@@ -9,7 +9,8 @@
 
 FROM ubuntu:22.04 AS setup-build-system
 ARG OPENMS_REPO=https://github.com/OpenMS/OpenMS.git
-ARG OPENMS_BRANCH=release/3.5.0
+# ProSE, the search engine of the workflow, ships with OpenMS 3.6.0 (tag v3.6.0).
+ARG OPENMS_BRANCH=v3.6.0
 ARG PORT=8501
 # Streamlit app GitHub user name (to download artifact from).
 ARG GITHUB_USER=OpenMS

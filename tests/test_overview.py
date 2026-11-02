@@ -73,7 +73,7 @@ def test_search_times_take_the_last_run(tmp_path):
     log.write_text(
         "Process finished:\nCometAdapter -in /data/a.mzML -out x.idXML\nTotal time to run command: 10.00 seconds\n\n"
         "Process finished:\nPercolatorAdapter -in x.idXML\nTotal time to run command: 3.00 seconds\n\n"
-        "Process finished:\nCometAdapter -in /data/a.mzML -out x.idXML\nTotal time to run command: 12.50 seconds\n\n"
+        "Process finished:\nProSE -in /data/a.mzML -out_idxml x.idXML\nTotal time to run command: 12.50 seconds\n\n"
     )
     assert search_times(log, ["/data/a.mzML", "/data/b.mzML"]) == {"a.mzML": 12.5}
     assert search_times(tmp_path / "none.log", ["/data/a.mzML"]) == {}
@@ -95,7 +95,7 @@ def test_run_overview(tmp_path):
     _idxml(results / "percolator_results" / "a_per.idXML", [("PEPTIDEK", 2, 500.0, "target")])
     (wf / "logs").mkdir(parents=True)
     (wf / "logs" / "commands-and-run-times.log").write_text(
-        f"Process finished:\nCometAdapter -in {a} -out x\nTotal time to run command: 5.00 seconds\n\n"
+        f"Process finished:\nProSE -in {a} -out_idxml x\nTotal time to run command: 5.00 seconds\n\n"
     )
 
     per_file, figures = run_overview(wf, [str(a), str(b)])

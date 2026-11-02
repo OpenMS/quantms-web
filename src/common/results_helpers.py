@@ -191,11 +191,54 @@ def extract_scan_number(native_id: str) -> int:
     return int(match.group(1)) if match else 0
 
 
+def _tool_params(workflow_params: dict, instance: str) -> dict:
+    """A TOPP tool's effective settings in a run's parameters: its defaults, then the user's values."""
+    return {**workflow_params.get("_defaults", {}).get(instance, {}), **workflow_params.get(instance, {})}
+
+
+def search_tolerances(workflow_params: dict) -> dict:
+    """Precursor and fragment tolerance of a run's database search.
+
+    Returns ``precursor`` (the wider side of the window), ``precursor_unit``
+    ("ppm" or "Da"), ``fragment`` and ``fragment_ppm``. Runs made before the
+    switch to ProSE carry Comet's settings, which are read the same way.
+    """
+    tmt = workflow_params.get("analysis-mode", "LFQ") == "TMT"
+    prose = _tool_params(workflow_params, "ProSE-TMT" if tmt else "ProSE")
+    comet = _tool_params(workflow_params, "CometAdapter-TMT" if tmt else "CometAdapter")
+    if prose or not comet:
+        lower = prose.get("Search:precursor:mass_tolerance_lower", 20.0)
+        upper = prose.get("Search:precursor:mass_tolerance_upper", 20.0)
+        return {
+            "precursor": max(float(lower), float(upper)),
+            "precursor_unit": prose.get("Search:precursor:mass_tolerance_unit", "ppm"),
+            "fragment": float(prose.get("Search:fragment:mass_tolerance", 20.0)),
+            "fragment_ppm": prose.get("Search:fragment:mass_tolerance_unit", "ppm") == "ppm",
+        }
+    return {
+        "precursor": float(comet.get("precursor_mass_tolerance", 20.0)),
+        "precursor_unit": comet.get("precursor_error_units", "ppm"),
+        "fragment": float(comet.get("fragment_mass_tolerance", 0.02)),
+        "fragment_ppm": comet.get("fragment_error_units", "Da") != "Da",
+    }
+
+
+def search_results_dir(results: Path) -> Path:
+    """Folder of the raw database search hits of a run's ``results/`` folder.
+
+    Runs made before the switch to ProSE keep their hits in ``comet_results/``.
+    """
+    results = Path(results)
+    current = results / "search_results"
+    earlier = results / "comet_results"
+    return earlier if not current.exists() and earlier.exists() else current
+
+
 def extract_filename_from_idxml(idxml_path: Path, mzml_names=None) -> str:
     """Derive the source mzML filename from an idXML filename.
 
     The workflow names idXML files ``<mzML stem>_<step>...``, e.g.
-    ``02COVID_comet_perc_filter.idXML``. When the input mzML names are known the
+    ``02COVID_prose_perc_filter.idXML``. When the input mzML names are known the
     longest one whose stem prefixes the idXML stem wins; otherwise the known
     step suffixes are stripped from the end.
     """
@@ -208,7 +251,7 @@ def extract_filename_from_idxml(idxml_path: Path, mzml_names=None) -> str:
         if candidates:
             return max(candidates, key=len)
     while True:
-        for suffix in ['_filter', '_perc', '_per', '_comet']:
+        for suffix in ['_filter', '_perc', '_per', '_prose', '_comet']:
             if stem.endswith(suffix):
                 stem = stem[:-len(suffix)]
                 break
