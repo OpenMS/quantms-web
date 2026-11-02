@@ -164,7 +164,14 @@ sync:
   - src/python-tools/*
   - example-data/*
   - assets/*
-  - k8s/overlays/*
+  - k8s/*
+  - .github/workflows/build-and-test.yml
+  - .github/kind-config.yaml
+  - .github/workflows/build-desktop-app.yaml
+  - docker-compose.yml
+  - docs/kubernetes-deployment.md
+  - CLAUDE.md
+  - test_gui.py
   - src/Workflow.py
   - src/WorkflowTest.py
   - src/common/contaminants.py
@@ -186,3 +193,6 @@ sync:
   - src/common/spectrum_view.py
   - src/pride.py
   - src/pride_ui.py
+  - tests/test_tasks.py
+  - tests/test_workspace_sync.py
+  - tests/test_workspace_selector.py

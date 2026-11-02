@@ -15,7 +15,7 @@ commonLabels:
 images:
   - name: openms-streamlit
     newName: ghcr.io/openms/quantms-web
-    newTag: main-full
+    newTag: OpenDDA-1.2.2-full
 
 patches:
   - target:
