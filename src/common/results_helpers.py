@@ -14,6 +14,7 @@ except ImportError:  # pyOpenMS <= 3.4.x
 from src.workflow.ParameterManager import ParameterManager
 from src.workflow.RunManager import RunManager
 from src.workflow.run_widgets import get_selected_run, select_run
+from src.common.fractions import fraction_samples, sample_of
 from src.common.contaminants import drop_contaminants, is_contaminant
 from src.common.peptide_format import to_proforma
 from src.common.isobaric import channel_column_names, label_type
@@ -458,7 +459,14 @@ def load_abundance_data(
             if key.startswith("mzML-group-") and value
         }
 
-        df["Sample"] = df["Reference"].str.replace(".mzML", "", regex=False)
+        # The fractions of one sample are one column; otherwise every file is a sample
+        fractions = fraction_samples(get_results_dir(workspace_path, run_id), params)
+        df["Sample"] = df["Reference"].map(lambda ref: sample_of(ref, fractions))
+        if fractions:
+            group_map = {
+                info["sample"]: info["condition"] for info in fractions.values() if info["condition"]
+            }
+            df["Reference"] = df["Sample"]
 
         # Build sample display order.
         if group_map:

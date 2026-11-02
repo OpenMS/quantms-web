@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from src.common.fractions import fraction_samples
 from src.common.results_helpers import extract_filename_from_idxml, load_idxml
 
 UNASSIGNED = "Unassigned"
@@ -41,6 +42,12 @@ def identification_counts(idxml_path) -> dict:
     Only the top hit of each spectrum counts, and decoy hits are left out.
     Proteins are the accessions the target peptides map to.
     """
+    psms, sequences, proteins = identification_sets(idxml_path)
+    return {"Target PSMs": psms, "Peptides": len(sequences), "Proteins": len(proteins)}
+
+
+def identification_sets(idxml_path) -> tuple:
+    """(target PSM count, distinct peptide sequences, distinct protein accessions) of one idXML."""
     _, peptides = load_idxml(idxml_path)
     psms = 0
     sequences, proteins = set(), set()
@@ -52,24 +59,29 @@ def identification_counts(idxml_path) -> dict:
         psms += 1
         sequences.add(hit.getSequence().toString())
         proteins.update(ev.getProteinAccession() for ev in hit.getPeptideEvidences())
-    return {"Target PSMs": psms, "Peptides": len(sequences), "Proteins": len(proteins)}
+    return psms, sequences, proteins
 
 
-def lfq_quantified_counts(quant_csv) -> dict:
+def lfq_quantified_counts(quant_csv, sample_of_file=None) -> dict:
     """Quantified proteins and peptides per input file name, from ProteomicsLFQ's CSV.
 
     A protein (group) or peptide counts for a file when its intensity there is above 0.
+    With ``sample_of_file`` (file name to sample name), the counts are per sample
+    instead, so the fractions of a sample count together.
     """
     try:
         df = pd.read_csv(quant_csv, usecols=["ProteinName", "PeptideSequence", "Reference", "Intensity"])
     except (OSError, ValueError):
         return {}
     df = df[pd.to_numeric(df["Intensity"], errors="coerce") > 0]
+    df["Reference"] = df["Reference"].map(lambda ref: Path(str(ref)).name)
+    if sample_of_file:
+        df["Reference"] = df["Reference"].map(lambda name: sample_of_file.get(name, name))
     counts = df.groupby("Reference").agg(
         proteins=("ProteinName", "nunique"), peptides=("PeptideSequence", "nunique")
     )
     return {
-        Path(str(ref)).name: {"Quantified proteins": int(row.proteins), "Quantified peptides": int(row.peptides)}
+        str(ref): {"Quantified proteins": int(row.proteins), "Quantified peptides": int(row.peptides)}
         for ref, row in counts.iterrows()
     }
 
@@ -106,6 +118,9 @@ def lfq_samples(workflow_dir, mzml_files, group_map: dict) -> pd.DataFrame:
     if filter_dir.is_dir():
         idxmls = {extract_filename_from_idxml(p, names): p for p in sorted(filter_dir.glob("*.idXML"))}
     quant_csvs = sorted((results / "quant_results").glob("*.csv")) if (results / "quant_results").is_dir() else []
+    fractions = fraction_samples(results, {f"mzML-group-{k}": v for k, v in group_map.items()})
+    if fractions:
+        return _fractionated_samples(names, idxmls, quant_csvs, fractions)
     quantified = lfq_quantified_counts(quant_csvs[0]) if quant_csvs else {}
 
     rows = []
@@ -116,6 +131,43 @@ def lfq_samples(workflow_dir, mzml_files, group_map: dict) -> pd.DataFrame:
             "Condition": _condition(group_map, name, Path(name).stem),
             **{col: ids.get(col) for col in ("Target PSMs", "Peptides", "Proteins")},
             **{col: quantified.get(name, {}).get(col) for col in ("Quantified proteins", "Quantified peptides")},
+        })
+    return _order(pd.DataFrame(rows, columns=SAMPLE_COLUMNS))
+
+
+def _fractionated_samples(names, idxmls: dict, quant_csvs, fractions: dict) -> pd.DataFrame:
+    """One row per sample, its fractions counted together.
+
+    PSMs add up over the fractions; peptides and proteins are the distinct ones
+    found in any fraction.
+    """
+    sample_of_file = {f: info["sample"] for f, info in fractions.items()}
+    quantified = lfq_quantified_counts(quant_csvs[0], sample_of_file) if quant_csvs else {}
+    order, totals = [], {}
+    for name in names:
+        info = fractions.get(name, {"sample": Path(name).stem, "condition": ""})
+        sample = info["sample"]
+        if sample not in totals:
+            order.append(sample)
+            totals[sample] = {"condition": info["condition"], "psms": 0, "seqs": set(), "prots": set(), "found": False}
+        if name in idxmls:
+            psms, seqs, prots = identification_sets(idxmls[name])
+            entry = totals[sample]
+            entry["psms"] += psms
+            entry["seqs"] |= seqs
+            entry["prots"] |= prots
+            entry["found"] = True
+    rows = []
+    for sample in order:
+        entry = totals[sample]
+        found = entry["found"]
+        rows.append({
+            "Sample": sample,
+            "Condition": entry["condition"] or UNASSIGNED,
+            "Target PSMs": entry["psms"] if found else None,
+            "Peptides": len(entry["seqs"]) if found else None,
+            "Proteins": len(entry["prots"]) if found else None,
+            **{col: quantified.get(sample, {}).get(col) for col in ("Quantified proteins", "Quantified peptides")},
         })
     return _order(pd.DataFrame(rows, columns=SAMPLE_COLUMNS))
 
