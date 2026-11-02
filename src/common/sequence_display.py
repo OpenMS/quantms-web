@@ -87,3 +87,100 @@ def psm_table(cache_dir: Path, table_id: str, mode: str, state_manager, height: 
     """Render the cached PSM table ``table_id`` with its sequences in ``mode``."""
     table = Table(cache_id=display_table_id(cache_dir, table_id, mode), cache_path=str(cache_dir))
     table(state_manager=state_manager, height=height)
+
+
+# Filter bar of the PSM page: q-value and contaminant columns, and the rows matching a search
+Q_FIELD = "q_value"
+Q_CEILING_FIELD = "q_ceiling"
+CLEAN_FIELD = "not_contaminant"
+Q_IDENTIFIER = "psm_q_max"
+SEARCH_FIELDS = ("sequence", DISPLAY_FIELD, "proforma", "protein_accession")
+
+
+def filtered_table_id(cache_dir: Path, table_id: str, mode: str, idxml_path: Path, query: str = "") -> str:
+    """Cache id of the PSM table with a q-value column, a contaminant switch and only
+    the rows matching ``query``; built on first use, from the table in ``mode``.
+
+    The q-value threshold is a range filter on the ``psm_q_max`` selection
+    (q_value <= threshold <= q_ceiling), so changing it needs no new cache.
+    """
+    import hashlib
+
+    from src.common.result_filters import q_value_per_hit, text_mask
+    from src.common.results_helpers import load_idxml
+
+    source_id = display_table_id(cache_dir, table_id, mode)
+    source = Path(cache_dir) / source_id
+    manifest = json.loads((source / "manifest.json").read_text())
+    generation = str(manifest.get("cache_generation", ""))[:8]
+    query = " ".join((query or "").split())
+    digest = hashlib.sha1(f"{source_id}|{query}".encode()).hexdigest()[:8]
+    prefix = f"{table_id}__f2"  # bump when the variant's layout changes
+    variant_id = f"{prefix}{digest}_{generation}"
+    if (Path(cache_dir) / variant_id).is_dir():
+        return variant_id
+
+    for stale in Path(cache_dir).glob(f"{table_id}__f*"):  # every older filtered variant
+        shutil.rmtree(stale, ignore_errors=True)
+    data = pl.read_parquet(source / "preprocessed" / "data.parquet")
+    q_values = q_value_per_hit(load_idxml(str(idxml_path))[1])
+    ids = data["id_idx"].to_numpy()
+    in_range = (ids >= 0) & (ids < len(q_values))
+    q = [float(q_values[i]) if ok else None for i, ok in zip(ids, in_range)]
+    data = data.with_columns(
+        pl.Series(Q_FIELD, q, dtype=pl.Float64).fill_nan(None),
+        pl.lit(1.0).alias(Q_CEILING_FIELD),
+        (~pl.col("contaminant")).alias(CLEAN_FIELD) if "contaminant" in data.columns else pl.lit(True).alias(CLEAN_FIELD),
+    )
+    if query:
+        frame = data.select([c for c in SEARCH_FIELDS if c in data.columns]).to_pandas()
+        data = data.filter(pl.Series(text_mask(frame, frame.columns, query).to_numpy()))
+
+    config = manifest["config"]
+    # Rounded for display (the cache holds float32 noise like 494.2902526855469),
+    # which keeps the table narrow enough not to fold columns into the rows
+    rounding = {"mz": 4, "rt": 1}
+    column_definitions = [
+        {**c, "formatter": "money", "formatterParams": {"thousand": False, "precision": rounding[c["field"]]}}
+        if c.get("field") in rounding and "formatter" not in c else c
+        for c in config["column_definitions"]
+    ]
+    q_column = {"field": Q_FIELD, "title": "q-value", "sorter": "number",
+                "formatter": "money", "formatterParams": {"thousand": False, "precision": 5},
+                "headerTooltip": "Percolator's q-value: the lowest FDR at which this match is accepted"}
+    after = next((i for i, c in enumerate(column_definitions) if c.get("field") == "score"), len(column_definitions) - 1)
+    column_definitions.insert(after + 1, q_column)
+    Table(
+        cache_id=variant_id,
+        data=data.lazy(),
+        cache_path=str(cache_dir),
+        interactivity=manifest.get("interactivity") or None,
+        column_definitions=column_definitions,
+        initial_sort=config.get("initial_sort"),
+        index_field=config.get("index_field", "id"),
+        go_to_fields=config.get("go_to_fields"),
+        layout=config.get("layout", "fitDataFill"),
+        page_size=config.get("page_size", 100),
+        toggle_filters=[{"label": "Hide contaminants", "column": CLEAN_FIELD, "default": False}],
+        range_filters={Q_IDENTIFIER: [Q_FIELD, Q_CEILING_FIELD]},
+    )
+    return variant_id
+
+
+def filtered_psm_table(
+    cache_dir: Path, table_id: str, mode: str, state_manager, idxml_path: Path,
+    query: str = "", q_max: float | None = None, height: int = 533,
+) -> int:
+    """Render the PSM table through the filter bar's search and q-value threshold.
+
+    Returns the number of rows matching the search (before the q-value and
+    contaminant filters, which the table applies itself).
+    """
+    variant_id = filtered_table_id(cache_dir, table_id, mode, idxml_path, query)
+    if q_max is None:
+        state_manager.clear_selection(Q_IDENTIFIER)
+    else:
+        state_manager.set_selection(Q_IDENTIFIER, q_max)
+    table = Table(cache_id=variant_id, cache_path=str(cache_dir))
+    table(state_manager=state_manager, height=height)
+    return pl.scan_parquet(Path(cache_dir) / variant_id / "preprocessed" / "data.parquet").select(pl.len()).collect().item()

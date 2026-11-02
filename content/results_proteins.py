@@ -7,10 +7,15 @@ from openms_insight import SequenceView, StateManager
 from src.common.common import page_setup
 from src.common.guide import needs_results, next_steps, page_intro
 from src.common.insight_tables import show_insight_table
+from src.common.contaminants import is_contaminant
+from src.common.filter_bar import protein_filter_bar
 from src.common.protein_table import build_tables, collect_psms, coverage_html, read_fasta
+from src.common.result_filters import (
+    add_protein_flags, file_conditions, filter_proteins, filter_psms_by_q, max_replicates,
+)
 from src.common.results_helpers import run_picker, get_run_dir, get_run_params
 from src.common.spectrum_view import fragment_tolerance, show_spectrum
-from src.WorkflowTest import WorkflowTest
+from src.WorkflowTest import WorkflowTest, demo_group
 
 params = page_setup()
 run_picker()
@@ -56,34 +61,71 @@ mzml_names = [Path(f).name for f in run_params.get("mzML-files", []) or []]
 source_files = [*idxml_files, *([fasta_path] if fasta_path and fasta_path.is_file() else [])]
 
 
-@st.cache_data(show_spinner="Building protein tables...")
-def load_tables(paths: tuple[str, ...], fasta: str | None, mtimes: tuple[float, ...], mzml_names: tuple[str, ...]):
+@st.cache_data(show_spinner="Reading the identifications...")
+def load_psms(paths: tuple[str, ...], fasta: str | None, mtimes: tuple[float, ...], mzml_names: tuple[str, ...]):
     # mtimes only key the cache, so a re-run of the workflow invalidates it
     psms = collect_psms([Path(p) for p in paths], list(mzml_names))
     fasta_entries = read_fasta(fasta) if fasta else {}
-    files = sorted(psms["file"].unique())
-    return (*build_tables(psms, fasta_entries, files), fasta_entries)
+    return psms, fasta_entries
 
+
+@st.cache_data(show_spinner="Building protein tables...")
+def load_tables(paths: tuple[str, ...], fasta: str | None, mtimes: tuple[float, ...], mzml_names: tuple[str, ...],
+                q_max: float | None, conditions: tuple):
+    psms, fasta_entries = load_psms(paths, fasta, mtimes, mzml_names)
+    psms = filter_psms_by_q(psms, q_max)
+    files = sorted(psms["file"].unique())
+    proteins, peptides, psms_long, coverage = build_tables(psms, fasta_entries, files)
+    if not proteins.empty:
+        proteins = add_protein_flags(proteins, psms_long, dict(conditions))
+    return proteins, peptides, psms_long, coverage, fasta_entries
+
+
+# Conditions from Describe experiment, for "found in n replicates"
+conditions = file_conditions(
+    mzml_names, lambda name: run_params.get(f"mzML-group-{name}") or demo_group(name)
+)
+run_fdr = min(float(run_params.get("psm-fdr-percent", 1.0)), 100.0)
+query, q_max, min_peptides, min_replicates = protein_filter_bar(
+    "protein-filter", run_fdr if run_fdr < 100.0 else None, max_replicates(conditions)
+)
 
 proteins, peptides, psms_long, coverage, fasta_entries = load_tables(
     tuple(str(p) for p in idxml_files),
     str(fasta_path) if fasta_path and fasta_path.is_file() else None,
     tuple(p.stat().st_mtime for p in source_files),
     tuple(mzml_names),
+    q_max,
+    tuple(sorted(conditions.items())),
 )
 
 if proteins.empty:
-    st.info("No target proteins were identified.")
+    st.info("No target proteins were identified at this q-value.")
     st.stop()
 
+shown = filter_proteins(proteins, query, min_peptides, min_replicates)
+shown_psms = psms_long[psms_long["accession"].isin(shown["accession"])]
+clean = ~shown["contaminant"]
 c1, c2, c3 = st.columns(3)
-c1.metric("Proteins", f"{len(proteins):,}")
-c2.metric("Peptides", f"{peptides['peptide'].nunique():,}")
-c3.metric("Target PSMs", f"{psms_long.drop_duplicates(['file', 'scan', 'peptide']).shape[0]:,}")
+c1.metric(
+    "Proteins", f"{int(clean.sum()):,}",
+    help=f"Matching the filters, without the {int((~clean).sum())} contaminants among them. "
+         f"{len(proteins):,} proteins in total at this q-value.",
+)
+c2.metric("Peptides", f"{shown_psms.loc[~shown_psms['accession'].map(is_contaminant), 'peptide'].nunique():,}")
+c3.metric(
+    "Target PSMs",
+    f"{shown_psms[~shown_psms['accession'].map(is_contaminant)].drop_duplicates(['file', 'scan', 'peptide']).shape[0]:,}",
+)
+if shown.empty:
+    st.info("No protein matches these filters. Loosen them above.")
 
 state_manager = StateManager("proteins_page")
 # Columns the linked tables filter on: already shown by the selection above them
 HIDDEN = {"visible": False}
+# A protein the filters hide is no longer selected, so its peptides go too
+if state_manager.get_selection("protein") not in set(shown["accession"]):
+    state_manager.clear_selection("protein")
 
 
 def decimals(n: int) -> dict:
@@ -92,10 +134,19 @@ def decimals(n: int) -> dict:
 
 st.subheader("Proteins")
 show_insight_table(
-    proteins, name="proteins", cache_dir=cache_dir, source_files=source_files,
+    shown.assign(not_contaminant=~shown["contaminant"]),
+    name="proteins", cache_dir=cache_dir, source_files=source_files,
+    extra_key=f"filters-v2|{query}|{q_max}|{min_peptides}|{min_replicates}|{sorted(conditions.items())}",
     title="proteins", height=450, state_manager=state_manager,
     interactivity={"protein": "accession"},
-    column_overrides={"coverage (%)": decimals(1)},
+    column_overrides={
+        "coverage (%)": decimals(1),
+        "contaminant": {"formatter": "tickCross", "sorter": "boolean", "visible": False},
+        "not_contaminant": HIDDEN,
+        **({"replicates": {"headerTooltip": "Most files of one condition with a PSM of this protein"}}
+           if "replicates" in shown.columns else {}),
+    },
+    toggle_filters=[{"label": "Hide contaminants", "column": "not_contaminant", "default": True}],
 )
 
 selected = state_manager.get_selection("protein")
@@ -112,6 +163,7 @@ if selected in coverage and selected in fasta_entries:
 st.subheader("Peptides of the selected protein")
 show_insight_table(
     peptides, name="protein_peptides", cache_dir=cache_dir, source_files=source_files,
+    extra_key=f"q|{q_max}",
     title="peptides", height=350, state_manager=state_manager,
     filters={"protein": "accession"}, interactivity={"peptide": "peptide"},
     column_overrides={"accession": HIDDEN},
@@ -124,7 +176,7 @@ show_insight_table(
     title="psms", height=350, state_manager=state_manager,
     filters={"protein": "accession", "peptide": "peptide"},
     interactivity={"psm": "psm"}, layout="fitColumns",
-    extra_key="with-psm-id-v2",  # the cache follows the source files; name the newer psm column and layout
+    extra_key=f"with-psm-id-v2|q|{q_max}",  # the cache follows the source files; name the newer psm column and layout
     column_overrides={
         "accession": HIDDEN, "peptide": HIDDEN, "psm": HIDDEN,
         "RT (s)": decimals(1), "m/z": decimals(4),

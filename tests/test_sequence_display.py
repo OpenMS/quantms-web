@@ -74,3 +74,42 @@ def test_variant_follows_a_rebuilt_base(tmp_path):
     assert not (tmp_path / first).exists()
     data = pl.read_parquet(tmp_path / second / "preprocessed" / "data.parquet")
     assert data["sequence_display"].to_list() == ["ELVISK"]
+
+
+def test_filtered_table_adds_q_values_and_searches(tmp_path):
+    import pyopenms as poms
+    from src.common.sequence_display import CLEAN_FIELD, Q_FIELD, Q_IDENTIFIER, filtered_table_id
+
+    _base_table(tmp_path)
+    # The run's idXML, hits in id_idx order with their q-values
+    peptides = []
+    for seq, q in (("PEPM(Oxidation)K", 0.004), ("PEPTIDEK", 0.0002)):
+        pep = poms.PeptideIdentification()
+        hit = poms.PeptideHit()
+        hit.setSequence(poms.AASequence.fromString(seq))
+        hit.setMetaValue("MS:1001491", q)
+        pep.setHits([hit])
+        peptides.append(pep)
+    if hasattr(poms, "PeptideIdentificationList"):
+        container = poms.PeptideIdentificationList()
+        for pep in peptides:
+            container.push_back(pep)
+        peptides = container
+    idxml = tmp_path / "run.idXML"
+    poms.IdXMLFile().store(str(idxml), [poms.ProteinIdentification()], peptides)
+
+    variant = filtered_table_id(tmp_path, "table_run", "ProForma", idxml)
+    data = pl.read_parquet(tmp_path / variant / "preprocessed" / "data.parquet").sort("id_idx")
+    assert data[Q_FIELD].to_list() == pytest.approx([0.004, 0.0002])
+    assert data[CLEAN_FIELD].to_list() == [True, True]
+    manifest = json.loads((tmp_path / variant / "manifest.json").read_text())
+    assert manifest["config"]["range_filters"] == {Q_IDENTIFIER: [Q_FIELD, "q_ceiling"]}
+    assert manifest["config"]["toggle_filters"][0]["column"] == CLEAN_FIELD
+    fields = [c["field"] for c in manifest["config"]["column_definitions"]]
+    assert fields.index(Q_FIELD) == fields.index("score") + 1
+
+    # A search keeps the matching rows (any modification form) and replaces the variant
+    searched = filtered_table_id(tmp_path, "table_run", "ProForma", idxml, "m[oxidation]")
+    assert searched != variant and not (tmp_path / variant).exists()
+    data = pl.read_parquet(tmp_path / searched / "preprocessed" / "data.parquet")
+    assert data["id_idx"].to_list() == [0]
