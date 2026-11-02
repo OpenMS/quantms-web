@@ -164,7 +164,13 @@ sync:
   - src/python-tools/*
   - example-data/*
   - assets/*
-  - k8s/overlays/*
+  - k8s/*
+  - .github/workflows/build-and-test.yml
+  - .github/workflows/build-desktop-app.yaml
+  - docker-compose.yml
+  - docs/kubernetes-deployment.md
+  - CLAUDE.md
+  - test_gui.py
   - src/Workflow.py
   - src/WorkflowTest.py
   - src/common/contaminants.py
