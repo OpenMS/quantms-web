@@ -9,8 +9,18 @@ from .RunManager import RunManager, FINISHED, FAILED, CANCELLED, RUNNING
 import multiprocessing
 import streamlit as st
 import shutil
+import subprocess
+import sys
 import time
 import traceback
+
+# Runs one workflow in its own interpreter (see _start_workflow_local). The
+# current directory, the app's, is first on sys.path for "python -c".
+_RUN_WORKFLOW = (
+    "import sys\n"
+    "from src.workflow.tasks import execute_workflow\n"
+    "execute_workflow(*sys.argv[1:])\n"
+)
 
 class WorkflowManager:
     # Keep every run as its own named result set in <workflow_dir>/runs/<id>/
@@ -64,10 +74,10 @@ class WorkflowManager:
         Starts the workflow process.
 
         Online mode: Submits to Redis queue
-        Local mode: Spawns multiprocessing.Process (existing behavior)
+        Local mode: Runs the workflow in a separate Python process
         """
         # Flush the latest session state to params.json so the worker
-        # (queued) or the forked child (local) sees the values the user
+        # (queued) or the workflow process (local) sees the values the user
         # just selected, not stale disk state from a previous fragment run.
         self.parameter_manager.save_parameters()
         if self.multi_run:
@@ -121,12 +131,30 @@ class WorkflowManager:
             self._start_workflow_local()
 
     def _start_workflow_local(self) -> None:
-        """Start workflow as local process (existing behavior for local mode)"""
+        """Start the workflow in a separate Python process (local mode)."""
         # Delete the log file if it already exists
         shutil.rmtree(Path(self.workflow_dir, "logs"), ignore_errors=True)
-        # Start workflow process
-        workflow_process = multiprocessing.Process(target=self.workflow_process)
-        workflow_process.start()
+        # Run the workflow in a fresh interpreter, the way the queue worker
+        # does. A child forked from the server (multiprocessing's default on
+        # Linux) inherits the thread pools the server has already used, such
+        # as polars' and the OpenMP pool of pyOpenMS, without their threads,
+        # and blocks forever the first time it needs one: every run started
+        # after a results page was open hung. multiprocessing's "spawn" does
+        # not help, it re-runs the page script (Streamlit's __main__) in the
+        # child.
+        if getattr(sys, "frozen", False):
+            # A PyInstaller executable cannot run "-c"; it is Windows-only,
+            # where multiprocessing starts a fresh interpreter anyway.
+            workflow_process = multiprocessing.Process(target=self.workflow_process)
+            workflow_process.start()
+        else:
+            args = [str(self.workflow_dir), self.__class__.__name__, self.__class__.__module__]
+            if self.multi_run:
+                args.append(self.run_id)
+            workflow_process = subprocess.Popen(
+                [sys.executable, "-c", _RUN_WORKFLOW, *args],
+                stdin=subprocess.DEVNULL,
+            )
         # Add workflow process id to pid dir
         self.executor.pid_dir.mkdir(exist_ok=True)
         try:
