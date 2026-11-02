@@ -387,9 +387,10 @@ jobs:
           # Apple Silicon only; Intel Macs are not supported.
           - platform: macOS-arm64
             runs-on: macos-15
-          # Built on the oldest Ubuntu we support: the bundle needs glibc >= 2.35.
+          # The OpenMS 3.6 .deb is built for Ubuntu 24.04 (glibc 2.38, Qt 6 t64
+          # packages), so the bundle is built there and needs glibc >= 2.39.
           - platform: Linux-x86_64
-            runs-on: ubuntu-22.04
+            runs-on: ubuntu-24.04
     runs-on: ${{ matrix.runs-on }}
     # Signing tens of thousands of payload files takes over two hours on macOS.
     timeout-minutes: 300
