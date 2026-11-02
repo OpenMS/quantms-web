@@ -16,7 +16,7 @@ env:
 
 jobs:
   lint-manifests:
-    runs-on: self-hosted
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -45,7 +45,7 @@ jobs:
     # multi-arch manifest under `<ref>-<variant>` (and `latest`) is stitched
     # together in `create-manifest` once the sibling `build-arm64` succeeds.
     needs: lint-manifests
-    runs-on: self-hosted
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
     permissions:
       contents: read
       packages: write
@@ -241,7 +241,7 @@ jobs:
     # on pull. PRs don't push per-arch tags, so there's nothing to merge.
     needs: [build-amd64, build-arm64]
     if: github.event_name != 'pull_request'
-    runs-on: self-hosted
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
     permissions:
       contents: read
       packages: write
@@ -311,7 +311,7 @@ jobs:
     # significant maintenance surface for limited value (HPC SIF consumers
     # remain amd64). Re-evaluate if upstream starts publishing arm64 builds.
     needs: build-amd64
-    runs-on: self-hosted
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
     strategy:
       fail-fast: false
       matrix:
@@ -484,7 +484,7 @@ jobs:
     # on-the-fly OCI->SIF conversion the docker:// path requires.
     needs: test-apptainer
     if: github.event_name != 'pull_request'
-    runs-on: self-hosted
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
     permissions:
       contents: read
       packages: write
@@ -551,13 +551,13 @@ jobs:
         include:
           - variant: full
             arch: amd64
-            runner: self-hosted
+            runner: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
           - variant: full
             arch: arm64
             runner: ubuntu-24.04-arm
           - variant: simple
             arch: amd64
-            runner: self-hosted
+            runner: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
           - variant: simple
             arch: arm64
             runner: ubuntu-24.04-arm
@@ -689,13 +689,13 @@ jobs:
         include:
           - variant: full
             arch: amd64
-            runner: self-hosted
+            runner: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
           - variant: full
             arch: arm64
             runner: ubuntu-24.04-arm
           - variant: simple
             arch: amd64
-            runner: self-hosted
+            runner: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
           - variant: simple
             arch: arm64
             runner: ubuntu-24.04-arm
