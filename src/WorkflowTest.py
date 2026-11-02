@@ -802,11 +802,10 @@ class WorkflowTest(WorkflowManager):
                     "top:N": 3,
                     "top:aggregate": "median",
                     "top:include_all": True,
-                    "ratios": True,
                     "threads": 8,
                     "debug": 0,
                 },
-                flag_parameters=["top:include_all", "ratios"],
+                flag_parameters=["top:include_all"],
                 tool_instance_name="ProteinQuantifier-TMT",
             )
     def render_tmt_groups(self):
