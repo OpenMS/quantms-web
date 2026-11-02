@@ -14,12 +14,18 @@ import sys
 import time
 import traceback
 
-# Runs one workflow in its own interpreter (see _start_workflow_local). The
-# current directory, the app's, is first on sys.path for "python -c".
+# The app folder, which holds the src package.
+_APP_ROOT = str(Path(__file__).resolve().parents[2])
+
+# Runs one workflow in its own interpreter (see _start_workflow_local): argv is
+# the app folder, then the arguments of execute_workflow. The app folder is put
+# on sys.path explicitly, because the current directory is not always the app's
+# (the Windows desktop app starts Streamlit from elsewhere).
 _RUN_WORKFLOW = (
     "import sys\n"
+    "sys.path.insert(0, sys.argv[1])\n"
     "from src.workflow.tasks import execute_workflow\n"
-    "execute_workflow(*sys.argv[1:])\n"
+    "execute_workflow(*sys.argv[2:])\n"
 )
 
 class WorkflowManager:
@@ -152,7 +158,7 @@ class WorkflowManager:
             if self.multi_run:
                 args.append(self.run_id)
             workflow_process = subprocess.Popen(
-                [sys.executable, "-c", _RUN_WORKFLOW, *args],
+                [sys.executable, "-c", _RUN_WORKFLOW, _APP_ROOT, *args],
                 stdin=subprocess.DEVNULL,
             )
         # Add workflow process id to pid dir

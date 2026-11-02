@@ -42,7 +42,9 @@ def _warm_polars_pool():
 
 
 def test_run_finishes_after_the_server_used_polars(tmp_path, monkeypatch):
-    monkeypatch.chdir(ROOT)  # the workflow process imports src.* from the app folder
+    # Start from another folder, as the Windows desktop app does: the workflow
+    # process must still find src.* in the app folder.
+    monkeypatch.chdir(tmp_path)
     _warm_polars_pool()
 
     workflow_dir = tmp_path / "polars-workflow"
