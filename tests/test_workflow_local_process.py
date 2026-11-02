@@ -47,7 +47,7 @@ def test_run_finishes_after_the_server_used_polars(tmp_path, monkeypatch):
 
     workflow_dir = tmp_path / "polars-workflow"
     workflow_dir.mkdir()
-    wf = PolarsWorkflow.__new__(PolarsWorkflow)
+    wf = object.__new__(PolarsWorkflow)  # skips __init__, which needs a Streamlit session
     wf.workflow_dir = workflow_dir
     wf.run_id = None
     wf.executor = SimpleNamespace(pid_dir=workflow_dir / "pids")
