@@ -8,6 +8,7 @@ from src.common.common import show_fig
 from src.common.guide import needs_results, next_steps, page_intro
 from src.common.fragment_plots import fragment_error_plot, ion_table, ion_table_html, load_psm_fragments
 from src.common.filter_bar import psm_filter_bar
+from src.common.psm_navigation import psm_stepper
 from src.common.sequence_display import filtered_psm_table, sequence_mode_selector
 from openms_insight import Heatmap, SequenceView, StateManager
 
@@ -81,11 +82,12 @@ st.subheader("PSM Table")
 run_fdr = min(float(run_params.get("psm-fdr-percent", 1.0)), 100.0)
 query, q_max = psm_filter_bar("psm-filter", run_fdr if run_fdr < 100.0 else None)
 mode = sequence_mode_selector()
-matching = filtered_psm_table(
+psm_table_view, matching = filtered_psm_table(
     cache_dir, f"table_{cache_id_prefix}", mode, state_manager, selected_file, query=query, q_max=q_max,
 )
 if query and not matching:
     st.info(f"No PSM of this file matches “{query}”.")
+psm_stepper(psm_table_view, state_manager, "identification", key="psm-step")
 
 st.subheader("Peptide Sequence")
 seq_view(key=f"seqview_{cache_id_prefix}", state_manager=state_manager, height=533)

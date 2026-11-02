@@ -115,7 +115,7 @@ def filtered_table_id(cache_dir: Path, table_id: str, mode: str, idxml_path: Pat
     generation = str(manifest.get("cache_generation", ""))[:8]
     query = " ".join((query or "").split())
     digest = hashlib.sha1(f"{source_id}|{query}".encode()).hexdigest()[:8]
-    prefix = f"{table_id}__f2"  # bump when the variant's layout changes
+    prefix = f"{table_id}__f3"  # bump when the variant's layout changes
     variant_id = f"{prefix}{digest}_{generation}"
     if (Path(cache_dir) / variant_id).is_dir():
         return variant_id
@@ -150,14 +150,21 @@ def filtered_table_id(cache_dir: Path, table_id: str, mode: str, idxml_path: Pat
                 "headerTooltip": "Percolator's q-value: the lowest FDR at which this match is accepted"}
     after = next((i for i, c in enumerate(column_definitions) if c.get("field") == "score"), len(column_definitions) - 1)
     column_definitions.insert(after + 1, q_column)
+    # The table highlights the first row matching the first identifier that has a
+    # selection, so the one naming a single row (the index field) goes first: with
+    # "file" first, a selection made elsewhere (Previous/Next, the plot) highlighted
+    # the file's first PSM instead of the selected one
+    index_field = config.get("index_field", "id")
+    interactivity = manifest.get("interactivity") or {}
+    interactivity = dict(sorted(interactivity.items(), key=lambda item: item[1] != index_field))
     Table(
         cache_id=variant_id,
         data=data.lazy(),
         cache_path=str(cache_dir),
-        interactivity=manifest.get("interactivity") or None,
+        interactivity=interactivity or None,
         column_definitions=column_definitions,
         initial_sort=config.get("initial_sort"),
-        index_field=config.get("index_field", "id"),
+        index_field=index_field,
         go_to_fields=config.get("go_to_fields"),
         layout=config.get("layout", "fitDataFill"),
         page_size=config.get("page_size", 100),
@@ -170,11 +177,11 @@ def filtered_table_id(cache_dir: Path, table_id: str, mode: str, idxml_path: Pat
 def filtered_psm_table(
     cache_dir: Path, table_id: str, mode: str, state_manager, idxml_path: Path,
     query: str = "", q_max: float | None = None, height: int = 533,
-) -> int:
+) -> tuple[Table, int]:
     """Render the PSM table through the filter bar's search and q-value threshold.
 
-    Returns the number of rows matching the search (before the q-value and
-    contaminant filters, which the table applies itself).
+    Returns the table and the number of rows matching the search (before the
+    q-value and contaminant filters, which the table applies itself).
     """
     variant_id = filtered_table_id(cache_dir, table_id, mode, idxml_path, query)
     if q_max is None:
@@ -183,4 +190,5 @@ def filtered_psm_table(
         state_manager.set_selection(Q_IDENTIFIER, q_max)
     table = Table(cache_id=variant_id, cache_path=str(cache_dir))
     table(state_manager=state_manager, height=height)
-    return pl.scan_parquet(Path(cache_dir) / variant_id / "preprocessed" / "data.parquet").select(pl.len()).collect().item()
+    matching = pl.scan_parquet(Path(cache_dir) / variant_id / "preprocessed" / "data.parquet").select(pl.len()).collect().item()
+    return table, matching

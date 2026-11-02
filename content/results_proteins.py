@@ -9,6 +9,7 @@ from src.common.guide import needs_results, next_steps, page_intro
 from src.common.insight_tables import show_insight_table
 from src.common.contaminants import is_contaminant
 from src.common.filter_bar import protein_filter_bar
+from src.common.psm_navigation import breadcrumb, psm_stepper
 from src.common.protein_table import build_tables, collect_psms, coverage_html, read_fasta
 from src.common.result_filters import (
     add_protein_flags, file_conditions, filter_proteins, filter_psms_by_q, max_replicates,
@@ -132,7 +133,7 @@ def decimals(n: int) -> dict:
     return {"formatter": "money", "formatterParams": {"thousand": False, "precision": n}}
 
 
-st.subheader("Proteins")
+st.subheader("Proteins", anchor="proteins")
 show_insight_table(
     shown.assign(not_contaminant=~shown["contaminant"]),
     name="proteins", cache_dir=cache_dir, source_files=source_files,
@@ -153,14 +154,14 @@ selected = state_manager.get_selection("protein")
 if selected in coverage and selected in fasta_entries:
     description, sequence = fasta_entries[selected]
     mask = coverage[selected]
-    st.subheader(f"Coverage of {selected}")
+    st.subheader(f"Coverage of {selected}", anchor="coverage")
     st.caption(
         f"{description} · {len(sequence)} residues · {mask.sum()} covered ({100 * mask.mean():.1f} %). "
         "Covered residues are highlighted; every occurrence of a peptide counts."
     )
     st.html(coverage_html(sequence, mask))
 
-st.subheader("Peptides of the selected protein")
+st.subheader("Peptides of the selected protein", anchor="peptides")
 show_insight_table(
     peptides, name="protein_peptides", cache_dir=cache_dir, source_files=source_files,
     extra_key=f"q|{q_max}",
@@ -169,9 +170,9 @@ show_insight_table(
     column_overrides={"accession": HIDDEN},
 )
 
-st.subheader("PSMs of the selected peptide")
+st.subheader("PSMs of the selected peptide", anchor="psms")
 st.caption("One row per spectrum that identified the peptide. Click a row to see its annotated spectrum below.")
-show_insight_table(
+psm_table_view = show_insight_table(
     psms_long, name="protein_psms", cache_dir=cache_dir, source_files=source_files,
     title="psms", height=350, state_manager=state_manager,
     filters={"protein": "accession", "peptide": "peptide"},
@@ -190,7 +191,16 @@ match = psms_long[psms_long["psm"] == selected_psm] if selected_psm else psms_lo
 if not match.empty:
     psm = match.iloc[0]
     run, psm_id = str(selected_psm).rsplit(":", 1)
-    st.subheader(f"Spectrum of {psm['peptide']} (scan {psm['scan']}, {Path(psm['file']).stem})")
+    st.subheader(f"Spectrum of {psm['peptide']} (scan {psm['scan']}, {Path(psm['file']).stem})", anchor="spectrum")
+    gene = shown.loc[shown["accession"] == selected, "gene"] if "gene" in shown.columns else None
+    protein_label = selected + (f" ({gene.iloc[0]})" if gene is not None and len(gene) and gene.iloc[0] else "")
+    breadcrumb([
+        ("Proteins", "proteins"),
+        (protein_label, "coverage" if selected in coverage and selected in fasta_entries else "proteins"),
+        (str(psm["peptide"]), "peptides"),
+        (f"PSM scan {psm['scan']} · {Path(psm['file']).stem}", None),
+    ])
+    psm_stepper(psm_table_view, state_manager, "psm", key="protein-psm-step")
     if not (cache_dir / f"seqview_{run}").is_dir() or psm["file"] not in mzml_names:
         st.info("No spectrum viewer data for this run. Re-run the analysis to create it.")
     else:

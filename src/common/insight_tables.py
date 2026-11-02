@@ -109,8 +109,8 @@ def show_insight_table(
     state_manager=None,
     column_overrides: dict | None = None,
     **table_kwargs,
-) -> None:
-    """Render ``df`` as a server-side paginated openms-insight table.
+):
+    """Render ``df`` as a server-side paginated openms-insight table, and return it.
 
     The cache is keyed on ``source_files`` (path and mtime) and ``extra_key``;
     when either changes (a rerun, new group assignments) a new cache replaces the
@@ -163,3 +163,4 @@ def show_insight_table(
 
     table = Table(cache_id=cache_id, cache_path=str(cache_dir))
     table(key=f"insight_table_{name}", height=height, state_manager=state_manager)
+    return table
