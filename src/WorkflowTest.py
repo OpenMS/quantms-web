@@ -20,6 +20,7 @@ from src.common.contaminants import CONTAMINANT_PREFIX, append_fasta, write_cont
 from src.common.fdr_display import FDR_QUICK_CHOICES, fdr_applied, matching_quick_choice, percent_label, q_label
 from src.common.isobaric import ISOBARIC_CHANNELS
 from src.common.lfq_design import groups_from_design, initial_groups, is_fractionated, seed_design
+from src.common.qpx_export import app_version, export_run
 from src.workflow.ExperimentalDesign import design_path, load_design, save_design, to_openms_design
 from src.pride_ui import pride_import_section
 from openms_insight import Table, Heatmap, LinePlot, SequenceView
@@ -904,6 +905,20 @@ class WorkflowTest(WorkflowManager):
         self.logger.log("Workflow stopped due to error")
         return False
 
+    def write_qpx(self) -> None:
+        """Export the filtered PSMs and the run's provenance as QPX Parquet (an export; failures are logged)."""
+        self.logger.log("📦 Writing the QPX export (PSMs and provenance)...")
+        try:
+            log = Path(self.workflow_dir, "logs", "commands-and-run-times.log")
+            out = export_run(
+                self.results_dir, self.workflow_dir, self.params,
+                log.read_text(encoding="utf-8", errors="ignore") if log.is_file() else "",
+                app_version(),
+            )
+            self.logger.log(f"✅ QPX export: {out['psms']} PSMs in {Path(out['psm']).name}")
+        except Exception as e:  # an export must not fail the run
+            self.logger.log(f"⚠️ QPX export failed: {e}")
+
     def prepare_search_database(self, fasta_path: Path):
         """Build the database to search: the FASTA, the cRAP contaminants and decoys.
 
@@ -1483,6 +1498,8 @@ class WorkflowTest(WorkflowManager):
             #     st.error("ProteomicsLFQ failed: mzTab not created")
             #     st.stop()
 
+            self.write_qpx()
+
             # ================================
             # 5️⃣ Final report
             # # ================================
@@ -1935,7 +1952,8 @@ class WorkflowTest(WorkflowManager):
                     return False
             self.logger.log("✅ ProteinQuantifier complete")
             self.logger.log("📄 Generating protein table...")
-            
+            self.write_qpx()
+
             self.logger.log("🎉 WORKFLOW FINISHED")
 
     @st.fragment

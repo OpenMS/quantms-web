@@ -57,27 +57,34 @@ def file_conditions(files, group_of) -> dict:
     return {f: c for f in files if (c := str(group_of(f) or "").strip())}
 
 
-def replicates_found(psms: pd.DataFrame, conditions: dict) -> pd.Series:
+def replicates_found(psms: pd.DataFrame, conditions: dict, sample_of: dict | None = None) -> pd.Series:
     """Per accession, the most files of one condition with a PSM of it.
 
     ``psms`` is long format (one row per PSM and accession, column ``file``);
     files without a condition are left out. 0 for a protein seen only there.
+    With ``sample_of`` (file -> sample, for fractionated runs) samples are
+    counted instead of files, so the fractions of one sample count once.
     """
     if psms.empty or not conditions:
         return pd.Series(dtype="int64")
     seen = psms[["accession", "file"]].drop_duplicates()
-    seen = seen.assign(condition=seen["file"].map(conditions)).dropna(subset=["condition"])
+    seen = seen.assign(
+        condition=seen["file"].map(conditions),
+        unit=seen["file"].map(lambda f: (sample_of or {}).get(f, f)),
+    ).dropna(subset=["condition"])
     if seen.empty:
         return pd.Series(dtype="int64")
-    return seen.groupby(["accession", "condition"]).size().groupby(level=0).max()
+    return seen.groupby(["accession", "condition"])["unit"].nunique().groupby(level=0).max()
 
 
-def add_protein_flags(proteins: pd.DataFrame, psms_long: pd.DataFrame, conditions: dict) -> pd.DataFrame:
+def add_protein_flags(
+    proteins: pd.DataFrame, psms_long: pd.DataFrame, conditions: dict, sample_of: dict | None = None,
+) -> pd.DataFrame:
     """Add ``contaminant`` and, with conditions set, ``replicates`` (see replicates_found)."""
     proteins = proteins.copy()
     proteins["contaminant"] = proteins["accession"].map(is_contaminant).astype(bool)
     if conditions:
-        counts = replicates_found(psms_long, conditions)
+        counts = replicates_found(psms_long, conditions, sample_of)
         replicates = proteins["accession"].map(counts).fillna(0).astype(int)
         # next to "found in", ahead of the wide per-file columns
         at = proteins.columns.get_loc("found in") + 1 if "found in" in proteins.columns else len(proteins.columns)
@@ -100,11 +107,16 @@ def filter_proteins(
     return proteins[keep]
 
 
-def max_replicates(conditions: dict) -> int:
-    """Files in the largest condition (the highest "found in" threshold that means anything)."""
+def max_replicates(conditions: dict, sample_of: dict | None = None) -> int:
+    """Files (or samples, with ``sample_of``) in the largest condition: the highest
+    "found in" threshold that means anything."""
     if not conditions:
         return 0
-    return int(pd.Series(list(conditions.values())).value_counts().max())
+    units = pd.DataFrame({
+        "condition": list(conditions.values()),
+        "unit": [(sample_of or {}).get(f, f) for f in conditions],
+    })
+    return int(units.groupby("condition")["unit"].nunique().max())
 
 
 def q_value_per_hit(peptides) -> np.ndarray:

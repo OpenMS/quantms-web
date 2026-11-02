@@ -10,6 +10,7 @@ from src.common.insight_tables import show_insight_table
 from src.common.contaminants import is_contaminant
 from src.common.filter_bar import protein_filter_bar
 from src.common.protein_table import build_tables, collect_psms, coverage_html, read_fasta
+from src.common.fractions import fraction_samples
 from src.common.result_filters import (
     add_protein_flags, file_conditions, filter_proteins, filter_psms_by_q, max_replicates,
 )
@@ -69,25 +70,32 @@ def load_psms(paths: tuple[str, ...], fasta: str | None, mtimes: tuple[float, ..
     return psms, fasta_entries
 
 
+# A run whose samples were split into fractions counts per sample, not per file
+fractions = fraction_samples(filter_dir.parent, run_params) or {}
+sample_of = {f: info["sample"] for f, info in fractions.items()}
+
+
 @st.cache_data(show_spinner="Building protein tables...")
 def load_tables(paths: tuple[str, ...], fasta: str | None, mtimes: tuple[float, ...], mzml_names: tuple[str, ...],
-                q_max: float | None, conditions: tuple):
+                q_max: float | None, conditions: tuple, samples: tuple = ()):
     psms, fasta_entries = load_psms(paths, fasta, mtimes, mzml_names)
     psms = filter_psms_by_q(psms, q_max)
     files = sorted(psms["file"].unique())
-    proteins, peptides, psms_long, coverage = build_tables(psms, fasta_entries, files)
+    proteins, peptides, psms_long, coverage = build_tables(psms, fasta_entries, files, dict(samples) or None)
     if not proteins.empty:
-        proteins = add_protein_flags(proteins, psms_long, dict(conditions))
+        proteins = add_protein_flags(proteins, psms_long, dict(conditions), dict(samples) or None)
     return proteins, peptides, psms_long, coverage, fasta_entries
 
 
 # Conditions from Describe experiment, for "found in n replicates"
 conditions = file_conditions(
-    mzml_names, lambda name: run_params.get(f"mzML-group-{name}") or demo_group(name)
+    mzml_names,
+    lambda name: (fractions.get(name) or {}).get("condition")
+    or run_params.get(f"mzML-group-{name}") or demo_group(name),
 )
 run_fdr = min(float(run_params.get("psm-fdr-percent", 1.0)), 100.0)
 query, q_max, min_peptides, min_replicates = protein_filter_bar(
-    "protein-filter", run_fdr if run_fdr < 100.0 else None, max_replicates(conditions)
+    "protein-filter", run_fdr if run_fdr < 100.0 else None, max_replicates(conditions, sample_of)
 )
 
 proteins, peptides, psms_long, coverage, fasta_entries = load_tables(
@@ -97,6 +105,7 @@ proteins, peptides, psms_long, coverage, fasta_entries = load_tables(
     tuple(mzml_names),
     q_max,
     tuple(sorted(conditions.items())),
+    tuple(sorted(sample_of.items())),
 )
 
 if proteins.empty:
@@ -136,7 +145,7 @@ st.subheader("Proteins")
 show_insight_table(
     shown.assign(not_contaminant=~shown["contaminant"]),
     name="proteins", cache_dir=cache_dir, source_files=source_files,
-    extra_key=f"filters-v2|{query}|{q_max}|{min_peptides}|{min_replicates}|{sorted(conditions.items())}",
+    extra_key=f"filters-v2|{'per-sample' if fractions else ''}|{query}|{q_max}|{min_peptides}|{min_replicates}|{sorted(conditions.items())}",
     title="proteins", height=450, state_manager=state_manager,
     interactivity={"protein": "accession"},
     column_overrides={
@@ -167,6 +176,7 @@ show_insight_table(
     title="peptides", height=350, state_manager=state_manager,
     filters={"protein": "accession"}, interactivity={"peptide": "peptide"},
     column_overrides={"accession": HIDDEN},
+    extra_key="per-sample" if fractions else "",
 )
 
 st.subheader("PSMs of the selected peptide")

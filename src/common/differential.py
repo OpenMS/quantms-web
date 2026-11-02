@@ -8,6 +8,7 @@ from whatever step the user already applied by hand.
 """
 import json
 
+import numpy as np
 import pandas as pd
 import polars as pl
 from openms_insight.analysis.filter import (
@@ -186,6 +187,27 @@ def run_differential(
         data = adjust_fdr_lazy(quantification_data=data, strategy=settings["postproc-fdr"])
         out["statistics_df"] = data.collect().to_pandas()
     return out
+
+
+def raw_p_cutoff(statistics_df: pd.DataFrame, padj: float = 0.05) -> float:
+    """The p-value at which the adjusted p-value crosses ``padj``.
+
+    Benjamini-Hochberg keeps the order of the p-values, so a protein has an
+    adjusted p-value <= ``padj`` exactly when its p-value is <= the largest
+    p-value among those that do. A volcano plot can then show the raw p-value
+    on its y-axis, as is usual, and still call the same proteins significant.
+    With no protein passing, the cut-off is the smallest one BH could accept
+    (``padj`` / number of tests).
+
+    OpenMS-Insight's VolcanoPlot counts a protein as significant when its
+    p-value is strictly below the threshold, so the returned value lies just
+    above the largest passing p-value.
+    """
+    df = statistics_df.dropna(subset=["p-value", "p-adj"])
+    passing = df.loc[df["p-adj"] <= padj, "p-value"]
+    if len(passing):
+        return float(np.nextafter(passing.max(), 1.0))
+    return padj / max(len(df), 1)
 
 
 def count_significant(statistics_df: pd.DataFrame, fc: float = 1.0, padj: float = 0.05) -> tuple[int, int]:

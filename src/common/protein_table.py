@@ -108,8 +108,16 @@ def coverage_mask(protein_sequence: str, peptides) -> np.ndarray:
     return mask
 
 
-def build_tables(psms: pd.DataFrame, fasta: dict[str, tuple[str, str]], files: list[str]):
+def build_tables(
+    psms: pd.DataFrame,
+    fasta: dict[str, tuple[str, str]],
+    files: list[str],
+    sample_of_file: dict[str, str] | None = None,
+):
     """Proteins, peptide-to-protein and PSM-to-protein tables.
+
+    With ``sample_of_file`` (file name to sample name, for a run whose samples
+    were split into fractions), the per-file counts are per sample instead.
 
     Peptides and PSMs are in long format (one row per protein they map to), so
     selecting a protein filters them by its accession.
@@ -120,13 +128,19 @@ def build_tables(psms: pd.DataFrame, fasta: dict[str, tuple[str, str]], files: l
     """
     long = psms.explode("proteins").rename(columns={"proteins": "accession"})
     long["shared"] = psms["proteins"].str.len().reindex(long.index).gt(1)
+    if sample_of_file:
+        long["sample"] = long["file"].map(lambda f: sample_of_file.get(f, Path(f).stem))
+        columns = list(dict.fromkeys(sample_of_file.get(f, Path(f).stem) for f in files))
+    else:
+        long["sample"] = long["file"]
+        columns = list(files)
 
     rows, coverage = [], {}
     for accession, group in long.groupby("accession", sort=False):
         description, sequence = fasta.get(accession, ("", ""))
         mask = coverage_mask(sequence, group["sequence"])
         coverage[accession] = mask
-        per_file = group.groupby("file").size()
+        per_file = group.groupby("sample").size()
         row = {
             "accession": accession,
             "gene": gene_name(description),
@@ -135,11 +149,12 @@ def build_tables(psms: pd.DataFrame, fasta: dict[str, tuple[str, str]], files: l
             "peptides": group["sequence"].nunique(),
             "unique peptides": group.loc[~group["shared"], "sequence"].nunique(),
             "PSMs": len(group),
-            "found in": f"{per_file.size} of {len(files)}",
+            "found in": f"{per_file.size} of {len(columns)}",
             "length": len(sequence) or np.nan,
         }
-        for file in files:
-            row[f"PSMs {Path(file).stem}"] = int(per_file.get(file, 0))
+        for column in columns:
+            label = column if sample_of_file else Path(column).stem
+            row[f"PSMs {label}"] = int(per_file.get(column, 0))
         rows.append(row)
     proteins = pd.DataFrame(rows)
     if not proteins.empty:
@@ -151,11 +166,11 @@ def build_tables(psms: pd.DataFrame, fasta: dict[str, tuple[str, str]], files: l
 
     peptides = (
         long.groupby(["accession", "peptide"], sort=False)
-        .agg(PSMs=("file", "size"), files=("file", "nunique"),
+        .agg(PSMs=("file", "size"), files=("sample", "nunique"),
              best_q=("q_value", "min"), charges=("charge", lambda c: ",".join(map(str, sorted(set(c))))),
              shared=("shared", "first"))
         .reset_index()
-        .rename(columns={"best_q": "best q-value", "files": "found in files"})
+        .rename(columns={"best_q": "best q-value", "files": "found in samples" if sample_of_file else "found in files"})
         .sort_values(["accession", "PSMs"], ascending=[True, False], ignore_index=True)
     )
     psms_long = long[["accession", "peptide", "file", "scan", "rt", "mz", "charge", "score", "q_value"]].rename(

@@ -68,3 +68,16 @@ def test_protein_filters():
     plain = add_protein_flags(proteins, _long(), {})
     assert "replicates" not in plain.columns
     assert len(filter_proteins(plain, min_replicates=2)) == 3
+
+
+def test_replicates_count_samples_not_fractions():
+    from src.common.result_filters import max_replicates, replicates_found
+
+    psms = pd.DataFrame({"accession": ["P1", "P1", "P1"], "file": ["s1_f1.mzML", "s1_f2.mzML", "s2_f1.mzML"]})
+    conditions = {"s1_f1.mzML": "A", "s1_f2.mzML": "A", "s2_f1.mzML": "A", "s2_f2.mzML": "A"}
+    sample_of = {"s1_f1.mzML": "A_1", "s1_f2.mzML": "A_1", "s2_f1.mzML": "A_2", "s2_f2.mzML": "A_2"}
+    # per file, three fractions look like three replicates; per sample it is two
+    assert replicates_found(psms, conditions)["P1"] == 3
+    assert replicates_found(psms, conditions, sample_of)["P1"] == 2
+    assert max_replicates(conditions) == 4
+    assert max_replicates(conditions, sample_of) == 2
