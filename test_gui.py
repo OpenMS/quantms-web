@@ -12,14 +12,6 @@ from pathlib import Path
 import pytest
 from streamlit.testing.v1 import AppTest
 
-# Import the page helpers with the real Streamlit now, at collection time.
-# Several tests in tests/ import src.common.common under a mocked Streamlit
-# and restore only that module; anything it pulls in for the first time (such
-# as src.common.developer) would otherwise stay bound to the mock and break
-# every page here. The template's test_gui gets the same effect from its
-# `from src import fileupload`.
-import src.common.common  # noqa: F401,E402
-
 # Pages AppTest.from_file can load in isolation. The rest call st.page_link,
 # which needs the navigation context that only exists when app.py itself runs
 # (loading them directly raises KeyError: 'url_pathname'), so they are covered
