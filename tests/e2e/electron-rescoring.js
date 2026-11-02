@@ -26,7 +26,10 @@ module.exports = async (t) => {
   await t.shot("rescoring-switch-on");
 
   await t.open("workflow_run");
-  await t.clickButton("Start Workflow");
+  // The Run page keeps its script running while the workflow runs, which
+  // takes longer than a page normally needs to settle.
+  await t.page.getByRole("button", { name: "Start Workflow" }).first().click();
+  await t.settle({ timeout: RUN_TIMEOUT });
   await t.waitForText("Workflow completed successfully.", {
     timeout: RUN_TIMEOUT,
     failOn: ["Errors occurred, check log file."],

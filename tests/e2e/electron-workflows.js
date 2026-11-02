@@ -1,5 +1,5 @@
 // quantms-web scenario for electron/scripts/e2e.js: runs the label-free DDA
-// workflow (DecoyDatabase -> Comet -> Percolator -> IDFilter -> ProteomicsLFQ)
+// workflow (DecoyDatabase -> ProSE -> Percolator -> IDFilter -> ProteomicsLFQ)
 // on two of the bundled example files, one per sample group, inside the
 // Electron window, then checks that the result pages draw their tables.
 const RUN_TIMEOUT = 60 * 60 * 1000;
@@ -34,7 +34,10 @@ module.exports = async (t) => {
   await t.shot("configured");
 
   await t.open("workflow_run");
-  await t.clickButton("Start Workflow");
+  // The Run page keeps its script running while the workflow runs, which
+  // takes longer than a page normally needs to settle.
+  await t.page.getByRole("button", { name: "Start Workflow" }).first().click();
+  await t.settle({ timeout: RUN_TIMEOUT });
   await t.waitForText("Workflow completed successfully.", {
     timeout: RUN_TIMEOUT,
     failOn: ["Errors occurred, check log file."],
