@@ -1,5 +1,6 @@
 import streamlit as st
 import pyopenms as poms
+import pandas as pd
 from pathlib import Path
 import shutil
 import subprocess
@@ -18,11 +19,22 @@ from datetime import datetime
 from src.common.common import (
     OS_PLATFORM,
     TK_AVAILABLE,
+    export_files,
+    export_folder_input,
     tk_directory_dialog,
     tk_file_dialog,
 )
 from src.workflow._log_status import classify_log_outcome
 from src.data_import import ui as data_import_ui
+from src.workflow.ExperimentalDesign import (
+    align_design,
+    check_design,
+    design_path,
+    load_design,
+    read_design,
+    save_design,
+    to_openms_design,
+)
 
 
 def _mounted_data_root() -> Union[Path, None]:
@@ -697,10 +709,20 @@ class StreamlitUI:
         # argument is still hashed into the widget's element id. Since this method feeds
         # the persisted parameter straight back in as that argument, the id changed on
         # every interaction, the following interaction arrived under the now-stale id and
-        # was silently dropped: selecting six mzML files kept only three. Seed the widget
-        # on first render only; from then on session state owns the value.
+        # was silently dropped: selecting six mzML files kept only three. Passing it on
+        # the first render only is not enough either: the second render then has another
+        # id, and the widget restarts from its built-in default (a checkbox seeded True
+        # came back False on the next rerun). So the initial value never goes into the
+        # call; it is written to session state once, and session state owns it from then on.
         def seed(**kwargs: Any) -> dict:
-            return {} if key in st.session_state else kwargs
+            if key not in st.session_state:
+                ((arg, initial),) = kwargs.items()
+                if arg == "index":
+                    initial = options[initial] if options else None
+                elif arg == "default":
+                    initial = [v for v in (initial or []) if v in options]
+                st.session_state[key] = initial
+            return {}
 
         if widget_type == "text":
             st.text_input(name, key=key, help=help, on_change=on_change, **seed(value=value))
@@ -1352,6 +1374,94 @@ class StreamlitUI:
                     cols = st.columns(num_cols)
         self.parameter_manager.save_parameters()
 
+    def experimental_design(self, key: str, name: str = "Experimental design") -> None:
+        """
+        Table assigning each selected input file a condition, biological replicate and fraction.
+
+        Edits are saved to ``<workflow_dir>/experimental-design.tsv`` in the
+        OpenMS design format, so ``execution()`` can pass that file to a TOPP
+        tool's ``-design`` or read it with ``ExperimentalDesign.load_design()``.
+        A design.tsv (one- or two-table) or SDRF file can be imported, and
+        spreadsheet cells can be pasted into the table. Inconsistencies such as
+        missing fractions are shown as notices, not errors.
+
+        Args:
+            key (str): The input file key whose selection the design covers
+                (the key passed to ``select_input_file``). Pass ``reactive=True``
+                to that ``select_input_file`` so the table follows the selection.
+            name (str, optional): The heading shown above the table.
+        """
+        files = st.session_state.get(
+            f"{self.parameter_manager.param_prefix}{key}", self.params.get(key, [])
+        )
+        if isinstance(files, str):
+            files = [files]
+        st.markdown(f"**{name}**")
+        if not files:
+            st.info("Select input files to define the experimental design.")
+            return
+
+        # Widget state keys stay outside param_prefix: save_parameters() writes
+        # every session key with that prefix to params.json.
+        version_key = f"_design-{Path(self.workflow_dir).name}-{key}"
+        st.session_state.setdefault(version_key, 0)
+        stored = load_design(self.workflow_dir, files)
+
+        uploaded = st.file_uploader(
+            "Import design.tsv or SDRF",
+            type=["tsv", "txt", "sdrf"],
+            key=f"{version_key}-import",
+            help="An OpenMS experimental design (one- or two-table) or an SDRF file. "
+            "Files are matched by name; files it does not list keep their current row.",
+        )
+        applied_key = f"{version_key}-applied"
+        if uploaded is not None and st.session_state.get(applied_key) != uploaded.file_id:
+            st.session_state[applied_key] = uploaded.file_id
+            try:
+                imported = read_design(uploaded.getvalue())
+            except (ValueError, KeyError, pd.errors.ParserError) as e:
+                st.error(f"Could not read {uploaded.name}: {e}")
+            else:
+                listed = set(imported["file"])
+                kept = stored[~stored["file"].isin(listed)]
+                stored = align_design(pd.concat([imported, kept]), files)
+                matched = len(listed & set(stored["file"]))
+                save_design(self.workflow_dir, stored, files)
+                st.session_state[version_key] += 1
+                st.toast(f"Imported the design of {matched} of {len(files)} file(s)")
+
+        edited = st.data_editor(
+            stored,
+            key=f"{version_key}-{st.session_state[version_key]}",
+            hide_index=True,
+            num_rows="fixed",
+            disabled=["file"],
+            column_config={
+                "file": st.column_config.TextColumn("File"),
+                "condition": st.column_config.TextColumn(
+                    "Condition", help="The group this file is compared as, e.g. control or treated."
+                ),
+                "replicate": st.column_config.NumberColumn(
+                    "Replicate", help="Biological replicate within the condition.", min_value=1, step=1
+                ),
+                "fraction": st.column_config.NumberColumn(
+                    "Fraction", help="Fraction number; 1 for unfractionated samples.", min_value=1, step=1
+                ),
+            },
+        )
+        path = design_path(self.workflow_dir)
+        if not path.is_file() or path.read_text(encoding="utf-8") != to_openms_design(edited, files):
+            save_design(self.workflow_dir, edited, files)
+
+        for notice in check_design(edited):
+            st.info(notice, icon="ℹ️")
+        st.download_button(
+            "Download design.tsv",
+            to_openms_design(edited, files),
+            file_name="design.tsv",
+            mime="text/tab-separated-values",
+        )
+
     def zip_and_download_files(self, directory: str):
         """
         Creates a zip archive of all files within a specified directory,
@@ -1444,6 +1554,9 @@ class StreamlitUI:
     def file_upload_section(self, custom_upload_function) -> None:
         self.upload_targets = {}
         custom_upload_function()
+        # A local install already has the input files on disk.
+        if st.session_state.location == "local":
+            return
         c1, _ = st.columns(2)
         if c1.button("⬇️ Download files", use_container_width=True):
             self.zip_and_download_files(Path(self.workflow_dir, "input-files"))
@@ -1695,6 +1808,9 @@ Started: {status.get('started_at', 'N/A')}""")
         ZIP of the chosen result folders on request. Only the selected file (or
         the ZIP) is read into memory, so large result sets stay cheap to render.
 
+        A local install exports instead: the user sets a folder at the top and
+        one button copies every listed file to ``<folder>/<workflow>-results``.
+
         Args:
             exclude: Names of files or folders to leave out (matched against
                 every part of a file's path relative to the results directory,
@@ -1717,7 +1833,7 @@ Started: {status.get('started_at', 'N/A')}""")
                     files.append(rel)
 
         if not files:
-            st.info("No results to download yet. Run the workflow first.")
+            st.info("No results yet. Run the workflow first.")
             return
 
         def folder_of(rel: Path) -> str:
@@ -1728,6 +1844,11 @@ Started: {status.get('started_at', 'N/A')}""")
                 if n_bytes < 1024 or unit == "GB":
                     return f"{n_bytes:.0f} {unit}" if unit == "B" else f"{n_bytes:.1f} {unit}"
                 n_bytes /= 1024
+
+        key_prefix = f"results-download-{Path(self.workflow_dir).name}"
+        local = st.session_state.get("location") == "local"
+        if local:
+            export_dir = export_folder_input(key_prefix)
 
         st.dataframe(
             [
@@ -1745,7 +1866,19 @@ Started: {status.get('started_at', 'N/A')}""")
             width="stretch",
         )
 
-        key_prefix = f"results-download-{Path(self.workflow_dir).name}"
+        if local:
+            if st.button(
+                "📤 Export",
+                type="primary",
+                key=f"{key_prefix}-export",
+                width="stretch",
+            ):
+                export_files(
+                    [(Path(results_dir, rel), rel) for rel in files],
+                    Path(export_dir, f"{Path(self.workflow_dir).name}-results"),
+                )
+            return
+
         c1, c2 = st.columns(2)
 
         with c1:
