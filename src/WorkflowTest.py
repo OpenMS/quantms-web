@@ -15,7 +15,7 @@ from scipy.stats import fisher_exact
 from src.workflow.WorkflowManager import WorkflowManager
 from src.common.common import page_setup
 from src.common.results_helpers import get_abundance_data
-from src.common.results_helpers import parse_idxml, build_spectra_cache, load_idxml, psm_table_columns, write_psm_exports
+from src.common.results_helpers import parse_idxml, build_spectra_cache, load_idxml, psm_table_columns, write_psm_exports, peaks_for_identifications
 from src.common.contaminants import CONTAMINANT_PREFIX, append_fasta, write_contaminants
 from src.common.isobaric import ISOBARIC_CHANNELS
 from src.common.lfq_design import groups_from_design, initial_groups, is_fractionated, seed_design
@@ -1077,7 +1077,7 @@ class WorkflowTest(WorkflowManager):
                         "id_idx": "sequence_id",
                         "charge": "precursor_charge",
                     }),
-                    peaks_data=spectra_df.lazy(),
+                    peaks_data=peaks_for_identifications(spectra_df, id_df),
                     filters={
                         "identification": "sequence_id",
                         "file": "file_index",
@@ -1170,7 +1170,7 @@ class WorkflowTest(WorkflowManager):
                         "id_idx": "sequence_id",
                         "charge": "precursor_charge",
                     }),
-                    peaks_data=spectra_df.lazy(),
+                    peaks_data=peaks_for_identifications(spectra_df, id_df),
                     filters={
                         "identification": "sequence_id",
                         "file": "file_index",
@@ -1256,7 +1256,7 @@ class WorkflowTest(WorkflowManager):
                         "id_idx": "sequence_id",
                         "charge": "precursor_charge",
                     }),
-                    peaks_data=spectra_df.lazy(),
+                    peaks_data=peaks_for_identifications(spectra_df, id_df),
                     filters={
                         "identification": "sequence_id",
                         "file": "file_index",
@@ -1579,7 +1579,7 @@ class WorkflowTest(WorkflowManager):
                         "id_idx": "sequence_id",
                         "charge": "precursor_charge",
                     }),
-                    peaks_data=spectra_df.lazy(),
+                    peaks_data=peaks_for_identifications(spectra_df, id_df),
                     filters={
                         "identification": "sequence_id",
                         "file": "file_index",
@@ -1668,7 +1668,7 @@ class WorkflowTest(WorkflowManager):
                         "id_idx": "sequence_id",
                         "charge": "precursor_charge",
                     }),
-                    peaks_data=spectra_df.lazy(),
+                    peaks_data=peaks_for_identifications(spectra_df, id_df),
                     filters={
                         "identification": "sequence_id",
                         "file": "file_index",
@@ -1751,7 +1751,7 @@ class WorkflowTest(WorkflowManager):
                         "id_idx": "sequence_id",
                         "charge": "precursor_charge",
                     }),
-                    peaks_data=spectra_df.lazy(),
+                    peaks_data=peaks_for_identifications(spectra_df, id_df),
                     filters={
                         "identification": "sequence_id",
                         "file": "file_index",
