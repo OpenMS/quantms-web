@@ -1,4 +1,5 @@
 """Rescoring (Percolator) Results Page."""
+import json
 import streamlit as st
 from pathlib import Path
 from src.common.common import page_setup
@@ -42,6 +43,26 @@ cache_dir = run_dir / "results" / "insight_cache"
 
 if not perc_dir.exists():
     needs_results()
+
+prediction_summary = run_dir / "results" / "prediction_features" / "summary.json"
+if prediction_summary.exists():
+    with st.container(border=True):
+        st.markdown(
+            "**Rescored with predicted spectra and retention times.** AlphaPeptDeep predicted every "
+            "match; Percolator also used how well the measured spectrum matches the predicted one "
+            "(spectral angle, 1 = identical) and the retention-time difference. Correct matches "
+            "score high, decoys low."
+        )
+        rows = ["| File | Instrument | Collision energy | Matches predicted | Median spectral angle, targets | Median spectral angle, decoys |",
+                "|---|---|---|---|---|---|"]
+        for s in json.loads(prediction_summary.read_text(encoding="utf-8")):
+            targets, decoys = s.get("median_angle_targets"), s.get("median_angle_decoys")
+            rows.append(
+                f"| {Path(s['file']).stem} | {s['instrument']} | NCE {s['nce']:g} | "
+                f"{s['predicted']:,} of {s['psms']:,} | {targets if targets is None else f'{targets:.2f}'} | "
+                f"{decoys if decoys is None else f'{decoys:.2f}'} |"
+            )
+        st.markdown("\n".join(rows))
 
 perc_files = sorted(perc_dir.glob("*.idXML"))
 
