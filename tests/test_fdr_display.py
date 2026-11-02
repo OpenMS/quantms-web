@@ -19,6 +19,10 @@ def test_percent_and_q_labels_agree():
     # no float noise from the division
     assert q_label(1.5) == "q ≤ 0.015"
     assert q_label(0.3) == "q ≤ 0.003"
+    # small levels stay decimal, not 1e-05
+    assert q_label(0.001) == "q ≤ 0.00001"
+    assert percent_label(100) == "100 %"
+    assert q_label(1e-9) == "q ≤ 0.00000000001"
 
 
 def test_100_percent_is_not_applied():

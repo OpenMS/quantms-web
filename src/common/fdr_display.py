@@ -6,13 +6,18 @@ The PSM FDR is stored as a percentage ("psm-fdr-percent"); 100 % switches the fi
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 # Quick choices offered next to the number field, in percent.
 FDR_QUICK_CHOICES = (0.1, 1.0, 5.0)
 
 
 def _num(value: float) -> str:
     """A number without float noise or trailing zeros (0.1, 1, 0.015)."""
-    return f"{round(float(value), 10):g}"
+    text = format(Decimal(str(float(f"{float(value):.6g}"))), "f")
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text
 
 
 def fdr_applied(percent: float | None) -> bool:
