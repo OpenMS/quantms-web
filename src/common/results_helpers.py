@@ -6,7 +6,7 @@ import polars as pl
 import numpy as np
 import streamlit as st
 from pathlib import Path
-from pyopenms import IdXMLFile, MSExperiment, MzMLFile
+from pyopenms import IdXMLFile, MSExperiment, MzMLFile, PeakFileOptions
 try:  # pyOpenMS >= 3.5.0
     from pyopenms import PeptideIdentificationList
 except ImportError:  # pyOpenMS <= 3.4.x
@@ -227,7 +227,28 @@ ID_DF_SCHEMA = {
     "score": pl.Float64,
     "protein_accession": pl.Utf8,
     "contaminant": pl.Boolean,
+    "proforma": pl.Utf8,
 }
+
+# Columns of the PSM tables. The ones with "visible": False start hidden and can
+# be shown from the table's column menu; the CSV download has every column.
+PSM_TABLE_COLUMNS = [
+    {"field": "sequence", "title": "Sequence"},
+    {"field": "charge", "title": "Z", "sorter": "number"},
+    {"field": "mz", "title": "m/z", "sorter": "number"},
+    {"field": "rt", "title": "RT", "sorter": "number"},
+    {"field": "score", "title": "Score", "sorter": "number"},
+    {"field": "protein_accession", "title": "Proteins"},
+    {"field": "contaminant", "title": "Contaminant", "formatter": "tickCross", "sorter": "boolean"},
+    {"field": "proforma", "title": "ProForma", "visible": False},
+    {"field": "filename", "title": "File", "visible": False},
+    {"field": "scan_id", "title": "Scan", "sorter": "number", "visible": False},
+]
+
+
+def psm_table_columns() -> list[dict]:
+    """A fresh copy of PSM_TABLE_COLUMNS for one Table."""
+    return [dict(col) for col in PSM_TABLE_COLUMNS]
 
 
 def parse_idxml(idxml_path: Path, filename_to_index: dict | None = None) -> tuple[pl.DataFrame, list[str]]:
@@ -272,6 +293,7 @@ def parse_idxml(idxml_path: Path, filename_to_index: dict | None = None) -> tupl
                 "file_index": file_index,
                 "filename": Path(filename).name if filename else "",
                 "sequence": h.getSequence().toString(),
+                "proforma": to_proforma(h.getSequence().toString()),
                 "charge": h.getCharge(),
                 "mz": pep.getMZ(),
                 "rt": pep.getRT(),
@@ -283,6 +305,18 @@ def parse_idxml(idxml_path: Path, filename_to_index: dict | None = None) -> tupl
     # Keep the columns when nothing was identified, so callers selecting
     # them get an empty table rather than a ColumnNotFoundError.
     return pl.DataFrame(records, schema=ID_DF_SCHEMA), spectra_data
+
+
+def peaks_for_identifications(spectra_df: pl.DataFrame, id_df: pl.DataFrame) -> pl.LazyFrame:
+    """Peaks of only the spectra that ``id_df`` identifies.
+
+    ``spectra_df`` holds every MS2 peak of every input file. A SequenceView
+    only ever shows identified spectra, and each one writes its peaks to its
+    own cache, so passing the whole frame stored all files' peaks once per
+    file and search stage.
+    """
+    keys = id_df.lazy().select(["file_index", "scan_id"]).unique()
+    return spectra_df.lazy().join(keys, on=["file_index", "scan_id"], how="semi")
 
 
 def build_spectra_cache(mzml_dir: Path, filename_to_index: dict, mzml_files=None) -> tuple[pl.DataFrame, dict]:
@@ -297,9 +331,13 @@ def build_spectra_cache(mzml_dir: Path, filename_to_index: dict, mzml_files=None
     Returns:
         Tuple of (spectra_df, updated filename_to_index)
     """
-    records = []
-    peak_id = 0
+    # Peaks are collected as one numpy array per spectrum, not one dict per
+    # peak: full-scale runs have tens of millions of MS2 peaks, and a dict per
+    # peak needed over 10 GB for six timsTOF files. Only MS2 is read from disk.
+    file_idx, scan_ids, masses, intensities = [], [], [], []
 
+    options = PeakFileOptions()
+    options.setMSLevels([2])
     paths = [Path(f) for f in mzml_files] if mzml_files else sorted(mzml_dir.glob("*.mzML"))
     for mzml_path in paths:
         # Get or create file index
@@ -308,25 +346,36 @@ def build_spectra_cache(mzml_dir: Path, filename_to_index: dict, mzml_files=None
         file_index = filename_to_index[mzml_path.name]
 
         exp = MSExperiment()
-        MzMLFile().load(str(mzml_path), exp)
+        mzml_file = MzMLFile()
+        mzml_file.setOptions(options)
+        mzml_file.load(str(mzml_path), exp)
 
         for spec in exp:
             if spec.getMSLevel() != 2:
                 continue
-            scan_id = extract_scan_number(spec.getNativeID())
             mz_array, int_array = spec.get_peaks()
+            n = len(mz_array)
+            if n == 0:
+                continue
+            scan_id = extract_scan_number(spec.getNativeID())
+            file_idx.append(np.full(n, file_index, dtype=np.int64))
+            scan_ids.append(np.full(n, scan_id, dtype=np.int64))
+            masses.append(np.asarray(mz_array, dtype=np.float64))
+            intensities.append(np.asarray(int_array, dtype=np.float64))
+        del exp
 
-            for mz, intensity in zip(mz_array, int_array):
-                records.append({
-                    "peak_id": peak_id,
-                    "file_index": file_index,
-                    "scan_id": scan_id,
-                    "mass": float(mz),      # Use "mass" not "mz"
-                    "intensity": float(intensity),
-                })
-                peak_id += 1
+    def _cat(parts, dtype):
+        return np.concatenate(parts) if parts else np.empty(0, dtype=dtype)
 
-    return pl.DataFrame(records), filename_to_index
+    mass = _cat(masses, np.float64)
+    spectra_df = pl.DataFrame({
+        "peak_id": np.arange(len(mass), dtype=np.int64),
+        "file_index": _cat(file_idx, np.int64),
+        "scan_id": _cat(scan_ids, np.int64),
+        "mass": mass,  # Use "mass" not "mz"
+        "intensity": _cat(intensities, np.float64),
+    })
+    return spectra_df, filename_to_index
 
 
 def write_psm_exports(id_df: pl.DataFrame, seq_view, export_dir: Path, prefix: str) -> None:
@@ -339,7 +388,7 @@ def write_psm_exports(id_df: pl.DataFrame, seq_view, export_dir: Path, prefix: s
     """
     export_dir.mkdir(parents=True, exist_ok=True)
     # Exports carry the ProForma form next to the OpenMS string, for other tools
-    if "sequence" in id_df.columns:
+    if "sequence" in id_df.columns and "proforma" not in id_df.columns:
         id_df = id_df.with_columns(
             pl.col("sequence").map_elements(to_proforma, return_dtype=pl.Utf8).alias("proforma")
         )

@@ -10,12 +10,15 @@ from pathlib import Path
 import json
 # For some reason the windows version only works if this is imported here
 import pyopenms
+# Patches openms-insight classes before any page renders them
+import src.common.insight_compat  # noqa: F401
 
 if "settings" not in st.session_state:
         with open("settings.json", "r") as f:
             st.session_state.settings = json.load(f)
 
 if __name__ == '__main__':
+    local = not st.session_state.settings["online_deployment"]
     # Sections follow the path a user takes: set up and run, read the main
     # answers, dig deeper. Expert and quality-control pages come last.
     pages = {
@@ -44,7 +47,8 @@ if __name__ == '__main__':
             st.Page(Path("content", "results_heatmap.py"), title="Heatmap", icon="🔥"),
         ],
         "Export": [
-            st.Page(Path("content", "results_download.py"), title="Runs and downloads", icon="🗂️"),
+            # A local install exports results to a folder instead of downloading them.
+            st.Page(Path("content", "results_download.py"), title="Runs and exports" if local else "Runs and downloads", icon="🗂️"),
         ],
         # The four steps Compare groups runs with recommended settings, one at a time.
         "Fine-tune the comparison": [
