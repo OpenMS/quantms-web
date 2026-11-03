@@ -170,6 +170,9 @@ jobs:
 
     - name: End-to-end test in the app window
       timeout-minutes: 120
+      env:
+        # A native crash of the app server prints the Python stack to its log.
+        PYTHONFAULTHANDLER: "1"
       # Drives the installed app with Playwright and opens every page, then runs this app's
       # workflows and checks their results (tests/e2e/electron-workflows.js, then
       # tests/e2e/electron-rescoring.js with the AlphaPeptDeep features on).
@@ -186,6 +189,8 @@ jobs:
       if: failure() || cancelled()
       run: |
         tail -n 300 "$APP_LOG" || true
+        echo "=== DLLs and libraries next to the TOPP tools"
+        ls "$APP_PAYLOAD/openms/bin" | grep -iE '\.(dll|so|dylib)' || ls "$APP_PAYLOAD/openms/bin" | head -50 || true
         for dir in "$(dirname "$APP_LOG")/.." "$(dirname "$APP_PAYLOAD")"; do
           find "$dir" -maxdepth 6 -path '*/logs/*' -name 'all.log' 2>/dev/null | while read -r f; do
             echo "=== $f"; tail -n 150 "$f"
