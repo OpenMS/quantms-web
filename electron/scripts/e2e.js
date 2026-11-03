@@ -96,9 +96,12 @@ function makeHelpers(app, page, baseUrl, out) {
       await settle(page);
     },
 
-    async clickButton(name) {
+    // A button that starts work the page polls for (a workflow run reruns
+    // its page every second until the run ends) needs a { timeout } as long
+    // as that work: the page only settles once it is done.
+    async clickButton(name, opts) {
       await page.getByRole("button", { name }).first().click();
-      await settle(page);
+      await settle(page, opts);
     },
 
     // Picks an option in the st.multiselect or st.selectbox with this label.
@@ -179,9 +182,11 @@ async function expandNav(page) {
 
 async function navTargets(page) {
   await expandNav(page);
+  // Pages an app hides from the menu (display: none) are opened from
+  // elsewhere, so only visible entries are targets.
   const hrefs = await page
     .locator('[data-testid="stSidebarNav"] a')
-    .evaluateAll((as) => as.map((a) => a.getAttribute("href")));
+    .evaluateAll((as) => as.filter((a) => a.offsetParent !== null).map((a) => a.getAttribute("href")));
   return [...new Set(hrefs.map((h) => new URL(h, "http://x").pathname.replace(/^\//, "")))];
 }
 

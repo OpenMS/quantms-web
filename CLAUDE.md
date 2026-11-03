@@ -178,3 +178,7 @@ docker-compose up --build
 - Insight components request a rerun the first time they render, so never draw them only inside `if st.button(...):`. Store the result in `st.session_state` and render it outside the button block
 - Use `@st.fragment` on methods that should partially rerun (configure, results)
 - TOPP tool parameters use colon-separated paths: `"algorithm:section:param_name"`
+
+## Template sync
+
+`.github/workflows/template-sync.yml` merges the streamlit-template weekly (`template` in `app.yaml`); conflicts in files listed under `sync.app_owned` keep this app's side. Merge those PRs with a merge commit, never squash, or the next sync conflicts again. `auto-merge.yml` and `.github/CODEOWNERS` form the review queue (`docs/review-queue.md`).

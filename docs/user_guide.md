@@ -57,6 +57,14 @@ You can download the results of your analyses, including data, figures and table
 - **Tables**: Use the download button to save tables in *csv* format, appearing while hovering on the top right corner of the table.
 - **Data**: Use the download section in the sidebar to download the raw results of your analysis.
 
+### Keeping several runs
+
+Workflows that keep their runs store every analysis you start as its own result set, so changing a parameter and running again does not overwrite the earlier results:
+- **Run page**: give the run a name before you start it (optional; runs are numbered otherwise).
+- **Results pages**: the *Run* picker at the top chooses which run is shown. The choice applies to all results pages.
+- **Download page**: lists every run with its start time and status. 👁️ shows it on the results pages, ✏️ renames it, 📦 packs its results, parameters and logs into a ZIP to download, 🗑️ deletes it.
+- **Open a run from a ZIP** (Download page, or the Results page before the first run): adds a ZIP made with 📦 as a new run, with its results, parameters, logs and name, so a run can be passed to a colleague or moved to another installation. Unsafe ZIPs, such as ones with paths leading out of the run folder or symbolic links, are refused.
+
 ## Getting Started
 
 To get started:
@@ -86,3 +94,15 @@ Parameter presets allow you to quickly apply optimized parameter configurations 
 - Only the parameters defined in the preset are changed; other parameters remain at their current values
 - You can still modify individual parameters after applying a preset
 - Use **Load default parameters** to reset all parameters to their original defaults
+
+### Your Own Presets
+
+Under **Your Presets** you can save the current settings and reuse them later:
+
+1. Set the parameters the way you want them
+2. Open **💾 Save or delete a preset**, enter a name (and optionally a description) and click **Save current settings**
+3. Your preset appears as a button next to the built-in ones; click it to restore those settings
+
+A saved preset holds every setting on this page except the selected input files and the number of threads, and applying it restores all of them. Presets are saved in the workspace, so they stay available in later sessions of the same workspace.
+
+Below the buttons, a line tells you which preset the current settings come from, or that you changed settings since applying it.

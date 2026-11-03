@@ -1,6 +1,5 @@
 import streamlit as st
 import pyopenms as poms
-import pandas as pd
 from pathlib import Path
 import shutil
 import subprocess
@@ -12,6 +11,7 @@ import sys
 import importlib.util
 import time
 from io import BytesIO
+import pandas as pd
 import zipfile
 from datetime import datetime
 
@@ -25,7 +25,15 @@ from src.common.common import (
     tk_file_dialog,
 )
 from src.workflow._log_status import classify_log_outcome
-from src.data_import import ui as data_import_ui
+from src.workflow.progress import (
+    DONE,
+    FAILED,
+    RUNNING,
+    failures,
+    file_counts,
+    format_duration,
+    read_progress,
+)
 from src.workflow.ExperimentalDesign import (
     align_design,
     check_design,
@@ -35,6 +43,38 @@ from src.workflow.ExperimentalDesign import (
     save_design,
     to_openms_design,
 )
+from src.workflow.vendor_files import extract_bruker_zip, has_type
+from src.data_import import ui as data_import_ui
+from src.workflow.ParameterManager import (
+    InvalidParameterFileError,
+    ParameterManager,
+    TransientParameterFileError,
+)
+
+
+def _matches_topp_parameter(pattern: str, key: bytes) -> bool:
+    """
+    Match an include/exclude pattern against a TOPP parameter key.
+
+    Key format: b"ToolName:1:section:subsection:param_name"
+
+    A pattern matches the end of the parameter path, bounded by ':' or the
+    start of the path ("tol" matches "FD:tol"). A pattern ending in ':' names
+    a whole section from the top of the path instead ("fd:" matches every
+    parameter under "fd:", but not "FD:" or "algorithm:fd:").
+    """
+    pattern = pattern.lstrip(":")  # Strip legacy leading colon
+    key_str = key.decode()
+
+    # Extract param path after "ToolName:1:"
+    parts = key_str.split(":")
+    param_path = ":".join(parts[2:]) if len(parts) > 2 else key_str
+
+    if pattern.endswith(":"):
+        return param_path.startswith(pattern)
+
+    # Check if pattern matches as a suffix, bounded by ':' or start
+    return param_path == pattern or param_path.endswith(":" + pattern)
 
 
 def _mounted_data_root() -> Union[Path, None]:
@@ -61,6 +101,24 @@ def _mounted_data_root() -> Union[Path, None]:
     if not os.path.ismount(p):
         return None
     return p
+
+
+def _plain(value):
+    """A parameter value as params.json stores it (lists as newline-joined text)."""
+    if isinstance(value, list):
+        return "\n".join(v.decode() if isinstance(v, bytes) else str(v) for v in value)
+    return value
+
+
+def _short(value) -> str:
+    """A parameter value for a caption or tooltip."""
+    if isinstance(value, list):
+        text = ", ".join(str(v) for v in value) or "empty"
+    elif value == "":
+        text = "empty"
+    else:
+        text = str(value)
+    return text if len(text) <= 40 else text[:37] + "..."
 
 
 class StreamlitUI:
@@ -98,6 +156,9 @@ class StreamlitUI:
         Args:
             key (str): A unique identifier for the upload component.
             file_types (Union[str, List[str]]): Expected file type(s) for the uploaded files.
+                ``"d"`` accepts Bruker .d folders: from a local folder, or online as
+                a zip archive. Convert vendor files before use with
+                ``CommandExecutor.convert_to_mzml()``.
             name (str, optional): Display name for the upload component. Defaults to the key if not provided.
             fallback (Union[List, str], optional): Default files to use if no files are uploaded.
         """
@@ -117,10 +178,14 @@ class StreamlitUI:
         if not name:
             name = key.replace("-", " ")
 
+        # Convert file_types to a list if it's a string
+        if isinstance(file_types, str):
+            file_types = [file_types]
+
         # Where "Import from a link" can put files, see file_upload_section()
         self.upload_targets[key] = {
             "name": name,
-            "file_types": [file_types] if isinstance(file_types, str) else list(file_types),
+            "file_types": list(file_types),
             "dir": str(files_dir),
             "fallback": [str(Path(f).resolve()) for f in ([fallback] if isinstance(fallback, str) else fallback or [])],
         }
@@ -146,14 +211,13 @@ class StreamlitUI:
             c1.markdown("**Upload file(s)**")
             use_copy = True
 
-        # Convert file_types to a list if it's a string
-        if isinstance(file_types, str):
-            file_types = [file_types]
-
         if st.session_state.location != "local":
             with c1.form(f"{key}-upload", clear_on_submit=True):
-                # Streamlit file uploader accepts file types as a list or None
-                file_type_for_uploader = file_types if file_types else None
+                # Streamlit file uploader accepts file types as a list or None.
+                # A .d folder cannot be uploaded from a browser, only a zip of it.
+                file_type_for_uploader = (
+                    file_types + ["zip"] if "d" in file_types else file_types
+                ) if file_types else None
 
                 files = st.file_uploader(
                     f"{name}",
@@ -168,14 +232,24 @@ class StreamlitUI:
                         # in case of online mode a single file is returned -> put in list
                         if not isinstance(files, list):
                             files = [files]
+                        failed = False
                         for f in files:
+                            if "d" in file_types and f.name.lower().endswith(".zip"):
+                                try:
+                                    added = extract_bruker_zip(f, files_dir)
+                                except zipfile.BadZipFile:
+                                    added = []
+                                if not added:
+                                    st.error(f"**{f.name}** holds no Bruker .d folder.")
+                                    failed = True
                             # Check if file type is in the list of accepted file types
-                            if f.name not in [
+                            elif f.name not in [
                                 f.name for f in files_dir.iterdir()
-                            ] and any(f.name.endswith(ft) for ft in file_types):
+                            ] and has_type(f.name, file_types):
                                 with open(Path(files_dir, f.name), "wb") as fh:
                                     fh.write(f.getbuffer())
-                        st.success("Successfully added uploaded files!")
+                        if not failed:
+                            st.success("Successfully added uploaded files!")
                     else:
                         st.error("Nothing to add, please upload file.")
         else:
@@ -191,8 +265,16 @@ class StreamlitUI:
                     disabled=not TK_AVAILABLE,
                 )
 
-                # Tk file dialog requires file types to be a list of tuples
-                tk_file_types = [(f"{ft}", f"*.{ft}") for ft in file_types]
+                # Tk file dialog requires file types to be a list of tuples.
+                # Both cases: Thermo writes .raw as well as .RAW.
+                tk_file_types = [
+                    (f"{ft}", f"*.{ft} *.{ft.upper()}") for ft in file_types
+                ]
+                if "d" in file_types:
+                    st.caption(
+                        "Bruker **.d** folders can't be picked here: add the "
+                        "folder that contains them on the right."
+                    )
 
                 if dialog_button:
                     local_files = tk_file_dialog(
@@ -265,9 +347,7 @@ class StreamlitUI:
                     for ft in file_types:
                         # Search for both files and directories with the specified extension
                         for path in local_dir.iterdir():
-                            if path.is_file() and path.name.endswith(f".{ft}"):
-                                files.append(path)
-                            elif path.is_dir() and path.name.endswith(f".{ft}"):
+                            if has_type(path, [ft]):
                                 files.append(path)
 
                     if not files:
@@ -481,7 +561,7 @@ class StreamlitUI:
                 return
 
             def _is_match(p: Path) -> bool:
-                return any(p.name.endswith(f".{ft}") for ft in file_types)
+                return has_type(p, file_types)
 
             subdirs = [p for p in entries if p.is_dir() and not _is_match(p)]
             bundled = [p for p in entries if p.is_dir() and _is_match(p)]
@@ -709,26 +789,23 @@ class StreamlitUI:
         # argument is still hashed into the widget's element id. Since this method feeds
         # the persisted parameter straight back in as that argument, the id changed on
         # every interaction, the following interaction arrived under the now-stale id and
-        # was silently dropped: selecting six mzML files kept only three. Passing it on
-        # the first render only is not enough either: the second render then has another
-        # id, and the widget restarts from its built-in default (a checkbox seeded True
-        # came back False on the next rerun). So the initial value never goes into the
-        # call; it is written to session state once, and session state owns it from then on.
-        def seed(**kwargs: Any) -> dict:
+        # was silently dropped: selecting six mzML files kept only three. Passing the
+        # argument on the first render only is not enough either: the id still changes
+        # once, between that render and the next, and the next rerun of the enclosing
+        # fragment resets the widget to empty -- a selection restored from params.json
+        # was wiped (and saved as empty) by the first reactive rerun of configure().
+        # So the argument is never passed: the first render writes the value into
+        # session state, which then owns it, and the id never changes.
+        def seed(initial: Any) -> dict:
             if key not in st.session_state:
-                ((arg, initial),) = kwargs.items()
-                if arg == "index":
-                    initial = options[initial] if options else None
-                elif arg == "default":
-                    initial = [v for v in (initial or []) if v in options]
                 st.session_state[key] = initial
             return {}
 
         if widget_type == "text":
-            st.text_input(name, key=key, help=help, on_change=on_change, **seed(value=value))
+            st.text_input(name, key=key, help=help, on_change=on_change, **seed(value))
 
         elif widget_type == "textarea":
-            st.text_area(name, key=key, help=help, on_change=on_change, **seed(value=value))
+            st.text_area(name, key=key, help=help, on_change=on_change, **seed(value))
 
         elif widget_type == "number":
             number_type = float if isinstance(value, float) else int
@@ -749,11 +826,11 @@ class StreamlitUI:
                 key=key,
                 help=help,
                 on_change=on_change,
-                **seed(value=value),
+                **seed(value),
             )
 
         elif widget_type == "checkbox":
-            st.checkbox(name, key=key, help=help, on_change=on_change, **seed(value=value))
+            st.checkbox(name, key=key, help=help, on_change=on_change, **seed(value))
 
         elif widget_type == "selectbox":
             if options is not None:
@@ -764,7 +841,7 @@ class StreamlitUI:
                     format_func=format_files,
                     help=help,
                     on_change=on_change,
-                    **seed(index=options.index(value) if value in options else 0),
+                    **seed(value if value in options else (options[0] if options else None)),
                 )
             else:
                 st.warning(f"Select widget '{name}' requires options parameter")
@@ -778,7 +855,9 @@ class StreamlitUI:
                     format_func=format_files,
                     help=help,
                     on_change=on_change,
-                    **seed(default=value),
+                    # A saved value that is no longer an option (a deleted
+                    # file, a renamed choice) is dropped; Streamlit raises on it.
+                    **seed([v for v in (value or []) if v in options]),
                 )
             else:
                 st.warning(f"Select widget '{name}' requires options parameter")
@@ -800,7 +879,7 @@ class StreamlitUI:
                     format=None,
                     help=help,
                     on_change=on_change,
-                    **seed(value=value),
+                    **seed(value),
                 )
             else:
                 st.warning(
@@ -808,12 +887,12 @@ class StreamlitUI:
                 )
 
         elif widget_type == "password":
-            st.text_input(name, type="password", key=key, help=help, on_change=on_change, **seed(value=value))
+            st.text_input(name, type="password", key=key, help=help, on_change=on_change, **seed(value))
 
         elif widget_type == "auto":
             # Auto-determine widget type based on value
             if isinstance(value, bool):
-                st.checkbox(name, key=key, help=help, on_change=on_change, **seed(value=value))
+                st.checkbox(name, key=key, help=help, on_change=on_change, **seed(value))
             elif isinstance(value, (int, float)):
                 self._input_widget_impl(
                     key,
@@ -896,7 +975,7 @@ class StreamlitUI:
         Args:
             topp_tool_name (str): The name of the TOPP tool for which to generate inputs.
             num_cols (int, optional): Number of columns to use for the layout. Defaults to 3.
-            exclude_parameters (List[str], optional): List of parameter names to exclude from the widget. Defaults to an empty list.
+            exclude_parameters (List[str], optional): List of parameter names to exclude from the widget. A name ending in ":" excludes that whole top-level section (e.g. "fd:"). Defaults to an empty list.
             include_parameters (List[str], optional): List of parameter names to include in the widget. Defaults to an empty list.
             flag_parameters (List[str], optional): List of parameter names that should
                 be treated as no-value CLI flags during command construction.
@@ -948,6 +1027,78 @@ class StreamlitUI:
             display_subsection_tabs, custom_defaults, tool_instance_name,
         )
 
+    def _read_params_for_update(self, tool_instance_name: str) -> dict:
+        """
+        Strict read of params.json for the read-modify-write-back sites below.
+
+        Both callers merge into what they read and write the result straight
+        back, so a tolerant empty dict from an unreadable file would be written
+        over everything stored - erasing `_defaults`, `_flag_params` and every
+        other tool's values while looking like a successful save.
+        read_parameters_strict() raises instead, and here that raise becomes a
+        halt: the write is skipped entirely, so the file on disk is preserved
+        for inspection and can still be repaired by hand, or reset from the
+        button rendered below.
+
+        Args:
+            tool_instance_name (str): Instance currently being rendered, used to
+                keep the reset button key unique across tool fragments.
+
+        Returns:
+            dict: Stored parameters, or an empty dict for an absent file.
+
+        Does not return if the file exists but cannot be read.
+        """
+        try:
+            return self.parameter_manager.read_parameters_strict()
+        except TransientParameterFileError as e:
+            # Ordered before InvalidParameterFileError, of which this is a
+            # subclass. The storage is not answering; the file itself is most
+            # likely intact, so deliberately no reset affordance here - a reset
+            # during a Ganesha restart is what would actually destroy it.
+            st.error(
+                f"**ERROR**: {e} Nothing was written, so no stored parameters "
+                "were lost. This usually clears by itself, reload the page in "
+                "a moment."
+            )
+            st.stop()
+            # st.stop() raises, so this is only reached when Streamlit is
+            # stubbed out; re-raise rather than fall through to the write.
+            raise
+        except InvalidParameterFileError as e:
+            st.error(
+                f"**ERROR**: {e} Nothing was written, so no stored parameters "
+                "were lost. Repair the file, or reset to defaults to continue."
+            )
+            if st.button(
+                "⚠️ Reset parameters to defaults",
+                help="Move the unreadable parameter file aside and start over from the default parameters.",
+                key=f"reset_unreadable_params_{tool_instance_name}",
+            ):
+                try:
+                    backup = self.parameter_manager.reset_to_default_parameters()
+                except OSError as reset_error:
+                    # Without this the button itself raises and the page stops
+                    # again on the next render, with no remaining way out.
+                    st.error(
+                        f"**ERROR**: Could not move "
+                        f"{self.parameter_manager.params_file} aside: "
+                        f"{reset_error}"
+                    )
+                else:
+                    self.parameter_manager.clear_parameter_session_state()
+                    st.toast(
+                        f"Parameters reset to defaults, previous file kept as {backup.name}"
+                        if backup is not None
+                        else "Parameters reset to defaults"
+                    )
+                    # Every tool section is affected, not just this fragment.
+                    st.rerun(scope="app")
+            st.stop()
+            # st.stop() raises, so this is only reached when Streamlit is
+            # stubbed out; re-raise rather than fall through to the write.
+            raise
+
     def _input_TOPP_impl(
         self,
         topp_tool_name: str,
@@ -976,12 +1127,14 @@ class StreamlitUI:
         if "_topp_flag_params" not in st.session_state:
             st.session_state["_topp_flag_params"] = {}
         st.session_state["_topp_flag_params"][tool_instance_name] = list(flag_parameters)
-        _fp = self.parameter_manager.get_parameters_from_json()
+        _fp = self._read_params_for_update(tool_instance_name)
         if "_flag_params" not in _fp:
             _fp["_flag_params"] = {}
         _fp["_flag_params"][tool_instance_name] = list(flag_parameters)
-        with open(self.parameter_manager.params_file, "w", encoding="utf-8") as _f:
-            json.dump(_fp, _f, indent=4)
+        # Atomic: a truncate-then-rewrite interrupted here leaves a torn
+        # params.json which every later strict read rejects, wedging this very
+        # method on each render.
+        self.parameter_manager.write_parameters(_fp)
 
         if not display_subsections:
             display_subsection_tabs = False
@@ -996,37 +1149,20 @@ class StreamlitUI:
 
         # Seed custom defaults into params.json under _defaults key
         if custom_defaults:
-            params = self.parameter_manager.get_parameters_from_json()
+            params = self._read_params_for_update(tool_instance_name)
             if "_defaults" not in params:
                 params["_defaults"] = {}
             params["_defaults"][tool_instance_name] = custom_defaults
-            with open(self.parameter_manager.params_file, "w", encoding="utf-8") as f:
-                json.dump(params, f, indent=4)
-            # Refresh self.params so widget resolution sees _defaults
-            self.params = self.parameter_manager.get_parameters_from_json()
+            self.parameter_manager.write_parameters(params)
+            # Refresh self.params so widget resolution sees _defaults - reuse
+            # what was just written instead of reading the file back, which
+            # could be torn by a concurrent writer.
+            self.params = params
 
         # read into Param object
         param = poms.Param()
         poms.ParamXMLFile().load(str(ini_file_path), param)
 
-        def _matches_parameter(pattern: str, key: bytes) -> bool:
-            """
-            Match pattern against TOPP parameter key using suffix matching.
-
-            Key format: b"ToolName:1:section:subsection:param_name"
-
-            Returns True if pattern matches the end of the param path,
-            bounded by ':' or start of path.
-            """
-            pattern = pattern.lstrip(":")  # Strip legacy leading colon
-            key_str = key.decode()
-
-            # Extract param path after "ToolName:1:"
-            parts = key_str.split(":")
-            param_path = ":".join(parts[2:]) if len(parts) > 2 else key_str
-
-            # Check if pattern matches as a suffix, bounded by ':' or start
-            return param_path == pattern or param_path.endswith(":" + pattern)
 
         # Always apply base exclusions (input/output files, standard excludes)
         excluded_keys = [
@@ -1045,7 +1181,7 @@ class StreamlitUI:
             if not (
                 b"input file" in param.getTags(key)
                 or b"output file" in param.getTags(key)
-                or any([_matches_parameter(k, key) for k in excluded_keys])
+                or any([_matches_topp_parameter(k, key) for k in excluded_keys])
             )
         ]
 
@@ -1053,7 +1189,7 @@ class StreamlitUI:
         if include_parameters:
             included_keys = {
                 key for key in valid_keys
-                if any([_matches_parameter(k, key) for k in include_parameters])
+                if any([_matches_topp_parameter(k, key) for k in include_parameters])
             }
         else:
             included_keys = set(valid_keys)  # All are included when no filter specified
@@ -1123,9 +1259,29 @@ class StreamlitUI:
                 if st.session_state["advanced"] or (not p["advanced"] and not p["non_included"])
             ]
 
-        # Display tool name if required
+        # Values changed in the "All parameters" dialog, before the widgets are drawn
+        self._apply_all_params_pending(tool_instance_name)
+
+        # Tool name, and the button for the "All parameters" dialog
+        all_rows = self._all_parameter_rows(params, ini_params, tool_instance_name)
+        name_col, all_col = st.columns([3, 2], vertical_alignment="bottom")
         if display_tool_name:
-            st.markdown(f"**{tool_instance_name}**")
+            name_col.markdown(f"**{tool_instance_name}**")
+        n_changed = sum(not r["is_default"] for r in all_rows)
+        if all_col.button(
+            f"All {len(all_rows)} parameters"
+            + (f" ({n_changed} changed)" if n_changed else ""),
+            key=f"all-params-{tool_instance_name}",
+            icon=":material/tune:",
+            type="tertiary",
+            help="Search every parameter of this tool, including advanced ones, "
+            "and reset single parameters to the default or the applied preset.",
+            use_container_width=True,
+        ):
+            st.session_state["_all_params_filter"] = ""
+            st.dialog(f"All parameters of {tool_instance_name}", width="large")(
+                self._all_parameters_dialog
+            )(topp_tool_name, tool_instance_name, exclude_parameters)
 
         tab_names = [k for k in param_sections.keys() if ":" not in k]
         tabs = None
@@ -1281,6 +1437,275 @@ class StreamlitUI:
         
         self.parameter_manager.save_parameters()
             
+
+    def _apply_all_params_pending(self, tool_instance_name: str) -> None:
+        """Give this tool's widgets the values set in the "All parameters" dialog."""
+        pending = st.session_state.get("_all_params_pending")
+        if not pending:
+            return
+        prefix = f"{self.parameter_manager.topp_param_prefix}{tool_instance_name}:1:"
+        for key in [k for k in pending if k.startswith(prefix)]:
+            st.session_state[key] = pending.pop(key)
+
+    def _all_parameter_rows(
+        self, params: list, ini_params: dict, tool_instance_name: str
+    ) -> list:
+        """One row per parameter of a TOPP tool for the "All parameters" dialog."""
+        stored = self.parameter_manager.get_parameters_from_json()
+        custom = stored.get("_defaults", {}).get(tool_instance_name, {})
+        rows = []
+        for p in params:
+            name = p["key"].decode().split(":1:")[1]
+            value = p["value"]
+            if isinstance(value, list):
+                value = [v.decode() if isinstance(v, bytes) else v for v in value]
+            default = custom.get(name, ini_params.get(name))
+            if isinstance(default, list):
+                default = [v.decode() if isinstance(v, bytes) else v for v in default]
+            rows.append(
+                {
+                    "name": name,
+                    "label": p["name"],
+                    "section": ":".join(name.split(":")[:-1]),
+                    "description": p["description"],
+                    "value": value,
+                    "default": default,
+                    "valid_strings": p["valid_strings"],
+                    "is_list": p["original_is_list"],
+                    "advanced": p["advanced"],
+                    "is_default": ParameterManager._same_value(value, default),
+                }
+            )
+        return rows
+
+    def _all_parameters_dialog(
+        self, topp_tool_name: str, tool_instance_name: str, exclude_parameters: list
+    ) -> None:
+        """Every parameter of a TOPP tool: filter, edit, reset to default or preset.
+
+        Changes go straight to params.json (ParameterManager.set_topp_parameter),
+        under their own widget keys, because the tool's widgets on the page are
+        drawn in the same run and can not share theirs.
+        """
+        pm = self.parameter_manager
+        ini_path = Path(pm.ini_dir, f"{topp_tool_name}.ini")
+        param = poms.Param()
+        poms.ParamXMLFile().load(str(ini_path), param)
+        stored = pm.get_parameters_from_json()
+        user = stored.get(tool_instance_name, {})
+        defaults = pm.get_topp_defaults(topp_tool_name, tool_instance_name)
+
+        # The same parameters the page offers: no file parameters, no standard flags
+        excluded = [
+            "log", "debug", "threads", "no_progress", "force", "version", "test"
+        ] + list(exclude_parameters)
+        rows = []
+        for key in param.keys():
+            tags = param.getTags(key)
+            if b"input file" in tags or b"output file" in tags:
+                continue
+            if any(_matches_topp_parameter(k, key) for k in excluded):
+                continue
+            entry = param.getEntry(key)
+            name = key.decode().split(":1:")[1]
+            default = defaults.get(name, entry.value)
+            value = user.get(name, default)
+            if isinstance(entry.value, list) and isinstance(value, str):
+                value = value.split("\n") if value else []
+            rows.append(
+                {
+                    "name": name,
+                    "label": entry.name.decode(),
+                    "section": ":".join(name.split(":")[:-1]),
+                    "description": entry.description.decode(),
+                    "value": value,
+                    "default": default,
+                    "valid_strings": [v.decode() for v in entry.valid_strings],
+                    "advanced": b"advanced" in tags,
+                    "is_list": isinstance(entry.value, list),
+                }
+            )
+
+        preset_name, preset_values, preset_complete = pm.applied_preset_values(
+            tool_instance_name
+        )
+
+        def preset_value(row):
+            if row["name"] in preset_values:
+                return True, preset_values[row["name"]]
+            if preset_complete:
+                return True, row["default"]
+            return False, None
+
+        def same(a, b):
+            return ParameterManager._same_value(_plain(a), _plain(b))
+
+        n_changed = sum(not same(r["value"], r["default"]) for r in rows)
+        off_preset = [
+            r for r in rows if preset_value(r)[0] and not same(r["value"], preset_value(r)[1])
+        ]
+
+        c1, c2 = st.columns([3, 1], vertical_alignment="bottom")
+        query = c1.text_input(
+            "Filter",
+            key="_all_params_filter",
+            placeholder="Filter by name, section or description, e.g. tolerance",
+            label_visibility="collapsed",
+        )
+        only_changed = c2.toggle("Changed only", key=f"_all_params_changed_{tool_instance_name}")
+        summary = f"{len(rows)} parameters, {n_changed} changed from the default"
+        if preset_name:
+            summary += (
+                f" · preset **{preset_name}**: "
+                + (f"{len(off_preset)} differ" if off_preset else "all as in the preset")
+            )
+        st.caption(summary)
+
+        words = query.lower().split()
+        shown = [
+            r
+            for r in rows
+            if all(
+                w in f"{r['name']} {r['description']}".lower() for w in words
+            )
+            and (not only_changed or not same(r["value"], r["default"]))
+        ]
+        if not shown:
+            st.info("No parameter matches the filter.")
+
+        with st.container(height=520, border=False):
+            for row in shown:
+                self._all_parameters_row(
+                    tool_instance_name, row, same, preset_name, preset_value(row)
+                )
+
+        if st.button("Done", type="primary", key="_all_params_done"):
+            st.rerun()
+
+    def _all_parameters_row(self, instance, row, same, preset_name, preset) -> None:
+        """One parameter in the "All parameters" dialog: label, widget, reset buttons."""
+        pm = self.parameter_manager
+        wkey = f"_all_params_value_{instance}:{row['name']}"
+        value, default = row["value"], row["default"]
+        changed = not same(value, default)
+        has_preset, preset_val = preset
+
+        def show_on_page(r, new):
+            # The tool's widgets on the page take the new value on the next
+            # full run, before they are drawn (_apply_all_params_pending).
+            # Setting their keys now would not stick: the browser sends their
+            # old values with the next rerun, and save_parameters() would
+            # write those back.
+            main_key = f"{pm.topp_param_prefix}{instance}:1:{r['name']}"
+            pending = st.session_state.setdefault("_all_params_pending", {})
+            if r["is_list"]:
+                items = new if isinstance(new, list) else [v for v in str(new).split("\n") if v]
+                pending[main_key] = "\n".join(str(v) for v in items)
+                if r["valid_strings"]:
+                    pending[f"{main_key}_display"] = [
+                        v for v in items if v in r["valid_strings"]
+                    ]
+            else:
+                pending[main_key] = new
+
+        def store(k=wkey, r=row):
+            new = st.session_state[k]
+            stored = new
+            if isinstance(new, list):
+                stored = "\n".join(str(v) for v in new)
+            elif r["is_list"]:
+                stored = "\n".join(line for line in str(new).splitlines() if line)
+            if pm.set_topp_parameter(instance, r["name"], stored, default=_plain(r["default"])):
+                show_on_page(r, stored)
+
+        def as_widget_value(r, v):
+            # What this row's widget holds (deleting its key instead would let
+            # the browser send the old value back as a change).
+            if r["is_list"]:
+                items = v if isinstance(v, list) else [x for x in str(v).split("\n") if x]
+                items = [x.decode() if isinstance(x, bytes) else str(x) for x in items]
+                if r["valid_strings"]:
+                    return [x for x in items if x in r["valid_strings"]]
+                return "\n".join(items)
+            if isinstance(r["default"], bool):
+                return v if isinstance(v, bool) else str(v).lower() == "true"
+            if isinstance(r["default"], float):
+                return float(v)
+            if isinstance(r["default"], int):
+                return int(v)
+            return v
+
+        def reset(k=wkey, r=row):
+            if pm.reset_topp_parameter(instance, r["name"]):
+                show_on_page(r, r["default"])
+                st.session_state[k] = as_widget_value(r, r["default"])
+
+        def to_preset(k=wkey, r=row, v=preset_val):
+            if pm.set_topp_parameter(instance, r["name"], _plain(v), default=_plain(r["default"])):
+                show_on_page(r, v)
+                st.session_state[k] = as_widget_value(r, v)
+
+        c_label, c_value, c_actions = st.columns([5, 4, 3], vertical_alignment="center")
+        section = f":gray[{row['section']}:]" if row["section"] else ""
+        marker = " :orange[●]" if changed else ""
+        c_label.markdown(
+            f"{section}**{row['label']}**{marker}"
+            + (" :gray[· advanced]" if row["advanced"] else ""),
+            help=row["description"] or None,
+        )
+        if changed:
+            c_label.caption(f"default: {_short(default)}")
+
+        common = dict(key=wkey, label_visibility="collapsed", on_change=store)
+        label = row["label"]
+        if isinstance(default, bool):
+            current = value if isinstance(value, bool) else str(value).lower() == "true"
+            c_value.checkbox(label, value=current, **common)
+        elif isinstance(default, list):
+            items = [str(v) for v in value] if isinstance(value, list) else str(value).split("\n")
+            if row["valid_strings"]:
+                c_value.multiselect(
+                    label,
+                    options=sorted(row["valid_strings"]),
+                    default=[v for v in items if v in row["valid_strings"]],
+                    **common,
+                )
+            else:
+                c_value.text_area(label, value="\n".join(items), height=68, **common)
+        elif isinstance(default, str) and row["valid_strings"]:
+            options = row["valid_strings"]
+            c_value.selectbox(
+                label,
+                options=options,
+                index=options.index(value) if value in options else 0,
+                **common,
+            )
+        elif isinstance(default, int) and not isinstance(default, bool):
+            c_value.number_input(label, value=int(value), step=1, **common)
+        elif isinstance(default, float):
+            c_value.number_input(label, value=float(value), format="%g", **common)
+        else:
+            c_value.text_input(label, value=str(value), **common)
+
+        b1, b2 = c_actions.columns(2)
+        if changed:
+            b1.button(
+                "Default",
+                key=f"_all_params_reset_{instance}:{row['name']}",
+                icon=":material/restart_alt:",
+                help=f"Back to the default ({_short(default)})",
+                on_click=reset,
+                type="tertiary",
+            )
+        if has_preset and not same(value, preset_val):
+            b2.button(
+                "Preset",
+                key=f"_all_params_preset_{instance}:{row['name']}",
+                icon=":material/undo:",
+                help=f"Back to the value of preset {preset_name} ({_short(preset_val)})",
+                on_click=to_preset,
+                type="tertiary",
+            )
 
     @st.fragment
     def input_python(
@@ -1536,20 +1961,107 @@ class StreamlitUI:
             col_idx = i % num_cols
             description = self.parameter_manager.get_preset_description(preset_name)
             with cols[col_idx]:
-                if st.button(
+                # Applied in a callback, before the rerun starts, rather than with
+                # st.rerun() from the button branch: that interrupts the script before
+                # configure() renders its widgets, and Streamlit drops the state of
+                # every widget a run does not reach. Their keys survive, so the
+                # widgets re-render from an empty value, e.g. the mzML file selection
+                # is lost and the next start fails with no input files.
+                st.button(
                     preset_name,
                     key=f"preset_{preset_name}",
                     help=description if description else None,
                     use_container_width=True,
-                ):
-                    if self.parameter_manager.apply_preset(preset_name):
-                        st.toast(f"Applied preset: {preset_name}")
-                        st.rerun()
-                    else:
-                        st.error(f"Failed to apply preset: {preset_name}")
+                    on_click=self._apply_preset_callback,
+                    args=(preset_name,),
+                )
             # Start new row if needed
             if col_idx == num_cols - 1 and i < len(preset_names) - 1:
                 cols = st.columns(num_cols)
+
+    def _apply_preset_callback(self, preset_name: str) -> None:
+        if self.parameter_manager.apply_preset(preset_name):
+            st.toast(f"Applied preset: {preset_name}")
+        else:
+            st.toast(f"Failed to apply preset: {preset_name}", icon="⚠️")
+
+    def user_presets(self, num_cols: int = 4) -> None:
+        """
+        Renders the presets the user saved, a form to save the current settings as
+        a new one or delete one, and which preset the settings come from.
+
+        Saved presets live in the workflow directory (user-presets.json), so they
+        stay with the workspace. Applying one restores every saved setting.
+        """
+        pm = self.parameter_manager
+        names = pm.get_user_preset_names()
+        if not pm.get_preset_names():
+            st.markdown("---")
+        st.markdown("**Your Presets**")
+        if names:
+            cols = st.columns(num_cols)
+            for i, name in enumerate(names):
+                col_idx = i % num_cols
+                description = pm.get_preset_description(name)
+                with cols[col_idx]:
+                    st.button(
+                        name,
+                        key=f"user_preset_{name}",
+                        help=description if description else None,
+                        use_container_width=True,
+                        on_click=self._apply_preset_callback,
+                        args=(name,),
+                    )
+                if col_idx == num_cols - 1 and i < len(names) - 1:
+                    cols = st.columns(num_cols)
+        else:
+            st.caption("Save the current settings to reuse them in a later run.")
+
+        with st.popover("💾 Save or delete a preset"):
+            st.text_input("Preset name", key="user_preset_name")
+            st.text_input("Description (optional)", key="user_preset_description")
+            st.button(
+                "Save current settings",
+                key="user_preset_save",
+                on_click=self._save_user_preset_callback,
+            )
+            if names:
+                st.selectbox("Saved preset", names, key="user_preset_delete_choice")
+                st.button(
+                    "Delete preset",
+                    key="user_preset_delete",
+                    on_click=self._delete_user_preset_callback,
+                )
+
+        applied, changed = pm.applied_preset_status()
+        if applied and changed:
+            st.caption(
+                f"✏️ Settings changed since you applied **{applied}**. "
+                "Save them as a preset to keep them."
+            )
+        elif applied:
+            st.caption(f"✅ Current settings: **{applied}**")
+
+    def _save_user_preset_callback(self) -> None:
+        name = st.session_state.get("user_preset_name", "").strip()
+        description = st.session_state.get("user_preset_description", "").strip()
+        if not name:
+            st.toast("Enter a name for the preset", icon="⚠️")
+        elif name in self.parameter_manager.get_preset_names():
+            st.toast(f"'{name}' is a built-in preset, choose another name", icon="⚠️")
+        elif self.parameter_manager.save_user_preset(name, description):
+            st.session_state["user_preset_name"] = ""
+            st.session_state["user_preset_description"] = ""
+            st.toast(f"Saved preset: {name}")
+        else:
+            st.toast(f"Could not save preset: {name}", icon="⚠️")
+
+    def _delete_user_preset_callback(self) -> None:
+        name = st.session_state.get("user_preset_delete_choice")
+        if name and self.parameter_manager.delete_user_preset(name):
+            st.toast(f"Deleted preset: {name}")
+        else:
+            st.toast(f"Could not delete preset: {name}", icon="⚠️")
 
     def file_upload_section(self, custom_upload_function) -> None:
         self.upload_targets = {}
@@ -1581,6 +2093,7 @@ class StreamlitUI:
 
         # Display preset buttons if presets are available for this workflow
         self.preset_buttons()
+        self.user_presets()
 
         custom_parameter_function()
 
@@ -1595,6 +2108,7 @@ class StreamlitUI:
             ):
                 self.parameter_manager.reset_to_default_parameters()
                 self.parameter_manager.clear_parameter_session_state()
+                self.parameter_manager.forget_applied_preset()
                 st.toast("Parameters reset to defaults")
                 st.rerun()
         with cols[1]:
@@ -1625,7 +2139,10 @@ class StreamlitUI:
                 key="param_import_uploader"
             )
             if up is not None:
-                with open(self.parameter_manager.params_file, "w") as f:
+                # encoding="utf-8" explicitly: the payload is decoded as utf-8
+                # just above, and writing it back in the platform codepage
+                # produced a params.json that no later utf-8 read could decode.
+                with open(self.parameter_manager.params_file, "w", encoding="utf-8") as f:
                     f.write(up.read().decode("utf-8"))
                 self.parameter_manager.clear_parameter_session_state()
                 st.toast("Parameters imported")
@@ -1693,52 +2210,144 @@ class StreamlitUI:
                 time.sleep(1)
                 st.rerun()
 
-        # Display logs and status
-        if is_running:
-            # Real-time display during execution
-            spinner_text = "**Workflow running...**"
-            if job_status == "queued":
-                pos = status.get("queue_position", "?")
-                spinner_text = f"**Waiting in queue (position {pos})...**"
+        # Display logs and status. Drawn into one st.empty() slot so the
+        # running view replaces the finished one completely: st.rerun()
+        # below ends the script early, which otherwise leaves the earlier
+        # view's trailing elements on the page.
+        status_area = st.empty()
+        with status_area.container():
+            if is_running:
+                # Real-time display during execution
+                spinner_text = "**Workflow running...**"
+                if job_status == "queued":
+                    pos = status.get("queue_position", "?")
+                    spinner_text = f"**Waiting in queue (position {pos})...**"
 
-            with st.spinner(spinner_text):
-                if log_exists:
-                    with open(log_path, "r", encoding="utf-8") as f:
-                        lines = f.readlines()
-                    if log_lines_count == "all":
-                        display_lines = lines
-                    else:
-                        display_lines = lines[-st.session_state.log_lines_count:]
-                    st.code(
-                        "".join(display_lines),
-                        language="neon",
-                        line_numbers=False,
-                    )
-                # Faster polling for real-time updates
-                time.sleep(1)
-                st.rerun()
+                if job_status != "queued":
+                    self._show_run_progress()
+                with st.spinner(spinner_text):
+                    if log_exists:
+                        with open(log_path, "r", encoding="utf-8") as f:
+                            lines = f.readlines()
+                        if log_lines_count == "all":
+                            display_lines = lines
+                        else:
+                            display_lines = lines[-st.session_state.log_lines_count:]
+                        st.code(
+                            "".join(display_lines),
+                            language="neon",
+                            line_numbers=False,
+                        )
+                    # Faster polling for real-time updates
+                    time.sleep(1)
+                    st.rerun()
 
-        elif log_exists:
-            # Static display after completion
+            elif log_exists:
+                # Static display after completion
+                st.markdown(
+                    f"**Workflow log file: {datetime.fromtimestamp(log_path.stat().st_ctime).strftime('%Y-%m-%d %H:%M')} CET**"
+                )
+                with open(log_path, "r", encoding="utf-8") as f:
+                    lines = f.readlines()
+                content = "".join(lines)
+                outcome = classify_log_outcome(content)
+                if outcome == "finished":
+                    st.success("**Workflow completed successfully.**")
+                elif outcome == "cancelled":
+                    st.warning("**Workflow was cancelled.**")
+                else:
+                    st.error("**Errors occurred, check log file.**")
+                self._show_run_summary(show_failures=outcome != "finished")
+                # Apply line limit to static display
+                if log_lines_count == "all":
+                    display_lines = lines
+                else:
+                    display_lines = lines[-st.session_state.log_lines_count:]
+                st.code("".join(display_lines), language="neon", line_numbers=False)
+
+    def _show_run_progress(self) -> None:
+        """Per-file progress of the running workflow: tool, file n of N, elapsed times."""
+        state = read_progress(self.workflow_dir)
+        now = time.time()
+        if not state or not state.get("steps"):
+            return
+        step = state["steps"][-1]
+        files = step["files"]
+        n = len(files)
+        finished = sum(f["status"] in (DONE, FAILED) for f in files)
+        active = [i for i, f in enumerate(files) if f["status"] == RUNNING]
+        with st.container(border=True):
             st.markdown(
-                f"**Workflow log file: {datetime.fromtimestamp(log_path.stat().st_ctime).strftime('%Y-%m-%d %H:%M')} CET**"
+                f"**Elapsed {format_duration(now - state['started'])}** · "
+                f"step {len(state['steps'])}: **{step['tool']}**"
+                + ("" if step["ended"] is None else " finished")
             )
-            with open(log_path, "r", encoding="utf-8") as f:
-                lines = f.readlines()
-            content = "".join(lines)
-            outcome = classify_log_outcome(content)
-            if outcome == "finished":
-                st.success("**Workflow completed successfully.**")
-            elif outcome == "cancelled":
-                st.warning("**Workflow was cancelled.**")
-            else:
-                st.error("**Errors occurred, check log file.**")
-            # Apply line limit to static display
-            if log_lines_count == "all":
-                display_lines = lines
-            else:
-                display_lines = lines[-st.session_state.log_lines_count:]
-            st.code("".join(display_lines), language="neon", line_numbers=False)
+            if step["ended"] is None:
+                counts = file_counts(step)
+                if active and n > 1:
+                    which = ", ".join(str(i + 1) for i in active)
+                    where = (
+                        f"running file{'s' if len(active) > 1 else ''} {which} of {n}"
+                        f" · {counts[DONE]} done"
+                    )
+                else:
+                    where = f"{counts[DONE]} of {n} file{'s' if n > 1 else ''} done"
+                if counts[FAILED]:
+                    where += f" · :red[{counts[FAILED]} failed]"
+                threads = step.get("threads", 1)
+                parallel = step.get("parallel", 1)
+                text = (
+                    f"{where} · {format_duration(now - step['started'])} · "
+                    f"{threads} thread{'s' if threads > 1 else ''}"
+                    + (f" × {parallel} in parallel" if parallel > 1 else "")
+                )
+                st.progress(finished / n if n else 0.0, text=text)
+            if n > 1 or step["ended"] is not None:
+                lines = []
+                for f in files:
+                    if f["status"] == DONE:
+                        lines.append(f":green[:material/check_circle:] {f['name']} :gray[{format_duration(f['ended'] - f['started'])}]")
+                    elif f["status"] == FAILED:
+                        lines.append(f":red[:material/cancel:] {f['name']} :red[failed]")
+                    elif f["status"] == RUNNING:
+                        lines.append(f":blue[:material/progress_activity:] **{f['name']}** :gray[{format_duration(now - f['started'])}]")
+                    else:
+                        lines.append(f":gray[:material/radio_button_unchecked: {f['name']}]")
+                st.markdown("  \n".join(lines))
+            earlier = state["steps"][:-1]
+            if earlier:
+                st.caption("Done: " + " · ".join(self._step_summary(s) for s in earlier))
+
+    @staticmethod
+    def _step_summary(step: dict) -> str:
+        """'FeatureFinderMetabo: 3 files in 0:20'."""
+        n = len(step["files"])
+        took = format_duration((step["ended"] or time.time()) - step["started"])
+        summary = f"{step['tool']}: " + (f"{n} files in {took}" if n > 1 else took)
+        failed = file_counts(step)[FAILED]
+        if failed and n > 1:
+            summary += f" ({n - failed} done, {failed} failed)"
+        elif failed:
+            summary += " (failed)"
+        return summary
+
+    def _show_run_summary(self, show_failures: bool) -> None:
+        """After a run: the time per tool and, for a failed tool, where it failed."""
+        state = read_progress(self.workflow_dir)
+        if not state or not state.get("steps"):
+            return
+        if show_failures:
+            for failure in failures(state):
+                st.error(
+                    f"**{failure['context']}**"
+                    + (f": {failure['message']}" if failure["message"] else "")
+                )
+                if failure["output"]:
+                    with st.expander(
+                        f"Tool output (exit code {failure['returncode']})"
+                    ):
+                        st.code("\n".join(failure["output"]), language="neon")
+        st.caption(" · ".join(self._step_summary(s) for s in state["steps"]))
 
     def _show_queue_status(self, status: dict) -> None:
         """Display queue job status for online mode"""

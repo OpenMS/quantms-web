@@ -26,7 +26,9 @@ module.exports = async (t) => {
   await t.shot("rescoring-switch-on");
 
   await t.open("workflow_run");
-  await t.clickButton("Start Workflow");
+  // The run page reruns every second while the workflow runs, so it
+  // settles only when the run has ended.
+  await t.clickButton("Start Workflow", { timeout: RUN_TIMEOUT });
   await t.waitForText("Workflow completed successfully.", {
     timeout: RUN_TIMEOUT,
     failOn: ["Errors occurred, check log file."],

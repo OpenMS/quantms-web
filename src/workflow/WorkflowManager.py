@@ -9,8 +9,24 @@ from .RunManager import RunManager, FINISHED, FAILED, CANCELLED, RUNNING
 import multiprocessing
 import streamlit as st
 import shutil
+import subprocess
+import sys
 import time
 import traceback
+
+# The app folder, which holds the src package.
+_APP_ROOT = str(Path(__file__).resolve().parents[2])
+
+# Runs one workflow in its own interpreter (see _start_workflow_local): argv is
+# the app folder, then the arguments of execute_workflow. The app folder is put
+# on sys.path explicitly, because the current directory is not always the app's
+# (the Windows desktop app starts Streamlit from elsewhere).
+_RUN_WORKFLOW = (
+    "import sys\n"
+    "sys.path.insert(0, sys.argv[1])\n"
+    "from src.workflow.tasks import execute_workflow\n"
+    "execute_workflow(*sys.argv[2:])\n"
+)
 
 class WorkflowManager:
     # Keep every run as its own named result set in <workflow_dir>/runs/<id>/
@@ -64,10 +80,10 @@ class WorkflowManager:
         Starts the workflow process.
 
         Online mode: Submits to Redis queue
-        Local mode: Spawns multiprocessing.Process (existing behavior)
+        Local mode: Runs the workflow in a separate Python process
         """
         # Flush the latest session state to params.json so the worker
-        # (queued) or the forked child (local) sees the values the user
+        # (queued) or the workflow process (local) sees the values the user
         # just selected, not stale disk state from a previous fragment run.
         self.parameter_manager.save_parameters()
         if self.multi_run:
@@ -121,12 +137,30 @@ class WorkflowManager:
             self._start_workflow_local()
 
     def _start_workflow_local(self) -> None:
-        """Start workflow as local process (existing behavior for local mode)"""
+        """Start the workflow in a separate Python process (local mode)."""
         # Delete the log file if it already exists
         shutil.rmtree(Path(self.workflow_dir, "logs"), ignore_errors=True)
-        # Start workflow process
-        workflow_process = multiprocessing.Process(target=self.workflow_process)
-        workflow_process.start()
+        # Run the workflow in a fresh interpreter, the way the queue worker
+        # does. A child forked from the server (multiprocessing's default on
+        # Linux) inherits the thread pools the server has already used, such
+        # as polars' and the OpenMP pool of pyOpenMS, without their threads,
+        # and blocks forever the first time it needs one: every run started
+        # after a results page was open hung. multiprocessing's "spawn" does
+        # not help, it re-runs the page script (Streamlit's __main__) in the
+        # child.
+        if getattr(sys, "frozen", False):
+            # A PyInstaller executable cannot run "-c"; it is Windows-only,
+            # where multiprocessing starts a fresh interpreter anyway.
+            workflow_process = multiprocessing.Process(target=self.workflow_process)
+            workflow_process.start()
+        else:
+            args = [str(self.workflow_dir), self.__class__.__name__, self.__class__.__module__]
+            if self.multi_run:
+                args.append(self.run_id)
+            workflow_process = subprocess.Popen(
+                [sys.executable, "-c", _RUN_WORKFLOW, _APP_ROOT, *args],
+                stdin=subprocess.DEVNULL,
+            )
         # Add workflow process id to pid dir
         self.executor.pid_dir.mkdir(exist_ok=True)
         try:
@@ -305,16 +339,33 @@ class WorkflowManager:
         """
         Shows the execution section of the UI with content defined in self.execution().
         """
+        name_key = ""
         if self.multi_run:
-            from .run_widgets import run_name_input
+            from .run_widgets import run_name_input, run_name_key
 
             run_name_input(self.runs, disabled=self.get_workflow_status()["running"])
+            name_key = run_name_key(self.runs)
+        if self._run_online(name_key):
+            return
         self.ui.execution_section(
             start_workflow_function=self.start_workflow,
             get_status_function=self.get_workflow_status,
             stop_workflow_function=self.stop_workflow
         )
         
+    def _run_online(self, name_key: str) -> bool:
+        """Offer the linked online workspace (offline app, workspace sync on).
+
+        True when the user chose it and its controls were drawn instead.
+        """
+        if not st.session_state.get("settings", {}).get("workspace_sync", {}).get("enabled"):
+            return False
+        from src.common.workspace_sync import render_run_choice
+
+        # Saved when the online run starts: it takes them from params.json.
+        return render_run_choice(self.workflow_dir, name_key,
+                                 save_parameters=self.parameter_manager.save_parameters)
+
     def show_results_section(self) -> None:
         """
         Shows the results section of the UI with content defined in self.results().
@@ -323,7 +374,13 @@ class WorkflowManager:
         self.results_dir at the chosen run.
         """
         if self.multi_run and not self.select_run():
-            st.info("No finished runs yet. Start the workflow on the **Run** page.")
+            from .run_widgets import run_import
+
+            st.info(
+                "No finished runs yet. Start the workflow on the **Run** page, "
+                "or open a run someone shared as a ZIP."
+            )
+            run_import(self.runs)
             return
         self.ui.results_section(self.results)
 
