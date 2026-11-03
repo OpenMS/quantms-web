@@ -140,7 +140,9 @@ xlsxwriter
 streamlit_plotly_events
 scipy
 scikit-learn
-openms-insight==0.4.0
+# Development build of OpenMS-Insight main (01df461, with the table search and
+# filter menu). Replace with the next PyPI release before an app release.
+openms-insight @ https://raw.githubusercontent.com/OpenMS/quantms-web/claude/insight-dev-wheels/openms_insight-0.4.1.dev20261103-py3-none-any.whl#sha256=78cb091422501d0e95ff70014d1a26b705f65bf802f9ea240a8dbab1e9f5a588
 polars>=1.0.0
 # Forces polars to prefer its most CPU-compatible native runtime.
 # Without this, polars can select an AVX-optimized runtime (e.g. runtime-32)
