@@ -181,6 +181,17 @@ jobs:
         tail -n 200 "$APP_LOG" || true
         exit $code
 
+    - name: Show the app and workflow logs
+      # Also after the step above timed out, which cuts off its own log tail.
+      if: failure() || cancelled()
+      run: |
+        tail -n 300 "$APP_LOG" || true
+        for dir in "$(dirname "$APP_LOG")/.." "$(dirname "$APP_PAYLOAD")"; do
+          find "$dir" -maxdepth 6 -path '*/logs/*' -name 'all.log' 2>/dev/null | while read -r f; do
+            echo "=== $f"; tail -n 150 "$f"
+          done
+        done
+
     - name: Archive end-to-end screenshots
       if: always()
       uses: actions/upload-artifact@v4
