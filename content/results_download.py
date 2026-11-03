@@ -18,7 +18,8 @@ page_intro(
 Every analysis you start is kept as its own run, so you can change a setting, run again
 and compare. The list below shows all runs: 👁️ shows a run on the results pages (the
 **Showing run** box at the top of each results page does the same), ✏️ renames it, 📦 packs its results,
-settings and logs into one ZIP to download, and 🗑️ deletes it.
+settings and logs into one ZIP to download, and 🗑️ deletes it. The ZIP also holds the identified
+spectra (**spectra/**), so after **Open a run from a ZIP** its results can be browsed without the mzML files.
 
 Below the list are the files of one run, singly or as one ZIP. The ones most people need:
 
