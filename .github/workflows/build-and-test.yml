@@ -593,8 +593,12 @@ jobs:
 
       - name: Install nginx ingress controller
         run: |
-          kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
-          kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=90s
+          # Pinned as in the template (controller-v1.15.1). rollout status waits
+          # for the controller pod to exist; `kubectl wait` on a selector fails
+          # at once ("no matching resources found") when it runs before the
+          # Deployment has created the pod.
+          kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.15.1/deploy/static/provider/kind/deploy.yaml
+          kubectl -n ingress-nginx rollout status deployment/ingress-nginx-controller --timeout=180s
 
       - name: Deploy with Kustomize
         run: |
