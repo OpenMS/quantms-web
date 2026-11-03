@@ -96,9 +96,12 @@ function makeHelpers(app, page, baseUrl, out) {
       await settle(page);
     },
 
-    async clickButton(name) {
+    // A button that starts work the page polls for (a workflow run reruns
+    // its page every second until the run ends) needs a { timeout } as long
+    // as that work: the page only settles once it is done.
+    async clickButton(name, opts) {
       await page.getByRole("button", { name }).first().click();
-      await settle(page);
+      await settle(page, opts);
     },
 
     // Picks an option in the st.multiselect or st.selectbox with this label.
