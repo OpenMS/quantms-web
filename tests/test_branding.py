@@ -62,6 +62,9 @@ sys.modules.update(_MOCKED_MODULES)
 # earlier test module (e.g. test_gui.py) already imported the real-streamlit-bound
 # version. Save whatever was cached first so we can restore it afterwards.
 _saved_common = sys.modules.pop("src.common.common", None)
+# common.py imports src.common.developer, which binds `st` at import time, so
+# it must be re-imported under the mock too and restored afterwards.
+_saved_developer = sys.modules.pop("src.common.developer", None)
 
 from src.common.common import get_branding, DEFAULT_LOGO  # noqa: E402
 
@@ -77,6 +80,10 @@ for _name, _orig in _saved_modules.items():
 # get_branding keeps working: it holds a reference to the freshly-imported
 # mock-bound module's globals (and the same `mock_streamlit` object the tests
 # mutate).
+if _saved_developer is None:
+    sys.modules.pop("src.common.developer", None)
+else:
+    sys.modules["src.common.developer"] = _saved_developer
 if _saved_common is None:
     sys.modules.pop("src.common.common", None)
 else:
