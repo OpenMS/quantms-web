@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 import polars as pl
+import pyarrow.parquet as pq
 import streamlit as st
 from openms_insight import LinePlot, MirrorPlot
 
@@ -38,13 +39,14 @@ def _instrument(mzml_path: str) -> str:
 
 @st.cache_data(show_spinner=False)
 def _measured(parquet: str, mtime: float, file_index: int, scan: int) -> pl.DataFrame:
-    # mtime only keys the cache, so a re-run of the workflow invalidates it
-    return (
-        pl.scan_parquet(parquet)
-        .filter((pl.col("file_index") == file_index) & (pl.col("scan_id") == scan))
-        .select("peak_id", "mass", "intensity")
-        .collect()
+    # mtime only keys the cache, so a re-run of the workflow invalidates it.
+    # Read with pyarrow: on Windows, polars' parquet scan crashed the app server
+    # (access violation in a polars worker thread) once the prediction had run.
+    table = pq.read_table(
+        parquet, columns=["peak_id", "mass", "intensity"],
+        filters=[("file_index", "==", file_index), ("scan_id", "==", scan)],
     )
+    return pl.from_arrow(table)
 
 
 @st.cache_data(show_spinner="Reading identifications...")
