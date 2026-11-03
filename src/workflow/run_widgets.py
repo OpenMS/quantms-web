@@ -225,7 +225,9 @@ def run_import(runs: RunManager, expanded: bool = False) -> None:
     slug = _slug(runs)
     counter = f"_runs-{slug}-import-n"
     n = st.session_state.get(counter, 0)
-    done = st.session_state.pop(f"_runs-{slug}-imported", None)
+    # Kept (not popped) until the next import: a component on the page may
+    # rerun it once more right after the import, which would swallow the message
+    done = st.session_state.get(f"_runs-{slug}-imported")
     if done:
         st.success(f"Imported **{done}**. It is shown on the results pages.")
     with st.expander("📥 Open a run from a ZIP", expanded=expanded):
@@ -237,6 +239,8 @@ def run_import(runs: RunManager, expanded: bool = False) -> None:
             "Run ZIP", type=["zip"], key=f"runs-{slug}-import-{n}",
             label_visibility="collapsed",
         )
+        if upload is not None:
+            st.session_state.pop(f"_runs-{slug}-imported", None)
         if upload is not None and st.button(
             "Import run", key=f"runs-{slug}-import-go-{n}", type="primary",
         ):
