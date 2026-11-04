@@ -183,9 +183,13 @@ SHELL ["mamba", "run", "-n", "streamlit-env", "/bin/bash", "-c"]
 RUN pip install /pyopenms-wheel/*.whl && rm -rf /pyopenms-wheel
 
 # Install other dependencies (excluding pyopenms)
-COPY requirements.txt ./requirements.txt
+COPY requirements.txt requirements-nodeps.tx[t] ./
 RUN grep -Ev '^pyopenms([=<>!~].*)?$' requirements.txt > requirements_cleaned.txt && mv requirements_cleaned.txt requirements.txt
 RUN pip install -r requirements.txt
+# Packages whose own pins conflict with the app's (numpy<2 next to pyOpenMS
+# 3.6, for example), one per line in the app's optional requirements-nodeps.txt,
+# installed without their dependencies; requirements.txt lists those it needs.
+RUN if [ -f requirements-nodeps.txt ]; then pip install --no-deps -r requirements-nodeps.txt; fi
 
 # AlphaPeptDeep's pretrained models, fetched at build time so the spectrum
 # prediction works offline and for any user the container runs as.
@@ -204,7 +208,14 @@ RUN cp -r openms-build/lib /openms/lib
 ENV LD_LIBRARY_PATH="/openms/lib/:/root/miniforge3/envs/streamlit-env/lib"
 
 # Copy share folder, add to PATH, remove source directory.
-RUN cp -r OpenMS/share/OpenMS /openms/share
+# From OpenMS 3.6 on the TOPP tool registry (share/OpenMS/TOOLS/*.tsv) is
+# generated into the build directory, not kept in the source tree. Without it
+# every TOPP tool aborts on start ("The TOPP tool registry ... is empty"), so
+# it is copied next to the source share.
+RUN cp -r OpenMS/share/OpenMS /openms/share \
+    && if [ -d openms-build/share/OpenMS/TOOLS ]; then \
+        mkdir -p /openms/share/TOOLS && cp -r openms-build/share/OpenMS/TOOLS/. /openms/share/TOOLS/; \
+    fi
 RUN rm -rf OpenMS
 ENV OPENMS_DATA_PATH="/openms/share/"
 
@@ -214,7 +225,14 @@ RUN rm -rf openms-build
 # Check that pyOpenMS loads and finds its data, and that the TOPP tools run.
 RUN python -c "import pyopenms; print('pyOpenMS', pyopenms.__version__, pyopenms.EmpiricalFormula('C6H12O6').getMonoWeight())" \
     && test -x /openms/bin/FileInfo \
-    && ! ldd /openms/bin/FileInfo | grep 'not found'
+    && ! ldd /openms/bin/FileInfo | grep 'not found' \
+    && for tool in FileInfo FeatureFinderMetabo; do \
+        "$tool" -write_ini "/tmp/$tool.ini" > "/tmp/$tool.log" 2>&1; \
+        if [ ! -s "/tmp/$tool.ini" ]; then \
+            echo "$tool -write_ini failed:"; cat "/tmp/$tool.log"; exit 1; \
+        fi; \
+        rm -f "/tmp/$tool.ini" "/tmp/$tool.log"; \
+    done
 
 # Prepare and run streamlit app.
 FROM compile-openms AS run-app
@@ -282,6 +300,7 @@ COPY app.py /app/app.py
 COPY settings.json /app/settings.json
 COPY default-parameters.json /app/default-parameters.json
 COPY presets.json /app/presets.json
+COPY parameter-names.json /app/parameter-names.json
 
 # For streamlit configuration
 COPY .streamlit/ /app/.streamlit/

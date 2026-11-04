@@ -199,3 +199,5 @@ sync:
   - tests/test_workspace_sync.py
   - tests/test_workspace_selector.py
   - conda-requirements.txt
+  - requirements-nodeps.txt
+  - parameter-names.json

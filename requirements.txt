@@ -157,10 +157,20 @@ statsmodels
 redis>=5.0.0
 rq>=1.16.0
 
-# Predicted fragment spectra next to measured PSMs (AlphaPeptDeep). torch comes
+# Predicted fragment spectra next to measured PSMs (AlphaPeptDeep). peptdeep
+# itself is in requirements-nodeps.txt: it pins numpy<2, which pyOpenMS 3.6
+# cannot use, and runs on numpy 2. Its dependencies are listed here. torch comes
 # from the CPU index: the default Linux wheel pulls in several GB of CUDA libraries.
 --extra-index-url https://download.pytorch.org/whl/cpu
-peptdeep==1.5.1
+torch
+transformers<5
+numba
+tqdm
+lxml
+pyteomics<5
+alphabase>=1.5.0
+alpharaw>=0.2.0
+pywin32; sys_platform == "win32"
 # Reads Bruker timsTOF .d folders (TDF) for the conversion to mzML
 # (src/python-tools/bruker_to_mzml.py). Open-source, no vendor library.
 timsrust_pyo3==0.4.1
