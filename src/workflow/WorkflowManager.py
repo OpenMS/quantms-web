@@ -14,13 +14,12 @@ import sys
 import time
 import traceback
 
-# The app folder, which holds the src package.
+# The app folder, which holds src/. Put first on sys.path in the workflow
+# process (see _start_workflow_local).
 _APP_ROOT = str(Path(__file__).resolve().parents[2])
 
-# Runs one workflow in its own interpreter (see _start_workflow_local): argv is
-# the app folder, then the arguments of execute_workflow. The app folder is put
-# on sys.path explicitly, because the current directory is not always the app's
-# (the Windows desktop app starts Streamlit from elsewhere).
+# Runs one workflow in its own interpreter: argv is the app folder, then the
+# arguments of execute_workflow, the function the queue worker runs.
 _RUN_WORKFLOW = (
     "import sys\n"
     "sys.path.insert(0, sys.argv[1])\n"
@@ -140,17 +139,17 @@ class WorkflowManager:
         """Start the workflow in a separate Python process (local mode)."""
         # Delete the log file if it already exists
         shutil.rmtree(Path(self.workflow_dir, "logs"), ignore_errors=True)
-        # Run the workflow in a fresh interpreter, the way the queue worker
-        # does. A child forked from the server (multiprocessing's default on
-        # Linux) inherits the thread pools the server has already used, such
-        # as polars' and the OpenMP pool of pyOpenMS, without their threads,
-        # and blocks forever the first time it needs one: every run started
-        # after a results page was open hung. multiprocessing's "spawn" does
-        # not help, it re-runs the page script (Streamlit's __main__) in the
-        # child.
+        # Run the workflow in a fresh interpreter, with the same function the
+        # queue worker runs. A child forked from the server (multiprocessing's
+        # default on Linux) inherits the thread pools the server has already
+        # used, such as the OpenMP pool of pyOpenMS or polars' pool, without
+        # their threads, and blocks forever the first time it needs one (an
+        # mzML load, a polars query), so the run never finished.
+        # multiprocessing's "spawn" does not help, it re-runs the page script
+        # (Streamlit's __main__) in the child.
         if getattr(sys, "frozen", False):
-            # A PyInstaller executable cannot run "-c"; it is Windows-only,
-            # where multiprocessing starts a fresh interpreter anyway.
+            # A PyInstaller executable cannot run "-c". It is built for
+            # Windows only, where multiprocessing starts a fresh interpreter.
             workflow_process = multiprocessing.Process(target=self.workflow_process)
             workflow_process.start()
         else:
@@ -168,7 +167,16 @@ class WorkflowManager:
         except FileNotFoundError:
             # The workflow already ended (e.g. no input files) and removed the
             # pid dir; there is nothing left to track.
-            pass
+            return
+        ended = (
+            workflow_process.poll() is not None
+            if isinstance(workflow_process, subprocess.Popen)
+            else not workflow_process.is_alive()
+        )
+        if ended:
+            # It ended before its pid was written: the pid dir made above
+            # would otherwise show the workflow as running forever.
+            shutil.rmtree(self.executor.pid_dir, ignore_errors=True)
 
     def workflow_process(self) -> None:
         """
@@ -373,6 +381,10 @@ class WorkflowManager:
         A multi-run workflow first shows a run picker and points
         self.results_dir at the chosen run.
         """
+        if self.multi_run:
+            from .run_widgets import show_import_notice
+
+            show_import_notice(self.runs)
         if self.multi_run and not self.select_run():
             from .run_widgets import run_import
 

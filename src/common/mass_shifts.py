@@ -142,10 +142,18 @@ def unimod_matches(shift: float, tolerance: float = MATCH_TOLERANCE) -> list[dic
     it and the residues it is defined on; common modifications come first, then
     the closest.
     """
-    full_ids = []
-    ModificationsDB().searchModificationsByDiffMonoMass(
-        full_ids, float(shift), float(tolerance), "", ResidueModification.TermSpecificity.ANYWHERE
-    )
+    anywhere = ResidueModification.TermSpecificity.ANYWHERE
+    try:
+        # pyOpenMS 3.6 returns the ids
+        full_ids = ModificationsDB().searchModificationsByDiffMonoMass(
+            float(shift), float(tolerance), "", anywhere
+        )
+    except TypeError:
+        # pyOpenMS 3.5 and earlier fill a list passed in
+        full_ids = []
+        ModificationsDB().searchModificationsByDiffMonoMass(
+            full_ids, float(shift), float(tolerance), "", anywhere
+        )
     by_name = {}
     db = ModificationsDB()
     for full_id in full_ids:
