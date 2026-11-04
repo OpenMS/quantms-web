@@ -456,7 +456,7 @@ jobs:
     - name: Copy the app into the payload
       run: |
         p=electron/payload
-        cp -R src utils content docs assets example-data .streamlit app.py settings.json default-parameters.json presets.json "$p/"
+        cp -R src utils content docs assets example-data .streamlit app.py settings.json default-parameters.json presets.json parameter-names.json "$p/"
         # The local server only listens on loopback; the shell passes the address.
         grep -v '^address' "$p/.streamlit/config.toml" > config.tmp && mv config.tmp "$p/.streamlit/config.toml"
         "$p/python-$PYTHON_VERSION/bin/python3" -m compileall -q --invalidation-mode unchecked-hash "$p/src" "$p/utils"

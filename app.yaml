@@ -147,6 +147,7 @@ deploy:
     hosts:
     - opendda.webapps.openms.de
     - opendda.webapps.openms.org
+    storage: 300Gi
     worker_tier: high
   docker_compose: true
   desktop:
@@ -197,3 +198,6 @@ sync:
   - tests/test_tasks.py
   - tests/test_workspace_sync.py
   - tests/test_workspace_selector.py
+  - conda-requirements.txt
+  - requirements-nodeps.txt
+  - parameter-names.json
