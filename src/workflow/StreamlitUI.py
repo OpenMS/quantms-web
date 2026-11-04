@@ -30,10 +30,13 @@ from src.workflow.progress import (
     DONE,
     FAILED,
     RUNNING,
+    current_step,
     failures,
     file_counts,
     format_duration,
     read_progress,
+    sample_counts,
+    tool_progress,
 )
 from src.workflow.InputFolders import (
     design_rows,
@@ -162,6 +165,30 @@ def _short(value) -> str:
     else:
         text = str(value)
     return text if len(text) <= 40 else text[:37] + "..."
+
+
+def editor_table(state, editor_key: str, table, fits=None):
+    """The table to hand ``st.data_editor(key=editor_key)`` in this run.
+
+    A data editor keeps its edits as changes to the table it was first drawn
+    with, and Streamlit identifies it by that table as well as its key. An app
+    that saves each edit and draws the editor from the saved data would hand
+    it a new table after every edit: Streamlit then draws a new editor and the
+    edit made in that run is lost (every second value typed and confirmed with
+    Tab or Enter vanished). So the first table is kept in ``state`` and used
+    again while the editor stays on the page. ``table`` (a value, or a
+    function returning one) is taken again when the editor was not drawn in
+    the previous run (first visit, back from another page), so a change saved
+    meanwhile shows, or when ``fits(kept_table)`` is false (other rows).
+    Pass a new ``editor_key`` to start from ``table`` again (e.g. after an
+    import replaced the data).
+    """
+    kept_key = f"_{editor_key}-table"
+    kept = state.get(kept_key)
+    if kept is None or editor_key not in state or (fits is not None and not fits(kept)):
+        kept = table() if callable(table) else table
+        state[kept_key] = kept
+    return kept
 
 
 class StreamlitUI:
@@ -2484,9 +2511,14 @@ class StreamlitUI:
                 st.session_state[version_key] += 1
                 st.toast(f"Imported the design of {matched} of {len(files)} file(s)")
 
+        editor_key = f"{version_key}-{st.session_state[version_key]}"
+        base = editor_table(
+            st.session_state, editor_key, stored,
+            fits=lambda table: list(table["file"]) == list(stored["file"]),
+        )
         edited = st.data_editor(
-            stored,
-            key=f"{version_key}-{st.session_state[version_key]}",
+            base,
+            key=editor_key,
             hide_index=True,
             num_rows="fixed",
             disabled=["file"],
@@ -2915,11 +2947,17 @@ class StreamlitUI:
                 st.code("".join(display_lines), language="neon", line_numbers=False)
 
     def _show_run_progress(self) -> None:
-        """Per-file progress of the running workflow: tool, file n of N, elapsed times."""
+        """Progress of the running workflow: per sample when the run records
+        its samples, else per file of the running tool; elapsed times."""
         state = read_progress(self.workflow_dir)
-        now = time.time()
-        if not state or not state.get("steps"):
+        if not state:
             return
+        if len(state.get("samples") or []) > 1:
+            self._show_sample_progress(state)
+            return
+        if not state.get("steps"):
+            return
+        now = time.time()
         step = state["steps"][-1]
         files = step["files"]
         n = len(files)
@@ -2931,7 +2969,8 @@ class StreamlitUI:
                 f"step {len(state['steps'])}: **{step['tool']}**"
                 + ("" if step["ended"] is None else " finished")
             )
-            if step["ended"] is None:
+            # A step without commands (e.g. the workflow's own processing) has no files
+            if step["ended"] is None and n:
                 counts = file_counts(step)
                 if active and n > 1:
                     which = ", ".join(str(i + 1) for i in active)
@@ -2951,6 +2990,8 @@ class StreamlitUI:
                     + (f" × {parallel} in parallel" if parallel > 1 else "")
                 )
                 st.progress(finished / n if n else 0.0, text=text)
+                if len(active) == 1:
+                    self._show_tool_progress()
             if n > 1 or step["ended"] is not None:
                 lines = []
                 for f in files:
@@ -2966,6 +3007,68 @@ class StreamlitUI:
             earlier = state["steps"][:-1]
             if earlier:
                 st.caption("Done: " + " · ".join(self._step_summary(s) for s in earlier))
+
+    def _show_tool_progress(self) -> None:
+        """The running tool's own progress ("loading spectra 42 %"), if it reports any."""
+        found = tool_progress(Path(self.workflow_dir, "logs", "all.log"))
+        if found:
+            label, fraction = found
+            st.progress(fraction, text=f":gray[{label} · {fraction:.0%}]")
+
+    def _show_sample_progress(self, state: dict) -> None:
+        """One line per sample: waiting, running (with its tool), done or failed."""
+        now = time.time()
+        samples = state["samples"]
+        n = len(samples)
+        counts = sample_counts(state)
+        running = [i for i, s in enumerate(samples) if s["status"] == RUNNING]
+        with st.container(border=True):
+            head = f"**Elapsed {format_duration(now - state['started'])}**"
+            # A step outside every sample, e.g. one over all of them at the end
+            shared = None
+            steps = state.get("steps") or []
+            if steps and steps[-1].get("sample") is None and steps[-1]["ended"] is None:
+                shared = steps[-1]
+            if running:
+                i = running[0]
+                head += f" · sample {i + 1} of {n}: **{samples[i]['name']}**"
+            elif shared is not None:
+                head += f" · **{shared['tool']}**"
+            st.markdown(head)
+            text = f"{counts[DONE]} of {n} samples done"
+            if counts[FAILED]:
+                text += f" · :red[{counts[FAILED]} failed]"
+            st.progress((counts[DONE] + counts[FAILED]) / n, text=text)
+            step = shared
+            if running:
+                step = current_step(state, samples[running[0]]["name"])
+            one_command = (
+                step is not None
+                and step["ended"] is None
+                and file_counts(step)[RUNNING] == 1
+            )
+            if one_command:
+                self._show_tool_progress()
+            st.markdown("  \n".join(self._sample_lines(state, now)))
+
+    @staticmethod
+    def _sample_lines(state: dict, now: float) -> list:
+        """A markdown line per sample, with its time and, while it runs, its tool."""
+        lines = []
+        for s in state["samples"]:
+            if s["status"] == DONE:
+                lines.append(f":green[:material/check_circle:] {s['name']} :gray[{format_duration(s['ended'] - s['started'])}]")
+            elif s["status"] == FAILED:
+                lines.append(f":red[:material/cancel:] {s['name']} :red[failed]")
+            elif s["status"] == RUNNING:
+                step = current_step(state, s["name"])
+                tool = ""
+                if step is not None:
+                    tool = f" · {step['tool']}" + ("" if step["ended"] is None else " finished")
+                lines.append(f":blue[:material/progress_activity:] **{s['name']}** :gray[{format_duration(now - s['started'])}{tool}]")
+            else:
+                lines.append(f":gray[:material/radio_button_unchecked: {s['name']}]")
+        return lines
 
     @staticmethod
     def _step_summary(step: dict) -> str:
@@ -2996,7 +3099,33 @@ class StreamlitUI:
                         f"Tool output (exit code {failure['returncode']})"
                     ):
                         st.code("\n".join(failure["output"]), language="neon")
+        if len(state.get("samples") or []) > 1:
+            st.markdown("  \n".join(self._sample_lines(state, time.time())))
+            st.caption(self._tool_totals(state["steps"]))
+            return
         st.caption(" · ".join(self._step_summary(s) for s in state["steps"]))
+
+    @staticmethod
+    def _tool_totals(steps: list) -> str:
+        """'FLASHDeconv: 4 runs in 2:10 · FLASHTnT: 4 runs in 5:02 (1 failed)'."""
+        totals = {}
+        for step in steps:
+            took = (step["ended"] or time.time()) - step["started"]
+            runs, seconds, failed = totals.get(step["tool"], (0, 0.0, 0))
+            totals[step["tool"]] = (
+                runs + 1,
+                seconds + took,
+                failed + (file_counts(step)[FAILED] > 0),
+            )
+        parts = []
+        for tool, (runs, seconds, failed) in totals.items():
+            part = f"{tool}: " + (
+                f"{runs} runs in {format_duration(seconds)}" if runs > 1 else format_duration(seconds)
+            )
+            if failed:
+                part += f" ({failed} failed)"
+            parts.append(part)
+        return " · ".join(parts)
 
     def _show_queue_status(self, status: dict) -> None:
         """Display queue job status for online mode"""
