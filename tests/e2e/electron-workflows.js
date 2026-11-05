@@ -1,5 +1,5 @@
 // quantms-web scenario for electron/scripts/e2e.js: runs the label-free DDA
-// workflow (DecoyDatabase -> Comet -> Percolator -> IDFilter -> ProteomicsLFQ)
+// workflow (DecoyDatabase -> ProSE -> Percolator -> IDFilter -> ProteomicsLFQ)
 // on two of the bundled example files, one per sample group, inside the
 // Electron window, then checks that the result pages draw their tables.
 const RUN_TIMEOUT = 60 * 60 * 1000;

@@ -1,0 +1,4 @@
+# Installed with `pip install --no-deps` after requirements.txt, which lists
+# their dependencies (Dockerfiles, desktop apps, CI).
+# peptdeep pins numpy<2; pyOpenMS 3.6 needs numpy>=2, and peptdeep runs on it.
+peptdeep==1.5.1

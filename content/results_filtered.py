@@ -22,7 +22,7 @@ page_intro(
 - The **plot** shows every PSM by retention time (when the peptide came off the column) and
   mass; **click a PSM** in the table to see its spectrum with the matched fragment ions
   (b ions from the peptide's start, y ions from its end) and its sequence.
-- The analysis identifies peptides in three steps: the database search (Comet) proposes the best
+- The analysis identifies peptides in three steps: the database search (ProSE) proposes the best
   peptide per spectrum, rescoring (Percolator) re-ranks the matches, and filtering keeps those
   within the false discovery rate. This page shows the result of one step.
 """,
