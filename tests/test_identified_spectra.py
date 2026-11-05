@@ -205,3 +205,13 @@ def test_no_rebuild_for_runs_without_spectra(tmp_path):
 
     assert not rebuild_psm_views(results, idxml, [mzml], 0.02, False)
     assert not (results / "insight_cache").exists()
+
+
+def test_search_hits_sort_best_first():
+    from src.common.psm_views import score_sort
+
+    # ProSE's ln(hyperscore): higher is better; Percolator, IDFilter and Comet: lower
+    assert score_sort(Path("results/search_results/a_prose.idXML")) == "desc"
+    assert score_sort(Path("results/percolator_results/a_prose_perc.idXML")) == "asc"
+    assert score_sort(Path("results/psm_filter/a_prose_perc_filter.idXML")) == "asc"
+    assert score_sort(Path("results/comet_results/a_comet.idXML")) == "asc"

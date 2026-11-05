@@ -216,6 +216,30 @@ def run_manager_section(
                 st.rerun()
 
 
+def show_import_notice(runs: RunManager, keep: bool = False) -> None:
+    """
+    The message left by run_import() for the rerun after an import. The
+    results pages take it (shown once); run_import() passes ``keep=True`` and
+    leaves it for the reruns after, until another ZIP is chosen or a results
+    page has taken it.
+    """
+    key = f"_runs-{_slug(runs)}-imported"
+    done = st.session_state.get(key) if keep else st.session_state.pop(key, None)
+    if not done:
+        return
+    if isinstance(done, dict):
+        name, shown = done.get("name", ""), done.get("shown", False)
+    else:
+        name, shown = done, True
+    if shown:
+        st.success(f"Imported **{name}**. It is shown on the results pages.")
+    else:
+        st.warning(
+            f"Imported **{name}**. Its run did not finish, so the results "
+            "pages do not show it; it is listed on the Download page."
+        )
+
+
 def run_import(runs: RunManager, expanded: bool = False) -> None:
     """
     Upload a run's ZIP (as the download button of run_manager_section() makes
@@ -225,15 +249,15 @@ def run_import(runs: RunManager, expanded: bool = False) -> None:
     slug = _slug(runs)
     counter = f"_runs-{slug}-import-n"
     n = st.session_state.get(counter, 0)
-    # Kept (not popped) until the next import: a component on the page may
-    # rerun it once more right after the import, which would swallow the message
-    done = st.session_state.get(f"_runs-{slug}-imported")
-    if done:
-        st.success(f"Imported **{done}**. It is shown on the results pages.")
+    # Kept (not popped) until another ZIP is chosen: a component on the page
+    # may rerun it once more right after the import, which would swallow it
+    show_import_notice(runs, keep=True)
     with st.expander("📥 Open a run from a ZIP", expanded=expanded):
         st.caption(
             "A run downloaded from this page, here or in another workspace or "
-            "installation: results, parameters and logs are added as a new run."
+            "installation: results, parameters and logs are added as a new run. "
+            f"Up to {st.get_option('server.maxUploadSize')} MB "
+            "(`server.maxUploadSize` in `.streamlit/config.toml`)."
         )
         upload = st.file_uploader(
             "Run ZIP", type=["zip"], key=f"runs-{slug}-import-{n}",
@@ -251,11 +275,14 @@ def run_import(runs: RunManager, expanded: bool = False) -> None:
                 st.error(f"**{upload.name}** was not imported. {e}")
                 return
             run = runs.get(run_id)
-            if run.get("status") == FINISHED:
+            shown = run.get("status") == FINISHED
+            if shown:
                 set_selected_run(runs, run_id)
             # A fresh uploader, and the message after the rerun
             st.session_state[counter] = n + 1
-            st.session_state[f"_runs-{slug}-imported"] = run.get("name", run_id)
+            st.session_state[f"_runs-{slug}-imported"] = {
+                "name": run.get("name", run_id), "shown": shown,
+            }
             st.rerun()
 
 

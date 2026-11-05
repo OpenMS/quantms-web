@@ -58,3 +58,23 @@ def test_features_frame_shows_values_as_text():
     frame = features_frame(hit_features(_hit({"MS:1001491": 0.0001234, "MS:1002258": 9})))
     assert list(frame.columns) == ["Source", "Feature", "Value", "Meaning"]
     assert frame["Value"].tolist() == ["0.0001234", "9"]
+
+
+PROSE_AND_PERCOLATOR = {
+    "ln(hyperscore)": 12.5, "delta_score": 4.7, "num_matched_peaks": 10, "matched_suffix_ions": 8,
+    "percolator_score": 1.9, "percolator_q_value": 0.0001, "percolator_pep": 0.002,
+    "MS:1001492": 1.9, "MS:1001491": 0.0001, "MS:1001493": 0.002,
+    "fragment_annotation": "147.11,0.27,1,\"y1+\"", "scan_index": 0, "target_decoy": "target",
+}
+
+
+def test_hit_features_names_prose_features():
+    rows = hit_features(_hit(PROSE_AND_PERCOLATOR))
+    labels = [r["feature"] for r in rows]
+    assert labels[:3] == ["Percolator score", "q-value", "Posterior error probability (PEP)"]
+    # Percolator's plain-named copies of its accessions are not listed twice
+    assert labels.count("Percolator score") == 1
+    assert labels[3:7] == ["ln(hyperscore)", "Δ score", "Matched peaks", "Matched y ions"]
+    assert {r["group"] for r in rows[3:7]} == {"ProSE"}
+    # the peak annotations and the internal scan index are not features
+    assert "fragment_annotation" not in labels and "scan_index" not in labels

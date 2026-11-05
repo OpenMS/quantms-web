@@ -474,18 +474,24 @@ def parse_tolerance(value: str) -> tuple[float, str] | None:
     return amount, "ppm" if unit == "ppm" else "Da"
 
 
+def _openms_names(getter):
+    """The strings a pyOpenMS getter returns (3.6) or fills into a list (3.5)."""
+    try:
+        names = getter()
+    except TypeError:
+        names = []
+        getter(names)
+    return [n.decode() if isinstance(n, bytes) else n for n in names]
+
+
 def _openms_mods():
     """Modification and enzyme names known to OpenMS, or None without pyOpenMS."""
     try:
         import pyopenms as oms
     except ImportError:
         return None, None, {}
-    mods = []
-    oms.ModificationsDB().getAllSearchModifications(mods)
-    mods = [m.decode() if isinstance(m, bytes) else m for m in mods]
-    enzymes = []
-    oms.ProteaseDB().getAllNames(enzymes)
-    enzymes = [e.decode() if isinstance(e, bytes) else e for e in enzymes]
+    mods = _openms_names(oms.ModificationsDB().getAllSearchModifications)
+    enzymes = _openms_names(oms.ProteaseDB().getAllNames)
     # UniMod accession -> OpenMS modification id, to resolve SDRF names that differ
     by_unimod = {}
     db = oms.ModificationsDB()
@@ -510,7 +516,7 @@ _TERMINI = {
 
 
 def sdrf_modification_names(value: str, known=None, by_unimod=None) -> list[str]:
-    """OpenMS/Comet names for one SDRF modification entry, e.g. 'Oxidation (M)'."""
+    """OpenMS names for one SDRF modification entry, e.g. 'Oxidation (M)'."""
     kv = parse_key_values(value)
     name = kv.get("NT", "")
     accession = kv.get("AC", "").upper().replace(" ", "")
@@ -566,7 +572,7 @@ def sdrf_settings(sdrf: Sdrf, mzml_names: list[str] = ()) -> dict:
 
     Returns a dict with ``mode`` ('LFQ'/'TMT'), ``groups`` (mzML file name ->
     group, LFQ), ``tmt_type`` and ``tmt_groups`` (channel index -> group, TMT),
-    ``comet`` (CometAdapter parameter -> value) and ``notes`` (what could not be
+    ``search`` (ProSE parameter -> value) and ``notes`` (what could not be
     applied).
     """
     known, enzymes, by_unimod = _openms_mods()
@@ -585,7 +591,7 @@ def sdrf_settings(sdrf: Sdrf, mzml_names: list[str] = ()) -> dict:
     tmt_rows = [i for i, label in enumerate(labels) if "TMT" in label.upper()]
     mode = "TMT" if tmt_rows else "LFQ"
 
-    settings = {"mode": mode, "groups": {}, "tmt_type": "", "tmt_groups": {}, "comet": {},
+    settings = {"mode": mode, "groups": {}, "tmt_type": "", "tmt_groups": {}, "search": {},
                 "notes": notes}
 
     if mode == "LFQ":
@@ -622,16 +628,16 @@ def sdrf_settings(sdrf: Sdrf, mzml_names: list[str] = ()) -> dict:
             notes.append("Channels carry different groups in different runs; only consistent channels were set.")
 
     # Search settings: the value most runs share
-    comet = settings["comet"]
+    search = settings["search"]
     enzyme_values = [parse_key_values(v[0]).get("NT", "") if v else "" for v in sdrf.values("comment[cleavage agent details]")]
     enzyme = _most_common(enzyme_values)
     if enzyme:
         if enzymes is None:
-            comet["enzyme"] = enzyme
+            search["Search:enzyme"] = enzyme
         else:
             match = next((e for e in enzymes if e.lower() == enzyme.lower()), None)
             if match:
-                comet["enzyme"] = match
+                search["Search:enzyme"] = match
             else:
                 notes.append(f"Enzyme '{enzyme}' is not known to OpenMS and was not set.")
 
@@ -646,22 +652,20 @@ def sdrf_settings(sdrf: Sdrf, mzml_names: list[str] = ()) -> dict:
                 if name not in target:
                     target.append(name)
     if fixed or variable:
-        comet["fixed_modifications"] = "\n".join(fixed)
-        comet["variable_modifications"] = "\n".join(variable)
+        search["Search:modifications:fixed"] = "\n".join(fixed)
+        search["Search:modifications:variable"] = "\n".join(variable)
 
     precursor = parse_tolerance(_most_common(sdrf.column("comment[precursor mass tolerance]")))
     if precursor:
-        comet["precursor_mass_tolerance"], comet["precursor_error_units"] = precursor
+        amount, unit = precursor
+        search["Search:precursor:mass_tolerance_lower"] = amount
+        search["Search:precursor:mass_tolerance_upper"] = amount
+        search["Search:precursor:mass_tolerance_unit"] = "Da" if unit == "Da" else "ppm"
     fragment = parse_tolerance(_most_common(sdrf.column("comment[fragment mass tolerance]")))
     if fragment:
         amount, unit = fragment
-        # Comet bins fragments in Da; ppm tolerances mean a high-resolution MS2
-        if unit == "ppm":
-            amount = max(round(amount * 1e-3, 3), 0.01)
-        high_res = unit == "ppm" or amount <= 0.1
-        comet["fragment_mass_tolerance"] = amount
-        comet["instrument"] = "high_res" if high_res else "low_res"
-        comet["fragment_bin_offset"] = 0.0 if high_res else 0.4
+        search["Search:fragment:mass_tolerance"] = amount
+        search["Search:fragment:mass_tolerance_unit"] = "Da" if unit == "Da" else "ppm"
 
     # Notes repeat once per run; keep each once
     settings["notes"] = list(dict.fromkeys(notes))
@@ -677,9 +681,10 @@ def settings_preview(settings: dict) -> list[dict]:
         rows.append({"Setting": "Isobaric type", "Value": settings["tmt_type"]})
     for index, group in settings["tmt_groups"].items():
         rows.append({"Setting": f"Group for channel {index + 1}", "Value": group})
-    for key, value in settings["comet"].items():
+    for key, value in settings["search"].items():
         value = ", ".join(value.split("\n")) if isinstance(value, str) else value
-        rows.append({"Setting": f"Comet {key}", "Value": str(value) or "(none)"})
+        label = key.removeprefix("Search:").replace(":", " ").replace("_", " ")
+        rows.append({"Setting": f"Search {label}", "Value": str(value) or "(none)"})
     return rows
 
 

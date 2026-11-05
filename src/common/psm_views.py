@@ -18,6 +18,15 @@ from src.common.results_helpers import (
 )
 
 CACHE_DIR = "insight_cache"
+# Folder of the raw database search hits; their score (ProSE's ln(hyperscore))
+# is better when higher, unlike Percolator's and IDFilter's (and earlier runs'
+# Comet e-value in comet_results/), which are better when lower
+SEARCH_RESULTS = "search_results"
+
+
+def score_sort(idxml_path: Path) -> str:
+    """The PSM table's initial sort on ``score`` for this idXML, best matches first."""
+    return "desc" if Path(idxml_path).parent.name == SEARCH_RESULTS else "asc"
 
 
 def build_psm_views(idxml_path: Path, cache_dir: Path, spectra_df: pl.DataFrame, filename_to_index: dict,
@@ -42,7 +51,7 @@ def build_psm_views(idxml_path: Path, cache_dir: Path, spectra_df: pl.DataFrame,
         cache_path=str(cache_dir),
         interactivity={"file": "file_index", "spectrum": "scan_id", "identification": "id_idx"},
         column_definitions=psm_table_columns(),
-        initial_sort=[{"column": "score", "dir": "asc"}],
+        initial_sort=[{"column": "score", "dir": score_sort(idxml_path)}],
         index_field="id_idx",
     )
     Heatmap(

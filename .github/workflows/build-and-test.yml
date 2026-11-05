@@ -308,7 +308,9 @@ jobs:
     # significant maintenance surface for limited value (HPC SIF consumers
     # remain amd64). Re-evaluate if upstream starts publishing arm64 builds.
     needs: build-amd64
-    runs-on: ubuntu-latest
+    # Ubuntu 24.04, not ubuntu-latest: the apptainer .deb depends on libfuse3-3,
+    # which Ubuntu 26.04 no longer ships, so installing apptainer fails there.
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -478,7 +480,9 @@ jobs:
     # on-the-fly OCI->SIF conversion the docker:// path requires.
     needs: test-apptainer
     if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    # Ubuntu 24.04, not ubuntu-latest: the apptainer .deb depends on libfuse3-3,
+    # which Ubuntu 26.04 no longer ships, so installing apptainer fails there.
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
@@ -593,8 +597,12 @@ jobs:
 
       - name: Install nginx ingress controller
         run: |
-          kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
-          kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=90s
+          # Pinned as in the template (controller-v1.15.1). rollout status waits
+          # for the controller pod to exist; `kubectl wait` on a selector fails
+          # at once ("no matching resources found") when it runs before the
+          # Deployment has created the pod.
+          kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.15.1/deploy/static/provider/kind/deploy.yaml
+          kubectl -n ingress-nginx rollout status deployment/ingress-nginx-controller --timeout=180s
 
       - name: Deploy with Kustomize
         run: |

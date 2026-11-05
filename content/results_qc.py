@@ -7,7 +7,7 @@ import streamlit as st
 from src.common.common import page_setup, show_fig
 from src.common.guide import needs_results, next_steps, page_intro
 from src.common.qc_plots import psm_qc_table, precursor_error_histogram, psms_per_file, score_distribution
-from src.common.results_helpers import run_picker, get_run_dir, get_run_params
+from src.common.results_helpers import run_picker, get_run_dir, get_run_params, search_results_dir
 
 params = page_setup()
 run_picker()
@@ -56,7 +56,7 @@ def qc_table(directory: Path) -> pd.DataFrame | None:
 # All PSMs before filtering, so decoys and the FDR cutoff are visible
 all_psms = qc_table(results_dir / "percolator_results")
 if all_psms is None:
-    all_psms = qc_table(results_dir / "comet_results")
+    all_psms = qc_table(search_results_dir(results_dir))
 filtered = qc_table(results_dir / "psm_filter")
 
 if all_psms is None and filtered is None:

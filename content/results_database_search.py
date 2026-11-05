@@ -1,16 +1,16 @@
-"""Database Search (Comet) Results Page."""
+"""Database Search (ProSE) Results Page."""
 import streamlit as st
 from pathlib import Path
 from src.common.common import page_setup
 from src.common.guide import needs_results, next_steps, page_intro
-from src.common.results_helpers import run_picker, get_run_dir, get_run_params
+from src.common.results_helpers import run_picker, get_run_dir, get_run_params, search_results_dir
 from src.common.spectrum_view import ensure_psm_views, psm_mzml_files, show_selected_psm_spectrum
 from src.common.sequence_display import psm_table, sequence_mode_selector
 from openms_insight import Heatmap, SequenceView, StateManager
 
 params = page_setup()
 run_picker()
-st.title("Raw search hits (Comet)")
+st.title("Raw search hits (ProSE)")
 
 page_intro(
     'The best peptide match for every spectrum straight from the database search, before rescoring and filtering. Many of these matches are wrong; this page is for checking the search itself.',
@@ -19,7 +19,7 @@ page_intro(
 - The **plot** shows every PSM by retention time (when the peptide came off the column) and
   mass; **click a PSM** in the table to see its spectrum with the matched fragment ions
   (b ions from the peptide's start, y ions from its end) and its sequence.
-- The analysis identifies peptides in three steps: the database search (Comet) proposes the best
+- The analysis identifies peptides in three steps: the database search (ProSE) proposes the best
   peptide per spectrum, rescoring (Percolator) re-ranks the matches, and filtering keeps those
   within the false discovery rate. This page shows the result of one step.
 """,
@@ -27,8 +27,8 @@ page_intro(
 )
 
 st.info(
-    "**Score: e-value**, the number of random matches expected to score this well by chance. "
-    "Lower is better; values far below 1 indicate a confident match."
+    "**Score: ln(hyperscore)**, how well the matched b and y fragment ions explain the spectrum "
+    "(their number and intensity). Higher is better; the table starts with the best matches."
 )
 
 if "workspace" not in st.session_state:
@@ -37,21 +37,21 @@ if "workspace" not in st.session_state:
 
 run_dir = get_run_dir(st.session_state["workspace"])
 run_params = get_run_params(st.session_state["workspace"])
-comet_dir = run_dir / "results" / "comet_results"
+search_dir = search_results_dir(run_dir / "results")
 cache_dir = run_dir / "results" / "insight_cache"
 
-if not comet_dir.exists():
+if not search_dir.exists():
     needs_results()
 
-comet_files = sorted(comet_dir.glob("*.idXML"))
+search_files = sorted(search_dir.glob("*.idXML"))
 
-if not comet_files:
+if not search_files:
     st.warning("No identification output files found.")
     st.stop()
 
 selected_file = st.selectbox(
     "Select identification result file",
-    comet_files,
+    search_files,
     format_func=lambda x: x.name
 )
 
