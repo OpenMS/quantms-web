@@ -474,18 +474,24 @@ def parse_tolerance(value: str) -> tuple[float, str] | None:
     return amount, "ppm" if unit == "ppm" else "Da"
 
 
+def _openms_names(getter):
+    """The strings a pyOpenMS getter returns (3.6) or fills into a list (3.5)."""
+    try:
+        names = getter()
+    except TypeError:
+        names = []
+        getter(names)
+    return [n.decode() if isinstance(n, bytes) else n for n in names]
+
+
 def _openms_mods():
     """Modification and enzyme names known to OpenMS, or None without pyOpenMS."""
     try:
         import pyopenms as oms
     except ImportError:
         return None, None, {}
-    mods = []
-    oms.ModificationsDB().getAllSearchModifications(mods)
-    mods = [m.decode() if isinstance(m, bytes) else m for m in mods]
-    enzymes = []
-    oms.ProteaseDB().getAllNames(enzymes)
-    enzymes = [e.decode() if isinstance(e, bytes) else e for e in enzymes]
+    mods = _openms_names(oms.ModificationsDB().getAllSearchModifications)
+    enzymes = _openms_names(oms.ProteaseDB().getAllNames)
     # UniMod accession -> OpenMS modification id, to resolve SDRF names that differ
     by_unimod = {}
     db = oms.ModificationsDB()

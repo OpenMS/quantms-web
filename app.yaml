@@ -147,6 +147,7 @@ deploy:
     hosts:
     - opendda.webapps.openms.de
     - opendda.webapps.openms.org
+    storage: 300Gi
     worker_tier: high
   docker_compose: true
   desktop:
@@ -164,13 +165,14 @@ sync:
   - src/python-tools/*
   - example-data/*
   - assets/*
-  - k8s/*
+  - k8s/overlays/*
+  - k8s/argocd/*
   - .github/workflows/build-and-test.yml
   - .github/kind-config.yaml
   - .github/workflows/build-desktop-app.yaml
   - docker-compose.yml
   - docs/kubernetes-deployment.md
-  - CLAUDE.md
+  - CLAUDE.app.md
   - test_gui.py
   - src/Workflow.py
   - src/WorkflowTest.py
@@ -196,3 +198,6 @@ sync:
   - tests/test_tasks.py
   - tests/test_workspace_sync.py
   - tests/test_workspace_selector.py
+  - conda-requirements.txt
+  - requirements-nodeps.txt
+  - parameter-names.json
