@@ -8,6 +8,7 @@
 # extension in place, and it ships tkinter (the local file dialog).
 #
 #   stage-python.sh <python minor version, e.g. 3.11> <out dir> <requirements.txt>
+# A requirements-nodeps.txt beside the requirements file is installed with --no-deps.
 # Needs gh (GH_TOKEN). PBS_RELEASE pins a python-build-standalone release tag
 # (default: the latest release).
 set -euo pipefail
@@ -25,8 +26,14 @@ case "$(uname -s)-$(uname -m)" in
 esac
 
 tag="${PBS_RELEASE:-$(gh release view -R "$repo" --json tagName -q .tagName)}"
-asset=$(gh release view "$tag" -R "$repo" --json assets -q '.assets[].name' |
-  grep -E "^cpython-${version//./\\.}\.[0-9]+\+${tag}-${triple}-install_only\.tar\.gz$" | head -n 1 || true)
+# The stripped build has no debug symbols (the Linux interpreter and
+# libpython are about 70 MB smaller); the unstripped one is the fallback.
+assets=$(gh release view "$tag" -R "$repo" --json assets -q '.assets[].name')
+asset=""
+for flavour in install_only_stripped install_only; do
+  asset=$(grep -E "^cpython-${version//./\\.}\.[0-9]+\+${tag}-${triple}-${flavour}\.tar\.gz$" <<<"$assets" | head -n 1 || true)
+  [[ -z "$asset" ]] || break
+done
 [[ -n "$asset" ]] || { echo "::error::no CPython ${version} for ${triple} in ${repo} ${tag}"; exit 1; }
 
 dl=$(mktemp -d)
@@ -40,6 +47,12 @@ if [[ $triple == *windows* ]]; then py="$dest/python.exe"; else py="$dest/bin/py
 echo "Staged $asset as $dest"
 
 "$py" -m pip install --upgrade --no-warn-script-location --disable-pip-version-check -r "$requirements"
+# requirements-nodeps.txt next to it: packages installed without their
+# dependencies, because their own pins conflict with the app's.
+nodeps="$(dirname "$requirements")/requirements-nodeps.txt"
+if [[ -f $nodeps ]]; then
+  "$py" -m pip install --no-deps --no-warn-script-location --disable-pip-version-check -r "$nodeps"
+fi
 
 # DuckDB's extension wheels (pulled in by some dependencies) append DuckDB's
 # own signature to a Mach-O file, which codesign rejects ("main executable
@@ -52,11 +65,14 @@ if [[ $triple == *apple-darwin ]]; then
   [[ -z "$left" ]] || { echo "::error::DuckDB extensions would fail macOS signing: $left"; exit 1; }
 fi
 
-# Drop caches and test suites the app never runs.
+# Drop caches, test suites and files the app never loads.
 site=$("$py" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')
 command -v cygpath >/dev/null && site=$(cygpath -u "$site")
 find "$site" -type d -name __pycache__ -prune -exec rm -rf {} +
 find "$site" -type d \( -name tests -o -name test \) -prune -exec rm -rf {} +
+# Jupyter extensions (plotly's) and Windows debug databases are never loaded.
+rm -rf "$dest/share/jupyter"
+find "$dest" -name '*.pdb' -type f -delete
 
 # Compile the bytecode now on macOS and Linux: the shell runs Python with
 # PYTHONDONTWRITEBYTECODE there, because the signed macOS bundle and the
@@ -71,10 +87,12 @@ fi
 # pyOpenMS and scikit-learn each bundle libomp.dylib. Two copies in one process
 # abort it ("OMP: Error #15", or #179 when duplicates are allowed), so every
 # other copy becomes a link to pyOpenMS's, which dyld then loads only once.
+# pyOpenMS needs its own copy: an older libomp (scikit-learn's) lacks symbols
+# it uses (___kmpc_dispatch_deinit). From 3.6 the wheel keeps it in .dylibs/.
 if [[ $triple == *apple-darwin ]]; then
-  keep="$site/pyopenms/libomp.dylib"
+  keep=$(find "$site/pyopenms" -name libomp.dylib -type f 2>/dev/null | head -n 1)
   find "$site" -name libomp.dylib -type f | while read -r lib; do
-    [[ -f $keep ]] || keep=$lib
+    [[ -n $keep ]] || keep=$lib
     [[ $lib == "$keep" ]] && continue
     rel=$("$py" -c 'import os, sys; print(os.path.relpath(sys.argv[1], os.path.dirname(sys.argv[2])))' "$keep" "$lib")
     echo "$lib -> $rel"

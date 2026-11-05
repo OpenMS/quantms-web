@@ -13,9 +13,11 @@ from pathlib import Path
 
 from src.common.fdr_display import fdr_applied, fdr_label
 
-# Steps in run order: (results subfolder, what the step is called on screen)
+# Steps in run order: (results subfolder, what the step is called on screen).
+# Runs from before ProSE wrote their search hits to comet_results.
+LEGACY_FOLDERS = {"search_results": "comet_results"}
 STEPS = (
-    ("comet_results", "database search"),
+    ("search_results", "database search"),
     ("percolator_results", "rescoring"),
     ("psm_filter", "PSM FDR filter"),
 )
@@ -80,6 +82,8 @@ def step_counts(results_dir: Path) -> list[dict]:
     counts = []
     for folder, label in STEPS:
         files = sorted(Path(results_dir, folder).glob("*.idXML"))
+        if not files and folder in LEGACY_FOLDERS:
+            files = sorted(Path(results_dir, LEGACY_FOLDERS[folder]).glob("*.idXML"))
         if not files:
             break
         n, best_q = 0, None

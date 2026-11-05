@@ -145,13 +145,14 @@ def test_unexplained_shift_has_no_interpretation():
     assert pd.isna(shifts.loc[0, "Unimod Δ (Da)"])
 
 
-def test_open_search_preset_is_valid_comet_parameters():
+def test_open_search_preset_is_valid_search_parameters():
     presets = json.loads(Path("presets.json").read_text())["topp-workflow"]
     for name, expected_units in (("Open Search", "Da"), ("Closed Search", "ppm")):
-        for tool in ("CometAdapter", "CometAdapter-TMT"):
+        for tool in ("ProSE", "ProSE-TMT"):
             params = presets[name][tool]
-            assert params["precursor_error_units"] == expected_units
-            # CometAdapter's valid strings
-            assert params["precursor_error_units"] in ("amu", "ppm", "Da")
-            assert params["isotope_error"] in ("off", "0/1", "0/1/2", "0/1/2/3", "-8/-4/0/4/8", "-1/0/1/2/3")
-    assert presets["Open Search"]["CometAdapter"]["precursor_mass_tolerance"] == 500.0
+            assert params["Search:precursor:mass_tolerance_unit"] == expected_units
+    open_search = presets["Open Search"]["ProSE"]
+    assert open_search["Search:precursor:mass_tolerance_lower"] == 500.0
+    assert open_search["Search:precursor:mass_tolerance_upper"] == 500.0
+    # Without isotope errors: a 13C pick shows up as a +1 Da shift
+    assert open_search["Search:precursor:isotopes"] == "0"

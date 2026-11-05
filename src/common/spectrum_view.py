@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 import polars as pl
+import pyarrow.parquet as pq
 import streamlit as st
 from openms_insight import LinePlot, MirrorPlot
 
@@ -15,7 +16,7 @@ from src.common.ms2_prediction import (
     spectral_angle,
 )
 from src.common.psm_features import features_by_id, features_frame
-from src.common.results_helpers import parse_idxml
+from src.common.results_helpers import parse_idxml, search_tolerances
 
 
 def fragment_tolerance(workflow_params: dict) -> tuple[float, bool]:
@@ -23,9 +24,8 @@ def fragment_tolerance(workflow_params: dict) -> tuple[float, bool]:
 
     ``workflow_params`` are the parameters of the run shown (``get_run_params``).
     """
-    comet = "CometAdapter-TMT" if workflow_params.get("analysis-mode", "LFQ") == "TMT" else "CometAdapter"
-    comet_params = {**workflow_params.get("_defaults", {}).get(comet, {}), **workflow_params.get(comet, {})}
-    return float(comet_params.get("fragment_mass_tolerance", 0.02)), comet_params.get("fragment_error_units", "Da") != "Da"
+    tolerances = search_tolerances(workflow_params)
+    return tolerances["fragment"], tolerances["fragment_ppm"]
 
 
 @st.cache_resource(show_spinner="Loading the spectrum prediction model (first time only)...")
@@ -40,13 +40,14 @@ def _instrument(mzml_path: str) -> str:
 
 @st.cache_data(show_spinner=False)
 def _measured(parquet: str, mtime: float, file_index: int, scan: int) -> pl.DataFrame:
-    # mtime only keys the cache, so a re-run of the workflow invalidates it
-    return (
-        pl.scan_parquet(parquet)
-        .filter((pl.col("file_index") == file_index) & (pl.col("scan_id") == scan))
-        .select("peak_id", "mass", "intensity")
-        .collect()
+    # mtime only keys the cache, so a re-run of the workflow invalidates it.
+    # Read with pyarrow: on Windows, polars' parquet scan crashed the app server
+    # (access violation in a polars worker thread) once the prediction had run.
+    table = pq.read_table(
+        parquet, columns=["peak_id", "mass", "intensity"],
+        filters=[("file_index", "==", file_index), ("scan_id", "==", scan)],
     )
+    return pl.from_arrow(table)
 
 
 @st.cache_data(show_spinner="Reading identifications...")
@@ -189,7 +190,7 @@ def show_psm_features(idxml: Path, psm_id: int) -> None:
         return
     with st.expander(f"All scores and features of this PSM ({len(rows)})"):
         st.caption(
-            "What Comet and Percolator recorded for this match. Percolator combines the Comet values into its "
+            "What ProSE and Percolator recorded for this match. Percolator combines the ProSE values into its "
             "score; the q-value and PEP come from that score."
         )
         st.dataframe(

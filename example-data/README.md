@@ -20,6 +20,7 @@ SDRF on PRIDE labels these the other way round.
 Database: `db/yeast_ups2.fasta` = UniProt reviewed S. cerevisiae (UP000002311, 6067) + 48 UPS2
 proteins (`_HUMAN`). Targets only; let the workflow add decoys.
 
-Expected result with quantms-web LFQ defaults (Comet -> Percolator -> IDFilter q<=0.1 ->
-ProteomicsLFQ 1% PSM/protein FDR): ~900–980 PSMs/run, 594 protein groups,
-13 UPS2 proteins; UPS2 log2(10x/1x) ~ +3.4 to +3.9 (expected 3.32) vs yeast median ~ +0.4.
+Expected result with quantms-web LFQ defaults (ProSE -> Percolator -> IDFilter 1 % PSM FDR ->
+ProteomicsLFQ 1% PSM/protein FDR, OpenMS 3.6.0): ~870–1010 PSMs/run, 511 quantified proteins;
+UPS2 log2(10x/1x) median ~ +3.9 (expected 3.32) vs yeast median ~ +0.4, over the UPS2 proteins
+quantified in both groups.

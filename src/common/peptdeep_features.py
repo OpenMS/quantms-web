@@ -40,7 +40,7 @@ from src.common.ms2_prediction import (
 FEATURES = ["peptdeep:spectral_angle", "peptdeep:cosine", "peptdeep:delta_rt"]
 NCE_GRID = [20.0, 23.0, 26.0, 28.0, 30.0, 32.0, 35.0, 38.0]
 CALIBRATION_PSMS = 300
-CONFIDENT_EXPECT = 0.01  # Comet e-value of the PSMs used to calibrate NCE and RT
+CONFIDENT_EXPECT = 0.01  # e-value of the PSMs used to calibrate NCE and RT, where the search reports one
 ALLOWED = set("ACDEFGHIKLMNPQRSTVWY")
 
 
@@ -63,6 +63,9 @@ def psm_table(peptides) -> pd.DataFrame:
         peptide = hit.getSequence().toString()
         converted = to_peptdeep(peptide)
         expect = hit.getMetaValue("expect") if hit.metaValueExists("expect") else None
+        # Best first: the e-value where there is one, else the search score (ProSE: ln(hyperscore))
+        score = float(hit.getScore())
+        rank = float(expect) if expect is not None else (-score if pep.isHigherScoreBetter() else score)
         td = hit.getMetaValue("target_decoy") if hit.metaValueExists("target_decoy") else ""
         td = td.decode() if isinstance(td, bytes) else str(td)
         ref = pep.getMetaValue("spectrum_reference") if pep.metaValueExists("spectrum_reference") else ""
@@ -73,6 +76,7 @@ def psm_table(peptides) -> pd.DataFrame:
             "charge": int(hit.getCharge()),
             "decoy": td.startswith("decoy"),
             "expect": float(expect) if expect is not None else np.nan,
+            "rank": rank,
             "sequence": converted[0] if converted else None,
             "mods": converted[1] if converted else None,
             "mod_sites": converted[2] if converted else None,
@@ -134,8 +138,9 @@ def similarity(result: dict, psms: pd.DataFrame, spectra: Dict[str, tuple], tole
 
 
 def calibration_set(psms: pd.DataFrame, n: int = CALIBRATION_PSMS) -> pd.DataFrame:
-    """Confident target PSMs (best Comet e-values) to calibrate NCE and RT on."""
-    targets = psms[psms["predictable"] & ~psms["decoy"]].sort_values("expect")
+    """Confident target PSMs (best e-values, or best search scores) to calibrate NCE and RT on."""
+    order = "rank" if "rank" in psms else "expect"
+    targets = psms[psms["predictable"] & ~psms["decoy"]].sort_values(order)
     confident = targets[targets["expect"] <= CONFIDENT_EXPECT]
     if len(confident) < 30:
         confident = targets.head(max(30, n // 3))

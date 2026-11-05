@@ -22,7 +22,7 @@ These are facts about the target cluster, not steps for you to execute. Mention 
 - Traefik ingress controller installed in the cluster (handles `IngressRoute` CRDs).
 - Cluster has read access to GHCR for pulling the app image.
 - OpenStack Manila with an NFS share type and enough share quota for one more share of the Q7 size.
-- The cluster's storage tier (`k8s/storage/`, once per cluster, shared by every app) already applied, publishing the `ReadWriteMany` StorageClass `openms-manila-nfs` the workspaces PVC names. If no app on the cluster has applied it yet, the operator sets its two cluster-specific values (share type, node subnet), creates the `manila-csi-credentials` Secret and applies it first (`docs/kubernetes-deployment.md` section 3b). Applied in the other order, every pod sits `Pending` on a class that does not exist yet.
+- The cluster's storage tier (`k8s/storage/`, once per cluster, shared by every app) already applied, publishing the `ReadWriteMany` StorageClass `openms-manila-nfs` the workspaces PVC names. If no app on the cluster has applied it yet, the operator replaces its two `CHANGE-ME-…` placeholders (NFS share type, client CIDR for the access rule), creates the `manila-csi-credentials` Secret and applies it first (`docs/kubernetes-deployment.md` section 3b). Applied in the other order, every pod sits `Pending` on a class that does not exist yet.
 - **No node labels, of any kind.** Nothing under `k8s/` selects a node any more: the scheduler places pods and the manifests only declare how big a worker is. The `openms.de/memory-tier` labels the older components matched are gone, and CI fails any manifest that reintroduces a `nodeSelector`, `nodeName` or `nodeAffinity` (`assert_no_node_pinning_anywhere`).
 - Room for `<replicas> x <worker size>` (Q5 and Q6) across the cluster's nodes. A worker is Guaranteed QoS, so its request is reserved for as long as the pod runs, queue empty or not.
 - DNS for `*.webapps.openms.de` and `*.webapps.openms.org` pointing at the cluster's Traefik load balancer.
@@ -68,8 +68,8 @@ The user confirms or overrides each one. Do not omit the "what this controls" li
 
 ### Q3. Image tag
 
-- *What this controls:* which build of the image is deployed. `main-full` follows the `main` branch (auto-updates whenever a merge rebuilds + the operator re-applies); a release tag like `v1.2.3-full` pins to a specific build (won't drift, requires deliberate bumps).
-- *Default:* `main-full` if the workflow publishes branch-suffixed tags (the standard template setup), otherwise whatever pattern Step 1 found in `build-and-test.yml`. The `-simple` variant uses a lighter `Dockerfile_simple`; pick that only if the user explicitly wants the lightweight image.
+- *What this controls:* the release image a new deployment starts from. Under Argo CD the ImageUpdater in `k8s/argocd/` then deploys every later release (pre-releases included) by itself, so this tag never needs bumping; CI also loads its test image under it. Without Argo CD it is the deployed build: a release tag like `v1.2.3-full` pins it, `main-full` follows `main` whenever the operator re-applies.
+- *Default:* the app's current release image (`<release-tag>-full`); `main-full` only if the app has no release yet. The `-simple` variant uses a lighter `Dockerfile_simple`; pick that only if the user explicitly wants the lightweight image.
 
 ### Q4. Ingress subdomain
 
@@ -182,21 +182,25 @@ About the `||` in the IngressRoute match — both TLDs always go in. The OpenMS 
 
 Skip this step if the user accepted the 50 Gi default.
 
-Otherwise change one number, the size of this app's Manila share:
+Otherwise change one number, the size of this app's Manila share, in the claim patch of the prod overlay (never in `k8s/base/`, which is template-owned):
 
 ```yaml
-# k8s/base/workspace-pvc.yaml
-spec:
-  resources:
-    requests:
-      storage: <size>     # Q7: e.g. 100Gi, 1Ti, 3Ti
+# k8s/overlays/prod/kustomization.yaml
+patches:
+  - target:
+      kind: PersistentVolumeClaim
+      name: workspaces-manila-pvc
+    patch: |
+      - op: replace
+        path: /spec/resources/requests/storage
+        value: <size>     # Q7: e.g. 100Gi, 1Ti, 3Ti
 ```
 
 and `deploy.k8s.storage` in `app.yaml` to the same value (`python -m utils.app_spec` compares them). The share counts against the project's Manila share quota; mention that in the handoff.
 
 Do **not** rename the PVC, the base `kustomization.yaml` resource list, or the `claimName`s. Kustomize's `namePrefix` already gives the in-cluster workspaces PVC a unique per-fork name.
 
-The StorageClass allows volume expansion, so growing an already-deployed share later is the same edit plus a re-apply.
+The StorageClass allows volume expansion, so growing an already-deployed share later is the same edit plus a re-apply. Shrinking a deployed share is not possible in place (Kubernetes rejects it and Argo CD then stops syncing that commit): the claim, its PV and the share in Horizon have to be deleted and the claim created again, empty. The steps are in `docs/kubernetes-deployment.md`, section on the workspace PVC.
 
 ## Step 6 — Handoff
 

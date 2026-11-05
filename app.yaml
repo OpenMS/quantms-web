@@ -10,7 +10,7 @@ app:
   slug: quantms-ddalfq
   name: OpenDDA
   description: 'Quantitative DDA proteomics: label-free (LFQ) and isobaric (TMT/iTRAQ) quantification
-    with Comet, Percolator and ProteomicsLFQ, followed by statistics and GO enrichment.'
+    with ProSE, Percolator and ProteomicsLFQ, followed by statistics and GO enrichment.'
   repository: OpenMS/quantms-web
   domain: proteomics
   image: ghcr.io/openms/quantms-web
@@ -41,11 +41,11 @@ workflows:
     instance: DecoyDatabase-contaminants
     optional: true
     note: appends contaminants
-  - tool: CometAdapter
+  - tool: ProSE
     in: mzML-files
     note: LFQ mode
   - tool: PercolatorAdapter
-    in: CometAdapter
+    in: ProSE
     note: LFQ mode
   - tool: IDFilter
     in: PercolatorAdapter
@@ -59,8 +59,8 @@ workflows:
     in: mzML-files
     optional: true
     note: TMT mode
-  - tool: CometAdapter
-    instance: CometAdapter-TMT
+  - tool: ProSE
+    instance: ProSE-TMT
     in: mzML-files
     optional: true
     note: TMT mode
@@ -147,6 +147,7 @@ deploy:
     hosts:
     - opendda.webapps.openms.de
     - opendda.webapps.openms.org
+    storage: 300Gi
     worker_tier: high
   docker_compose: true
   desktop:
@@ -197,3 +198,6 @@ sync:
   - tests/test_tasks.py
   - tests/test_workspace_sync.py
   - tests/test_workspace_selector.py
+  - conda-requirements.txt
+  - requirements-nodeps.txt
+  - parameter-names.json

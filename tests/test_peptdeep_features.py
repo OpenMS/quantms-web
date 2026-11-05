@@ -133,3 +133,15 @@ def test_add_features_annotates_hits_and_registers_them_for_percolator(tmp_path)
     assert angles["scan=2"] == 0.0  # 10 Da off: nothing matches
     for p in peptides:
         assert p.getHits()[0].metaValueExists("peptdeep:delta_rt")
+
+
+def test_calibration_set_ranks_by_search_score_without_e_values():
+    """ProSE reports no e-value: the best ln(hyperscore) PSMs calibrate."""
+    psms = pd.DataFrame({
+        "predictable": [True] * 60,
+        "decoy": [False] * 60,
+        "expect": [np.nan] * 60,
+        "rank": [-float(s) for s in range(60)],  # higher score = lower rank
+    })
+    chosen = pf.calibration_set(psms, n=10)
+    assert list(chosen.index) == list(range(59, 49, -1))

@@ -32,6 +32,9 @@ def test_extract_filename_from_idxml_strips_suffixes():
     # TMT names its Percolator/IDFilter output <stem>_comet_perc[_filter]
     assert extract_filename_from_idxml(Path("S1_comet_perc_filter.idXML")) == "S1.mzML"
     assert extract_filename_from_idxml(Path("S1_comet_perc.idXML")) == "S1.mzML"
+    # and since the switch to ProSE <stem>_prose[_perc[_filter]]
+    assert extract_filename_from_idxml(Path("sample_prose.idXML")) == "sample.mzML"
+    assert extract_filename_from_idxml(Path("S1_prose_perc_filter.idXML")) == "S1.mzML"
 
 
 def test_extract_filename_from_idxml_prefers_input_names():
@@ -177,3 +180,26 @@ def test_psm_table_marks_only_decoys():
     assert decoy["formatterParams"] == {"crossElement": False}
     decoy["formatterParams"]["crossElement"] = True
     assert next(c for c in psm_table_columns() if c["field"] == "decoy")["formatterParams"]["crossElement"] is False
+
+
+def test_search_results_dir_falls_back_to_earlier_runs(tmp_path):
+    from src.common.results_helpers import search_results_dir
+    assert search_results_dir(tmp_path) == tmp_path / "search_results"
+    (tmp_path / "comet_results").mkdir()
+    assert search_results_dir(tmp_path) == tmp_path / "comet_results"
+    (tmp_path / "search_results").mkdir()
+    assert search_results_dir(tmp_path) == tmp_path / "search_results"
+
+
+def test_search_tolerances_reads_prose_and_earlier_comet_runs():
+    from src.common.results_helpers import search_tolerances
+    prose = {"_defaults": {"ProSE": {"Search:fragment:mass_tolerance": 20.0}},
+             "ProSE": {"Search:precursor:mass_tolerance_lower": 500.0, "Search:precursor:mass_tolerance_upper": 500.0,
+                       "Search:precursor:mass_tolerance_unit": "Da"}}
+    assert search_tolerances(prose) == {"precursor": 500.0, "precursor_unit": "Da", "fragment": 20.0, "fragment_ppm": True}
+    tmt = {"analysis-mode": "TMT", "ProSE-TMT": {"Search:fragment:mass_tolerance": 0.5,
+                                                 "Search:fragment:mass_tolerance_unit": "Da"}}
+    assert search_tolerances(tmt)["fragment"] == 0.5 and not search_tolerances(tmt)["fragment_ppm"]
+    comet = {"CometAdapter": {"fragment_mass_tolerance": 0.01, "precursor_mass_tolerance": 10.0,
+                              "precursor_error_units": "ppm"}}
+    assert search_tolerances(comet) == {"precursor": 10.0, "precursor_unit": "ppm", "fragment": 0.01, "fragment_ppm": False}

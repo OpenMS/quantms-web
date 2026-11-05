@@ -10,7 +10,7 @@ from openms_insight import LinePlot, StateManager, Table
 from src.common.common import page_setup
 from src.common.guide import needs_results, next_steps, page_intro, page_link
 from src.common.mass_shifts import MIN_PSMS, mass_shift_summary, psm_mass_shifts
-from src.common.results_helpers import run_picker, get_run_dir, get_run_params
+from src.common.results_helpers import run_picker, get_run_dir, get_run_params, search_tolerances
 
 params = page_setup()
 run_picker()
@@ -55,9 +55,8 @@ def _summary(paths: tuple, names: tuple, mtimes: tuple):
 
 shifts, histogram, psms = _summary(tuple(str(p) for p in idxmls), tuple(mzml_names), mtimes)
 
-comet = workflow_params.get("CometAdapter", {})
-tolerance = comet.get("precursor_mass_tolerance")
-units = comet.get("precursor_error_units")
+tolerances = search_tolerances(workflow_params)
+tolerance, units = tolerances["precursor"], tolerances["precursor_unit"]
 if units == "Da" and tolerance and float(tolerance) >= 100:
     st.caption(f"Open search: precursor tolerance ±{float(tolerance):g} Da.")
 else:

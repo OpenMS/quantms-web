@@ -97,6 +97,7 @@ PROVENANCE_SCHEMA = pa.schema([
 # What each TOPP tool of the workflow does, as (step_category, step_name)
 STEPS = {
     "DecoyDatabase": ("database", "decoy_database"),
+    "ProSE": ("database_search", "sequence_search"),
     "CometAdapter": ("database_search", "sequence_search"),
     "PercolatorAdapter": ("rescoring", "psm_rescoring"),
     "IDFilter": ("filtering", "fdr_filtering"),
@@ -181,6 +182,9 @@ def _float(value) -> Optional[float]:
 SCORES = [
     ("MS:1001491", "percolator q-value", False),
     ("MS:1001492", "percolator score", True),
+    ("ln(hyperscore)", "prose ln(hyperscore)", True),
+    ("hyperscore_zscore", "prose hyperscore z-score", True),
+    ("delta_score", "prose delta score", True),
     ("COMET:xcorr", "comet xcorr", True),
     ("COMET:deltaCn", "comet deltacn", True),
     ("expect", "comet expectation value", False),
@@ -405,7 +409,7 @@ def provenance_rows(log_text: str, workflow_dir, params: Mapping, app_version: s
             "output_views": ["psm"] if tool == "IDFilter" else [],
         })
     database = next(
-        (p["value"] for r in rows if r["tool_name"] == "OpenMS/CometAdapter" for p in r["parameters"] if p["key"] == "database"),
+        (p["value"] for r in rows if r["tool_name"] in ("OpenMS/ProSE", "OpenMS/CometAdapter") for p in r["parameters"] if p["key"] == "database"),
         None,
     )
     workflow = {

@@ -90,6 +90,40 @@ def test_storage_size_must_match_workspace_pvc(tmp_path):
     assert any("deploy.k8s.storage" in e for e in errors)
 
 
+_STORAGE_PATCH = """namePrefix: myapp-
+patches:
+  - target:
+      kind: PersistentVolumeClaim
+      name: workspaces-manila-pvc
+    patch: |
+      - op: replace
+        path: /spec/resources/requests/storage
+        value: {size}
+"""
+
+
+def test_storage_size_from_overlay_patch_wins_over_base(tmp_path):
+    root = _app_tree(tmp_path, pvc_size="50Gi")
+    overlay = root / "k8s" / "overlays" / "prod" / "kustomization.yaml"
+    overlay.write_text(_STORAGE_PATCH.format(size="300Gi"))
+    s = _spec()
+    s["deploy"] = {"k8s": {"storage": "300Gi"}}
+    assert app_spec.consistency_errors(s, root) == []
+    s["deploy"]["k8s"]["storage"] = "50Gi"
+    errors = app_spec.consistency_errors(s, root)
+    assert any("overlays/prod/kustomization.yaml requests '300Gi'" in e for e in errors)
+
+
+def test_owned_template_files():
+    assert app_spec.owned_template_files({"sync": {"app_owned": ["k8s/overlays/*", "CLAUDE.app.md"]}}) == []
+    owned = app_spec.owned_template_files({"sync": {"app_owned": ["k8s/*", "CLAUDE.md"]}})
+    assert "k8s/base/workspace-pvc.yaml" in owned and "CLAUDE.md" in owned
+
+
+def test_template_spec_owns_no_template_files(spec):
+    assert app_spec.owned_template_files(spec) == []
+
+
 def test_missing_python_tool_and_unknown_input(tmp_path):
     root = _app_tree(tmp_path)
     s = _spec()
@@ -147,3 +181,33 @@ def test_sync_auto_merge_is_a_boolean(spec):
     bad = copy.deepcopy(spec)
     bad.setdefault("sync", {})["auto_merge"] = "yes"
     assert any("sync/auto_merge" in e for e in app_spec.schema_errors(bad))
+
+
+def test_deploy_images_lists_known_images_only(spec):
+    ok = copy.deepcopy(spec)
+    ok["deploy"]["images"] = ["full-amd64", "simple-amd64", "full-arm64"]
+    assert app_spec.schema_errors(ok) == []
+    ok["deploy"]["images"] = ["simple"]
+    assert app_spec.schema_errors(ok) == []
+    for images in (["simple-riscv64"], [], ["full-amd64", "full-amd64"]):
+        bad = copy.deepcopy(spec)
+        bad["deploy"]["images"] = images
+        assert any("deploy/images" in e for e in app_spec.schema_errors(bad)), images
+
+
+def test_deploy_images_must_build_the_overlay_variant(tmp_path):
+    root = _app_tree(tmp_path)
+    (root / "k8s/overlays/prod/kustomization.yaml").write_text(
+        "namePrefix: myapp-\n"
+        "images:\n  - name: openms-streamlit\n    newName: ghcr.io/openms/myapp\n"
+        "    newTag: v1.0.0-full\n"
+    )
+    s = _spec()
+    s["deploy"] = {"images": ["simple-amd64"]}
+    assert any("deploys the full image" in e for e in app_spec.consistency_errors(s, root))
+    s["deploy"] = {"images": ["full-amd64", "simple-amd64"]}
+    assert not any("deploys the" in e for e in app_spec.consistency_errors(s, root))
+    s["deploy"] = {"images": ["simple"]}
+    assert any("deploys the full image" in e for e in app_spec.consistency_errors(s, root))
+    s["deploy"] = {"images": ["full", "simple"]}
+    assert not any("deploys the" in e for e in app_spec.consistency_errors(s, root))

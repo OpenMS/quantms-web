@@ -89,22 +89,22 @@ def test_sdrf_settings_lfq(tmp_path):
     settings = pride.sdrf_settings(sdrf, ["A_1.mzML", "A_2.mzML"])
     assert settings["mode"] == "LFQ"
     assert settings["groups"] == {"A_1.mzML": "healthy", "A_2.mzML": "tumor"}
-    comet = settings["comet"]
-    assert comet["enzyme"] == "Trypsin"
-    assert comet["fixed_modifications"] == "Carbamidomethyl (C)"
-    assert comet["variable_modifications"] == "Oxidation (M)\nAcetyl (Protein N-term)"
-    assert (comet["precursor_mass_tolerance"], comet["precursor_error_units"]) == (10.0, "ppm")
-    # Comet bins fragments in Da: 20 ppm becomes a high-resolution 0.02 Da search
-    assert (comet["fragment_mass_tolerance"], comet["instrument"], comet["fragment_bin_offset"]) == (
-        0.02, "high_res", 0.0)
+    search = settings["search"]
+    assert search["Search:enzyme"] == "Trypsin"
+    assert search["Search:modifications:fixed"] == "Carbamidomethyl (C)"
+    assert search["Search:modifications:variable"] == "Oxidation (M)\nAcetyl (Protein N-term)"
+    assert search["Search:precursor:mass_tolerance_lower"] == 10.0
+    assert search["Search:precursor:mass_tolerance_upper"] == 10.0
+    assert search["Search:precursor:mass_tolerance_unit"] == "ppm"
+    # ProSE takes fragment tolerances in ppm as they are
+    assert (search["Search:fragment:mass_tolerance"], search["Search:fragment:mass_tolerance_unit"]) == (20.0, "ppm")
     assert any("no imported mzML" in n for n in settings["notes"])
 
 
 def test_sdrf_settings_low_res_fragments(tmp_path):
     sdrf = pride.read_sdrf(write_sdrf(tmp_path / "a.sdrf.tsv", [lfq_row("A_1.raw", "x", "0.5 Da")]))
-    comet = pride.sdrf_settings(sdrf)["comet"]
-    assert (comet["fragment_mass_tolerance"], comet["instrument"], comet["fragment_bin_offset"]) == (
-        0.5, "low_res", 0.4)
+    search = pride.sdrf_settings(sdrf)["search"]
+    assert (search["Search:fragment:mass_tolerance"], search["Search:fragment:mass_tolerance_unit"]) == (0.5, "Da")
 
 
 def test_sdrf_settings_tmt(tmp_path):
