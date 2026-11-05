@@ -279,9 +279,9 @@ def apply_to_workflow(wf, mzml_files: list[str], fasta_files: list[str], setting
             set_topp("IsobaricAnalyzer-TMT", "type", settings["tmt_type"])
         for index, group in settings["tmt_groups"].items():
             set_param(f"TMT-group-sample{int(index) + 1}", group)
-        comet = "CometAdapter-TMT" if settings["mode"] == "TMT" else "CometAdapter"
-        for key, value in settings["comet"].items():
-            set_topp(comet, key, value)
+        search = "ProSE-TMT" if settings["mode"] == "TMT" else "ProSE"
+        for key, value in settings["search"].items():
+            set_topp(search, key, value)
 
     with open(pm.params_file, "w", encoding="utf-8") as f:
         json.dump(params, f, indent=4)

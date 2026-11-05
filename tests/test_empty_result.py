@@ -29,9 +29,9 @@ def _idxml(path, hits):
     poms.IdXMLFile().store(str(path), [prot], peptides)
 
 
-def _run(tmp_path, comet, percolator=None, filtered=None, log=""):
+def _run(tmp_path, comet, percolator=None, filtered=None, log="", search_folder="search_results"):
     run = tmp_path / "run"
-    _idxml(run / "results" / "comet_results" / "a_comet.idXML", comet)
+    _idxml(run / "results" / search_folder / "a_prose.idXML", comet)
     if percolator is not None:
         _idxml(run / "results" / "percolator_results" / "a_per.idXML", percolator)
     if filtered is not None:
@@ -59,6 +59,15 @@ def test_fdr_levels_and_not_applied():
 def test_run_with_psms_is_not_empty(tmp_path):
     run = _run(tmp_path, [("target", None)], [("target", 0.001)], [("target", 0.001)])
     assert diagnose_empty_run(run, LFQ) is None
+
+
+def test_runs_from_before_prose_read_comet_results(tmp_path):
+    run = _run(tmp_path, [("target", None)], [("target", 0.001)], [("target", 0.001)],
+               search_folder="comet_results")
+    assert diagnose_empty_run(run, LFQ) is None
+    empty = _run(tmp_path / "old", [("target", None)] * 2, [("target", 0.3)] * 2, [],
+                 search_folder="comet_results")
+    assert diagnose_empty_run(empty, LFQ) is not None
 
 
 def test_fdr_filter_left_nothing(tmp_path):

@@ -34,7 +34,7 @@ PAGES = {
     "statistics": ("content/statistical.py", "4. Statistical test", "🔢"),
     "qc": ("content/results_qc.py", "Identification quality", "🩺"),
     "filtered": ("content/results_filtered.py", "Peptide-spectrum matches", "🎯"),
-    "search": ("content/results_database_search.py", "Raw search hits (Comet)", "🔬"),
+    "search": ("content/results_database_search.py", "Raw search hits (ProSE)", "🔬"),
     "rescoring": ("content/results_rescoring.py", "Rescored hits (Percolator)", "📈"),
     "mass_shifts": ("content/results_mass_shifts.py", "Mass shifts", "📐"),
 }

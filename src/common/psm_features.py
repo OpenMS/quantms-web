@@ -1,7 +1,9 @@
 """Every score and feature of a PSM, read from its idXML, with readable names.
 
-Comet writes its scores twice (a PSI-MS accession and a ``COMET:`` name) and
-Percolator adds its score, q-value and PEP as PSI-MS accessions. This module
+ProSE writes its score and the features of each match under plain names (runs
+made before the switch to ProSE carry Comet's scores, under a PSI-MS accession
+and a ``COMET:`` name), and Percolator adds its score, q-value and PEP as PSI-MS
+accessions. This module
 names them, drops the duplicates and keeps any value it does not know under
 its own key, so a new tool version never hides a feature.
 Streamlit-free, so it can be tested on its own.
@@ -20,6 +22,22 @@ KNOWN_FEATURES: dict[str, tuple[str, str, str]] = {
     "MS:1001491": ("Percolator", "q-value", "Lowest FDR at which this PSM is accepted."),
     "MS:1001493": ("Percolator", "Posterior error probability (PEP)",
                    "Probability that this single PSM is wrong."),
+    "ln(hyperscore)": ("ProSE", "ln(hyperscore)",
+                       "ProSE's score: the matched b and y ions, their number and intensity. Higher is better."),
+    "delta_score": ("ProSE", "Δ score", "Score gap to the next-best peptide for this spectrum."),
+    "hyperscore_zscore": ("ProSE", "Score z-score", "The score against those of all candidate peptides of the spectrum."),
+    "ln_num_candidates": ("ProSE", "ln(candidate peptides)", "Natural log of the peptides scored for this spectrum."),
+    "num_matched_peaks": ("ProSE", "Matched peaks", "Peaks explained by a fragment ion of the peptide."),
+    "matched_prefix_ions": ("ProSE", "Matched b ions", "Fragment ions from the peptide's start found in the spectrum."),
+    "matched_suffix_ions": ("ProSE", "Matched y ions", "Fragment ions from the peptide's end found in the spectrum."),
+    "matched_prefix_ions_fraction": ("ProSE", "Fraction of b ions matched", "Matched / possible b ions."),
+    "matched_suffix_ions_fraction": ("ProSE", "Fraction of y ions matched", "Matched / possible y ions."),
+    "longest_peptide_ion_sequence": ("ProSE", "Longest ion ladder", "Most consecutive matched b or y ions."),
+    "complementary_ions_fraction": ("ProSE", "Complementary ion pairs", "Share of cleavage sites seen as both a b and a y ion."),
+    "matched_ion_current": ("ProSE", "Matched intensity", "Intensity of the matched peaks."),
+    "matched_ion_current_fraction": ("ProSE", "Fraction of intensity matched", "Matched / total peak intensity."),
+    "fragment_mz_error_median_ppm": ("ProSE", "Median fragment error (ppm)", "Median m/z error of the matched fragment ions."),
+    "precursor_mz_error_ppm": ("ProSE", "Precursor error (ppm)", "m/z error of the precursor, after the isotope error."),
     "MS:1002252": ("Comet", "XCorr", "Cross-correlation of the measured and theoretical spectrum."),
     "MS:1002253": ("Comet", "ΔCn", "Relative XCorr gap to the next-best peptide for this spectrum."),
     "MS:1002255": ("Comet", "Sp score", "Comet's preliminary score."),
@@ -39,12 +57,13 @@ KNOWN_FEATURES: dict[str, tuple[str, str, str]] = {
 
 # Same value as a known key, written again under another name
 DUPLICATES = {
+    "percolator_score", "percolator_q_value", "percolator_pep",
     "COMET:xcorr", "COMET:deltaCn", "COMET:spscore", "COMET:sprank", "Comet:lnrSp", "Comet:IonFrac", "expect",
 }
 # Not features
-SKIPPED = {"protein_references", "spectrum_reference"}
+SKIPPED = {"protein_references", "spectrum_reference", "fragment_annotation", "scan_index"}
 
-GROUP_ORDER = ["Percolator", "Comet", "Search", "Other"]
+GROUP_ORDER = ["Percolator", "ProSE", "Comet", "Search", "Other"]
 
 
 def _plain(value):
@@ -59,7 +78,7 @@ def hit_features(hit) -> list[dict]:
     """Rows (group, feature, value, help) of one PeptideHit, Percolator first.
 
     The hit's main score is not listed on its own: it is always one of these
-    features too (Comet's E-value, or Percolator's PEP after rescoring).
+    features too (ProSE's ln(hyperscore), or Percolator's PEP after rescoring).
     """
     known = list(KNOWN_FEATURES)
     rows = []
