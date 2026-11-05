@@ -16,7 +16,9 @@ from scipy.stats import fisher_exact
 from src.workflow.WorkflowManager import WorkflowManager
 from src.common.common import page_setup
 from src.common.results_helpers import get_abundance_data
-from src.common.results_helpers import parse_idxml, build_spectra_cache, load_idxml, psm_table_columns, write_psm_exports, peaks_for_identifications, search_results_dir
+from src.common.results_helpers import build_spectra_cache, load_idxml, search_results_dir
+from src.common.identified_spectra import SPECTRA_DIR, write_identified_spectra
+from src.common.psm_views import build_psm_views
 from src.common.contaminants import CONTAMINANT_PREFIX, append_fasta, write_contaminants
 from src.common.fdr_display import FDR_QUICK_CHOICES, fdr_applied, fdr_label, matching_quick_choice, percent_label, q_label
 from src.common.isobaric import ISOBARIC_CHANNELS
@@ -25,7 +27,6 @@ from src.common.lfq_design import groups_from_design, initial_groups, is_fractio
 from src.common.qpx_export import app_version, export_run
 from src.workflow.ExperimentalDesign import design_path, load_design, save_design, to_openms_design
 from src.pride_ui import pride_import_section
-from openms_insight import Table, Heatmap, LinePlot, SequenceView
 
 # Accession prefixes that mark decoy entries in a FASTA database.
 DECOY_PREFIXES = ("DECOY_", "decoy_", "rev_", "REV_", "XXX_", "reversed_")
@@ -1005,6 +1006,22 @@ class WorkflowTest(WorkflowManager):
         except Exception as e:  # an export must not fail the run
             self.logger.log(f"⚠️ QPX export failed: {e}")
 
+    def write_identified_spectra(self, mzml_files: list, idxml_files: list) -> None:
+        """Keep the spectra of the final PSMs with the run (``results/spectra``).
+
+        A run opened from its ZIP shows its PSM spectra from them when the
+        input mzML files are not there. A failure only costs that, so it is
+        logged and the run goes on.
+        """
+        try:
+            written = write_identified_spectra(mzml_files, idxml_files, self.results_dir)
+            self.logger.log(
+                f"🧾 Kept {sum(written.values())} identified spectra in {SPECTRA_DIR}/ for viewing without the mzML files"
+            )
+        except Exception as error:  # noqa: BLE001 - the results are complete without them
+            shutil.rmtree(Path(self.results_dir, SPECTRA_DIR), ignore_errors=True)
+            self.logger.log(f"⚠️ Could not keep the identified spectra with the run: {error}")
+
     def prepare_search_database(self, fasta_path: Path):
         """Build the database to search: the FASTA, the cRAP contaminants and decoys.
 
@@ -1181,72 +1198,13 @@ class WorkflowTest(WorkflowManager):
 
             for idxml_file in search_results:
                 idxml_path = Path(idxml_file)
-                cache_id_prefix = idxml_path.stem
 
-                # Parse idXML to DataFrame
-                id_df, spectra_data = parse_idxml(idxml_path, filename_to_index)
-                if id_df.is_empty():
+                # Table, Heatmap, SequenceView and LinePlot caches
+                if not build_psm_views(
+                    idxml_path, cache_dir, spectra_df, filename_to_index, frag_tol, frag_tol_is_ppm,
+                    export_dir=None,
+                ):
                     self.logger.log(f"⚠️ No identifications in {idxml_path.name}, skipping its result views")
-                    continue
-
-                # Initialize Table component (caches itself)
-                Table(
-                    cache_id=f"table_{cache_id_prefix}",
-                    data=id_df.lazy(),
-                    cache_path=str(cache_dir),
-                    interactivity={"file": "file_index", "spectrum": "scan_id", "identification": "id_idx"},
-                    column_definitions=psm_table_columns(),
-                    initial_sort=[{"column": "score", "dir": "desc"}],  # ln(hyperscore): higher is better
-                    index_field="id_idx",
-                )
-
-                # Initialize Heatmap component
-                Heatmap(
-                    cache_id=f"heatmap_{cache_id_prefix}",
-                    data=id_df.lazy(),
-                    cache_path=str(cache_dir),
-                    x_column="rt",
-                    y_column="mz",
-                    intensity_column="score",
-                    interactivity={"identification": "id_idx"},
-                )
-
-                # Initialize SequenceView component
-                seq_view = SequenceView(
-                    cache_id=f"seqview_{cache_id_prefix}",
-                    sequence_data=id_df.lazy().select(["id_idx", "sequence", "charge", "file_index", "scan_id"]).rename({
-                        "id_idx": "sequence_id",
-                        "charge": "precursor_charge",
-                    }),
-                    peaks_data=peaks_for_identifications(spectra_df, id_df),
-                    filters={
-                        "identification": "sequence_id",
-                        "file": "file_index",
-                        "spectrum": "scan_id",
-                    },
-                    interactivity={"peak": "peak_id"},
-                    cache_path=str(cache_dir),
-                    deconvolved=False,
-                    annotation_config={
-                        "ion_types": ["b", "y"],
-                        "neutral_losses": True,
-                        "tolerance": frag_tol,
-                        "tolerance_ppm": frag_tol_is_ppm,
-                    },
-                )
-
-                # Initialize LinePlot from SequenceView
-                LinePlot.from_sequence_view(
-                    seq_view,
-                    cache_id=f"lineplot_{cache_id_prefix}",
-                    cache_path=str(cache_dir),
-                    title="Annotated Spectrum",
-                    styling={
-                        "unhighlightedColor": "#CCCCCC",
-                        "highlightColor": "#E74C3C",
-                        "selectedColor": "#F3A712",
-                    },
-                )
 
             self.logger.log("✅ Peptide search complete")
 
@@ -1275,72 +1233,13 @@ class WorkflowTest(WorkflowManager):
             # Build visualization cache for Percolator results
             for idxml_file in percolator_results:
                 idxml_path = Path(idxml_file)
-                cache_id_prefix = idxml_path.stem
 
-                # Parse idXML to DataFrame
-                id_df, spectra_data = parse_idxml(idxml_path, filename_to_index)
-                if id_df.is_empty():
+                # Table, Heatmap, SequenceView and LinePlot caches
+                if not build_psm_views(
+                    idxml_path, cache_dir, spectra_df, filename_to_index, frag_tol, frag_tol_is_ppm,
+                    export_dir=None,
+                ):
                     self.logger.log(f"⚠️ No identifications in {idxml_path.name}, skipping its result views")
-                    continue
-
-                # Initialize Table component (caches itself)
-                Table(
-                    cache_id=f"table_{cache_id_prefix}",
-                    data=id_df.lazy(),
-                    cache_path=str(cache_dir),
-                    interactivity={"file": "file_index", "spectrum": "scan_id", "identification": "id_idx"},
-                    column_definitions=psm_table_columns(),
-                    initial_sort=[{"column": "score", "dir": "asc"}],
-                    index_field="id_idx",
-                )
-
-                # Initialize Heatmap component
-                Heatmap(
-                    cache_id=f"heatmap_{cache_id_prefix}",
-                    data=id_df.lazy(),
-                    cache_path=str(cache_dir),
-                    x_column="rt",
-                    y_column="mz",
-                    intensity_column="score",
-                    interactivity={"identification": "id_idx"},
-                )
-
-                # Initialize SequenceView component
-                seq_view = SequenceView(
-                    cache_id=f"seqview_{cache_id_prefix}",
-                    sequence_data=id_df.lazy().select(["id_idx", "sequence", "charge", "file_index", "scan_id"]).rename({
-                        "id_idx": "sequence_id",
-                        "charge": "precursor_charge",
-                    }),
-                    peaks_data=peaks_for_identifications(spectra_df, id_df),
-                    filters={
-                        "identification": "sequence_id",
-                        "file": "file_index",
-                        "spectrum": "scan_id",
-                    },
-                    interactivity={"peak": "peak_id"},
-                    cache_path=str(cache_dir),
-                    deconvolved=False,
-                    annotation_config={
-                        "ion_types": ["b", "y"],
-                        "neutral_losses": True,
-                        "tolerance": frag_tol,
-                        "tolerance_ppm": frag_tol_is_ppm,
-                    },
-                )
-
-                # Initialize LinePlot from SequenceView
-                LinePlot.from_sequence_view(
-                    seq_view,
-                    cache_id=f"lineplot_{cache_id_prefix}",
-                    cache_path=str(cache_dir),
-                    title="Annotated Spectrum",
-                    styling={
-                        "unhighlightedColor": "#CCCCCC",
-                        "highlightColor": "#E74C3C",
-                        "selectedColor": "#F3A712",
-                    },
-                )
 
             self.logger.log("✅ Rescoring complete")
 
@@ -1361,76 +1260,13 @@ class WorkflowTest(WorkflowManager):
             # Build visualization cache for Filter results
             for idxml_file in filter_results:
                 idxml_path = Path(idxml_file)
-                cache_id_prefix = idxml_path.stem
 
-                # Parse idXML to DataFrame
-                id_df, spectra_data = parse_idxml(idxml_path, filename_to_index)
-                if id_df.is_empty():
+                # Table, Heatmap, SequenceView and LinePlot caches and the TSV exports
+                if not build_psm_views(
+                    idxml_path, cache_dir, spectra_df, filename_to_index, frag_tol, frag_tol_is_ppm,
+                    export_dir=results_dir_path / "exports",
+                ):
                     self.logger.log(f"⚠️ No identifications in {idxml_path.name}, skipping its result views")
-                    continue
-
-                # Initialize Table component (caches itself)
-                Table(
-                    cache_id=f"table_{cache_id_prefix}",
-                    data=id_df.lazy(),
-                    cache_path=str(cache_dir),
-                    interactivity={"file": "file_index", "spectrum": "scan_id", "identification": "id_idx"},
-                    column_definitions=psm_table_columns(),
-                    initial_sort=[{"column": "score", "dir": "asc"}],
-                    index_field="id_idx",
-                )
-
-                # Initialize Heatmap component
-                Heatmap(
-                    cache_id=f"heatmap_{cache_id_prefix}",
-                    data=id_df.lazy(),
-                    cache_path=str(cache_dir),
-                    x_column="rt",
-                    y_column="mz",
-                    intensity_column="score",
-                    interactivity={"identification": "id_idx"},
-                )
-
-                # Initialize SequenceView component
-                seq_view = SequenceView(
-                    cache_id=f"seqview_{cache_id_prefix}",
-                    sequence_data=id_df.lazy().select(["id_idx", "sequence", "charge", "file_index", "scan_id"]).rename({
-                        "id_idx": "sequence_id",
-                        "charge": "precursor_charge",
-                    }),
-                    peaks_data=peaks_for_identifications(spectra_df, id_df),
-                    filters={
-                        "identification": "sequence_id",
-                        "file": "file_index",
-                        "spectrum": "scan_id",
-                    },
-                    interactivity={"peak": "peak_id"},
-                    cache_path=str(cache_dir),
-                    deconvolved=False,
-                    annotation_config={
-                        "ion_types": ["b", "y"],
-                        "neutral_losses": True,
-                        "tolerance": frag_tol,
-                        "tolerance_ppm": frag_tol_is_ppm,
-                    },
-                )
-
-                # Initialize LinePlot from SequenceView
-                LinePlot.from_sequence_view(
-                    seq_view,
-                    cache_id=f"lineplot_{cache_id_prefix}",
-                    cache_path=str(cache_dir),
-                    title="Annotated Spectrum",
-                    styling={
-                        "unhighlightedColor": "#CCCCCC",
-                        "highlightColor": "#E74C3C",
-                        "selectedColor": "#F3A712",
-                    },
-                )
-
-                # Downloadable exports: every PSM, and every PSM's matched
-                # fragment ions against its own spectrum
-                write_psm_exports(id_df, seq_view, results_dir_path / "exports", cache_id_prefix)
 
             self.logger.log("✅ Filtering complete")
 
@@ -1574,6 +1410,7 @@ class WorkflowTest(WorkflowManager):
             #     st.stop()
 
             self.write_qpx()
+            self.write_identified_spectra(in_mzML, filter_results)
 
             # ================================
             # 5️⃣ Final report
@@ -1672,72 +1509,13 @@ class WorkflowTest(WorkflowManager):
 
             for idxml_file in search_results:
                 idxml_path = Path(idxml_file)
-                cache_id_prefix = idxml_path.stem
 
-                # Parse idXML to DataFrame
-                id_df, spectra_data = parse_idxml(idxml_path, filename_to_index)
-                if id_df.is_empty():
+                # Table, Heatmap, SequenceView and LinePlot caches
+                if not build_psm_views(
+                    idxml_path, cache_dir, spectra_df, filename_to_index, frag_tol, frag_tol_is_ppm,
+                    export_dir=None,
+                ):
                     self.logger.log(f"⚠️ No identifications in {idxml_path.name}, skipping its result views")
-                    continue
-
-                # Initialize Table component (caches itself)
-                Table(
-                    cache_id=f"table_{cache_id_prefix}",
-                    data=id_df.lazy(),
-                    cache_path=str(cache_dir),
-                    interactivity={"file": "file_index", "spectrum": "scan_id", "identification": "id_idx"},
-                    column_definitions=psm_table_columns(),
-                    initial_sort=[{"column": "score", "dir": "desc"}],  # ln(hyperscore): higher is better
-                    index_field="id_idx",
-                )
-
-                # Initialize Heatmap component
-                Heatmap(
-                    cache_id=f"heatmap_{cache_id_prefix}",
-                    data=id_df.lazy(),
-                    cache_path=str(cache_dir),
-                    x_column="rt",
-                    y_column="mz",
-                    intensity_column="score",
-                    interactivity={"identification": "id_idx"},
-                )
-
-                # Initialize SequenceView component
-                seq_view = SequenceView(
-                    cache_id=f"seqview_{cache_id_prefix}",
-                    sequence_data=id_df.lazy().select(["id_idx", "sequence", "charge", "file_index", "scan_id"]).rename({
-                        "id_idx": "sequence_id",
-                        "charge": "precursor_charge",
-                    }),
-                    peaks_data=peaks_for_identifications(spectra_df, id_df),
-                    filters={
-                        "identification": "sequence_id",
-                        "file": "file_index",
-                        "spectrum": "scan_id",
-                    },
-                    interactivity={"peak": "peak_id"},
-                    cache_path=str(cache_dir),
-                    deconvolved=False,
-                    annotation_config={
-                        "ion_types": ["b", "y"],
-                        "neutral_losses": True,
-                        "tolerance": frag_tol,
-                        "tolerance_ppm": frag_tol_is_ppm,
-                    },
-                )
-
-                # Initialize LinePlot from SequenceView
-                LinePlot.from_sequence_view(
-                    seq_view,
-                    cache_id=f"lineplot_{cache_id_prefix}",
-                    cache_path=str(cache_dir),
-                    title="Annotated Spectrum",
-                    styling={
-                        "unhighlightedColor": "#CCCCCC",
-                        "highlightColor": "#E74C3C",
-                        "selectedColor": "#F3A712",
-                    },
-                )
 
             self.logger.log("✅ Peptide search complete")
 
@@ -1766,72 +1544,13 @@ class WorkflowTest(WorkflowManager):
             # Build visualization cache for Percolator results
             for idxml_file in percolator_results:
                 idxml_path = Path(idxml_file)
-                cache_id_prefix = idxml_path.stem
 
-                # Parse idXML to DataFrame
-                id_df, spectra_data = parse_idxml(idxml_path, filename_to_index)
-                if id_df.is_empty():
+                # Table, Heatmap, SequenceView and LinePlot caches
+                if not build_psm_views(
+                    idxml_path, cache_dir, spectra_df, filename_to_index, frag_tol, frag_tol_is_ppm,
+                    export_dir=None,
+                ):
                     self.logger.log(f"⚠️ No identifications in {idxml_path.name}, skipping its result views")
-                    continue
-
-                # Initialize Table component (caches itself)
-                Table(
-                    cache_id=f"table_{cache_id_prefix}",
-                    data=id_df.lazy(),
-                    cache_path=str(cache_dir),
-                    interactivity={"file": "file_index", "spectrum": "scan_id", "identification": "id_idx"},
-                    column_definitions=psm_table_columns(),
-                    initial_sort=[{"column": "score", "dir": "asc"}],
-                    index_field="id_idx",
-                )
-
-                # Initialize Heatmap component
-                Heatmap(
-                    cache_id=f"heatmap_{cache_id_prefix}",
-                    data=id_df.lazy(),
-                    cache_path=str(cache_dir),
-                    x_column="rt",
-                    y_column="mz",
-                    intensity_column="score",
-                    interactivity={"identification": "id_idx"},
-                )
-
-                # Initialize SequenceView component
-                seq_view = SequenceView(
-                    cache_id=f"seqview_{cache_id_prefix}",
-                    sequence_data=id_df.lazy().select(["id_idx", "sequence", "charge", "file_index", "scan_id"]).rename({
-                        "id_idx": "sequence_id",
-                        "charge": "precursor_charge",
-                    }),
-                    peaks_data=peaks_for_identifications(spectra_df, id_df),
-                    filters={
-                        "identification": "sequence_id",
-                        "file": "file_index",
-                        "spectrum": "scan_id",
-                    },
-                    interactivity={"peak": "peak_id"},
-                    cache_path=str(cache_dir),
-                    deconvolved=False,
-                    annotation_config={
-                        "ion_types": ["b", "y"],
-                        "neutral_losses": True,
-                        "tolerance": frag_tol,
-                        "tolerance_ppm": frag_tol_is_ppm,
-                    },
-                )
-
-                # Initialize LinePlot from SequenceView
-                LinePlot.from_sequence_view(
-                    seq_view,
-                    cache_id=f"lineplot_{cache_id_prefix}",
-                    cache_path=str(cache_dir),
-                    title="Annotated Spectrum",
-                    styling={
-                        "unhighlightedColor": "#CCCCCC",
-                        "highlightColor": "#E74C3C",
-                        "selectedColor": "#F3A712",
-                    },
-                )
 
             self.logger.log("✅ PercolatorAdapter complete")
                 
@@ -1849,76 +1568,13 @@ class WorkflowTest(WorkflowManager):
             # Build visualization cache for Filter results
             for idxml_file in psm_filtered:
                 idxml_path = Path(idxml_file)
-                cache_id_prefix = idxml_path.stem
 
-                # Parse idXML to DataFrame
-                id_df, spectra_data = parse_idxml(idxml_path, filename_to_index)
-                if id_df.is_empty():
+                # Table, Heatmap, SequenceView and LinePlot caches and the TSV exports
+                if not build_psm_views(
+                    idxml_path, cache_dir, spectra_df, filename_to_index, frag_tol, frag_tol_is_ppm,
+                    export_dir=results_dir_path / "exports",
+                ):
                     self.logger.log(f"⚠️ No identifications in {idxml_path.name}, skipping its result views")
-                    continue
-
-                # Initialize Table component (caches itself)
-                Table(
-                    cache_id=f"table_{cache_id_prefix}",
-                    data=id_df.lazy(),
-                    cache_path=str(cache_dir),
-                    interactivity={"file": "file_index", "spectrum": "scan_id", "identification": "id_idx"},
-                    column_definitions=psm_table_columns(),
-                    initial_sort=[{"column": "score", "dir": "asc"}],
-                    index_field="id_idx",
-                )
-
-                # Initialize Heatmap component
-                Heatmap(
-                    cache_id=f"heatmap_{cache_id_prefix}",
-                    data=id_df.lazy(),
-                    cache_path=str(cache_dir),
-                    x_column="rt",
-                    y_column="mz",
-                    intensity_column="score",
-                    interactivity={"identification": "id_idx"},
-                )
-
-                # Initialize SequenceView component
-                seq_view = SequenceView(
-                    cache_id=f"seqview_{cache_id_prefix}",
-                    sequence_data=id_df.lazy().select(["id_idx", "sequence", "charge", "file_index", "scan_id"]).rename({
-                        "id_idx": "sequence_id",
-                        "charge": "precursor_charge",
-                    }),
-                    peaks_data=peaks_for_identifications(spectra_df, id_df),
-                    filters={
-                        "identification": "sequence_id",
-                        "file": "file_index",
-                        "spectrum": "scan_id",
-                    },
-                    interactivity={"peak": "peak_id"},
-                    cache_path=str(cache_dir),
-                    deconvolved=False,
-                    annotation_config={
-                        "ion_types": ["b", "y"],
-                        "neutral_losses": True,
-                        "tolerance": frag_tol,
-                        "tolerance_ppm": frag_tol_is_ppm,
-                    },
-                )
-
-                # Initialize LinePlot from SequenceView
-                LinePlot.from_sequence_view(
-                    seq_view,
-                    cache_id=f"lineplot_{cache_id_prefix}",
-                    cache_path=str(cache_dir),
-                    title="Annotated Spectrum",
-                    styling={
-                        "unhighlightedColor": "#CCCCCC",
-                        "highlightColor": "#E74C3C",
-                        "selectedColor": "#F3A712",
-                    },
-                )
-
-                # Downloadable exports: every PSM, and every PSM's matched
-                # fragment ions against its own spectrum
-                write_psm_exports(id_df, seq_view, results_dir_path / "exports", cache_id_prefix)
 
             # --- IDMapper ---
             self.logger.log("🗺️ Mapping IDs to isobaric consensus features...")
@@ -2019,6 +1675,7 @@ class WorkflowTest(WorkflowManager):
             self.logger.log("✅ ProteinQuantifier complete")
             self.logger.log("📄 Generating protein table...")
             self.write_qpx()
+            self.write_identified_spectra(in_mzML, psm_filtered)
 
             self.logger.log("🎉 WORKFLOW FINISHED")
 

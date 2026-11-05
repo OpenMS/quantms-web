@@ -216,13 +216,15 @@ def run_manager_section(
                 st.rerun()
 
 
-def show_import_notice(runs: RunManager) -> None:
+def show_import_notice(runs: RunManager, keep: bool = False) -> None:
     """
-    The message left by run_import() for the rerun after an import. Shown
-    once: run_import() and the results pages both call this, whichever runs
-    first takes it.
+    The message left by run_import() for the rerun after an import. The
+    results pages take it (shown once); run_import() passes ``keep=True`` and
+    leaves it for the reruns after, until another ZIP is chosen or a results
+    page has taken it.
     """
-    done = st.session_state.pop(f"_runs-{_slug(runs)}-imported", None)
+    key = f"_runs-{_slug(runs)}-imported"
+    done = st.session_state.get(key) if keep else st.session_state.pop(key, None)
     if not done:
         return
     if isinstance(done, dict):
@@ -247,7 +249,9 @@ def run_import(runs: RunManager, expanded: bool = False) -> None:
     slug = _slug(runs)
     counter = f"_runs-{slug}-import-n"
     n = st.session_state.get(counter, 0)
-    show_import_notice(runs)
+    # Kept (not popped) until another ZIP is chosen: a component on the page
+    # may rerun it once more right after the import, which would swallow it
+    show_import_notice(runs, keep=True)
     with st.expander("📥 Open a run from a ZIP", expanded=expanded):
         st.caption(
             "A run downloaded from this page, here or in another workspace or "
@@ -259,6 +263,8 @@ def run_import(runs: RunManager, expanded: bool = False) -> None:
             "Run ZIP", type=["zip"], key=f"runs-{slug}-import-{n}",
             label_visibility="collapsed",
         )
+        if upload is not None:
+            st.session_state.pop(f"_runs-{slug}-imported", None)
         if upload is not None and st.button(
             "Import run", key=f"runs-{slug}-import-go-{n}", type="primary",
         ):
