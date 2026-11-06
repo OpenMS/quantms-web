@@ -7,7 +7,8 @@ from src.common.spectrum_view import ensure_psm_views, fragment_tolerance, psm_m
 from src.common.common import show_fig
 from src.common.guide import needs_results, next_steps, page_intro
 from src.common.fragment_plots import fragment_error_plot, ion_table, ion_table_html, load_psm_fragments
-from src.common.sequence_display import psm_table, sequence_mode_selector
+from src.common.result_filters import q_suggestions
+from src.common.sequence_display import filtered_psm_table, sequence_mode_selector
 from openms_insight import Heatmap, SequenceView, StateManager
 
 params = page_setup()
@@ -29,8 +30,9 @@ page_intro(
 )
 
 st.info(
-    "**Score: q-value**, the lowest false discovery rate at which this match would still be "
-    "accepted. 0.01 means it passes a 1 % FDR; lower is more confident."
+    "**q-value**: the lowest false discovery rate at which this match would still be "
+    "accepted. 0.01 means it passes a 1 % FDR; lower is more confident. **Score** is the "
+    "rescoring's posterior error probability by default (the chance that this one match is wrong)."
 )
 
 if "workspace" not in st.session_state:
@@ -76,8 +78,16 @@ st.subheader("PSM Overview")
 heatmap(state_manager=state_manager, height=350)
 
 st.subheader("PSM Table")
+run_fdr = min(float(run_params.get("psm-fdr-percent", 1.0)), 100.0)
+st.caption(
+    "Search the sequence (in any modification form) or proteins with the box in the table's toolbar. "
+    "Tighten the q-value with the filter button, and hide contaminants with the switch."
+)
 mode = sequence_mode_selector()
-psm_table(cache_dir, f"table_{cache_id_prefix}", mode, state_manager)
+filtered_psm_table(
+    cache_dir, f"table_{cache_id_prefix}", mode, state_manager, selected_file,
+    q_suggestions=q_suggestions(run_fdr if run_fdr < 100.0 else None),
+)
 
 st.subheader("Peptide Sequence")
 seq_view(key=f"seqview_{cache_id_prefix}", state_manager=state_manager, height=533)
