@@ -60,3 +60,36 @@ def test_peaks_for_identifications_keeps_identified_spectra_only():
     out = peaks_for_identifications(spectra, ids).collect()
 
     assert out["peak_id"].to_list() == [0, 1, 4]
+
+
+def test_write_spectra_cache_one_parquet_per_file(tmp_path):
+    from src.common.results_helpers import write_spectra_cache
+
+    a, b = tmp_path / "a.mzML", tmp_path / "b.mzML"
+    _write_mzml(a)
+    _write_mzml(b)
+    index = {"a.mzML": 0, "b.mzML": 1}
+
+    cache = write_spectra_cache(tmp_path / "cache", index, [a, b])
+
+    assert sorted(cache) == [0, 1]
+    whole, _ = build_spectra_cache(tmp_path, dict(index), [a, b])
+    per_file = pl.concat([pl.read_parquet(cache[i]) for i in (0, 1)])
+    assert per_file.equals(whole)  # same peaks and peak_ids as the in-memory cache
+    assert write_spectra_cache(tmp_path / "empty", {}, []) == {}
+
+
+def test_peaks_for_identifications_reads_only_the_identified_files(tmp_path):
+    from src.common.results_helpers import write_spectra_cache
+
+    a = tmp_path / "a.mzML"
+    _write_mzml(a)
+    cache = write_spectra_cache(tmp_path / "cache", {"a.mzML": 0}, [a])
+    cache[1] = tmp_path / "missing.parquet"  # never read: no identification in file 1
+
+    ids = pl.DataFrame({"file_index": [0], "scan_id": [3]})
+    out = peaks_for_identifications(cache, ids).collect()
+
+    assert out["mass"].to_list() == [150.0]
+    none = peaks_for_identifications(cache, pl.DataFrame({"file_index": [5], "scan_id": [3]}, schema={"file_index": pl.Int64, "scan_id": pl.Int64}))
+    assert none.collect().height == 0

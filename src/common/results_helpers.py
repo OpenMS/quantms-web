@@ -379,20 +379,85 @@ def parse_idxml(idxml_path: Path, filename_to_index: dict | None = None) -> tupl
     return pl.DataFrame(records, schema=ID_DF_SCHEMA), spectra_data
 
 
-def peaks_for_identifications(spectra_df: pl.DataFrame, id_df: pl.DataFrame) -> pl.LazyFrame:
+def peaks_for_identifications(spectra, id_df: pl.DataFrame) -> pl.LazyFrame:
     """Peaks of only the spectra that ``id_df`` identifies.
 
-    ``spectra_df`` holds every MS2 peak of every input file. A SequenceView
-    only ever shows identified spectra, and each one writes its peaks to its
-    own cache, so passing the whole frame stored all files' peaks once per
-    file and search stage.
+    ``spectra`` is either a frame of MS2 peaks or the per-file cache of
+    ``write_spectra_cache`` (file index -> parquet). With the cache only the
+    files ``id_df`` refers to are read, so a study of hundreds of runs never
+    holds more than one run's peaks per idXML. A SequenceView only ever shows
+    identified spectra, and each one writes its peaks to its own cache.
     """
     keys = id_df.lazy().select(["file_index", "scan_id"]).unique()
-    return spectra_df.lazy().join(keys, on=["file_index", "scan_id"], how="semi")
+    if isinstance(spectra, dict):
+        files = [spectra[i] for i in sorted(id_df["file_index"].unique().to_list()) if i in spectra]
+        if not files:
+            return pl.LazyFrame(schema=SPECTRA_SCHEMA)
+        frame = pl.scan_parquet([str(f) for f in files])
+    else:
+        frame = spectra.lazy()
+    return frame.join(keys, on=["file_index", "scan_id"], how="semi")
+
+
+SPECTRA_SCHEMA = {
+    "peak_id": pl.Int64,
+    "file_index": pl.Int64,
+    "scan_id": pl.Int64,
+    "mass": pl.Float64,  # Use "mass" not "mz"
+    "intensity": pl.Float64,
+}
+
+
+def _ms2_peaks(mzml_path: Path, file_index: int, first_peak_id: int = 0) -> pl.DataFrame:
+    """Every MS2 peak of one mzML, ``peak_id`` counting from ``first_peak_id``."""
+    # Peaks are collected as one numpy array per spectrum, not one dict per
+    # peak: full-scale runs have tens of millions of MS2 peaks, and a dict per
+    # peak needed over 10 GB for six timsTOF files. Only MS2 is read from disk.
+    scan_ids, masses, intensities = [], [], []
+    options = PeakFileOptions()
+    options.setMSLevels([2])
+    exp = MSExperiment()
+    mzml_file = MzMLFile()
+    mzml_file.setOptions(options)
+    mzml_file.load(str(mzml_path), exp)
+    for spec in exp:
+        if spec.getMSLevel() != 2:
+            continue
+        mz_array, int_array = spec.get_peaks()
+        n = len(mz_array)
+        if n == 0:
+            continue
+        scan_ids.append(np.full(n, extract_scan_number(spec.getNativeID()), dtype=np.int64))
+        masses.append(np.asarray(mz_array, dtype=np.float64))
+        intensities.append(np.asarray(int_array, dtype=np.float64))
+    del exp
+
+    def _cat(parts, dtype):
+        return np.concatenate(parts) if parts else np.empty(0, dtype=dtype)
+
+    mass = _cat(masses, np.float64)
+    return pl.DataFrame({
+        "peak_id": np.arange(first_peak_id, first_peak_id + len(mass), dtype=np.int64),
+        "file_index": np.full(len(mass), file_index, dtype=np.int64),
+        "scan_id": _cat(scan_ids, np.int64),
+        "mass": mass,
+        "intensity": _cat(intensities, np.float64),
+    }, schema=SPECTRA_SCHEMA)
+
+
+def _mzml_paths(mzml_dir: Path, filename_to_index: dict, mzml_files) -> list[Path]:
+    paths = [Path(f) for f in mzml_files] if mzml_files else sorted(Path(mzml_dir).glob("*.mzML"))
+    for path in paths:
+        if path.name not in filename_to_index:
+            filename_to_index[path.name] = len(filename_to_index)
+    return paths
 
 
 def build_spectra_cache(mzml_dir: Path, filename_to_index: dict, mzml_files=None) -> tuple[pl.DataFrame, dict]:
     """Extract MS2 spectra from mzML files and return DataFrame.
+
+    Holds every peak of every file in memory: for a few files. A workflow
+    over a whole study uses ``write_spectra_cache``.
 
     Args:
         mzml_dir: Directory containing mzML files
@@ -403,51 +468,37 @@ def build_spectra_cache(mzml_dir: Path, filename_to_index: dict, mzml_files=None
     Returns:
         Tuple of (spectra_df, updated filename_to_index)
     """
-    # Peaks are collected as one numpy array per spectrum, not one dict per
-    # peak: full-scale runs have tens of millions of MS2 peaks, and a dict per
-    # peak needed over 10 GB for six timsTOF files. Only MS2 is read from disk.
-    file_idx, scan_ids, masses, intensities = [], [], [], []
-
-    options = PeakFileOptions()
-    options.setMSLevels([2])
-    paths = [Path(f) for f in mzml_files] if mzml_files else sorted(mzml_dir.glob("*.mzML"))
-    for mzml_path in paths:
-        # Get or create file index
-        if mzml_path.name not in filename_to_index:
-            filename_to_index[mzml_path.name] = len(filename_to_index)
-        file_index = filename_to_index[mzml_path.name]
-
-        exp = MSExperiment()
-        mzml_file = MzMLFile()
-        mzml_file.setOptions(options)
-        mzml_file.load(str(mzml_path), exp)
-
-        for spec in exp:
-            if spec.getMSLevel() != 2:
-                continue
-            mz_array, int_array = spec.get_peaks()
-            n = len(mz_array)
-            if n == 0:
-                continue
-            scan_id = extract_scan_number(spec.getNativeID())
-            file_idx.append(np.full(n, file_index, dtype=np.int64))
-            scan_ids.append(np.full(n, scan_id, dtype=np.int64))
-            masses.append(np.asarray(mz_array, dtype=np.float64))
-            intensities.append(np.asarray(int_array, dtype=np.float64))
-        del exp
-
-    def _cat(parts, dtype):
-        return np.concatenate(parts) if parts else np.empty(0, dtype=dtype)
-
-    mass = _cat(masses, np.float64)
-    spectra_df = pl.DataFrame({
-        "peak_id": np.arange(len(mass), dtype=np.int64),
-        "file_index": _cat(file_idx, np.int64),
-        "scan_id": _cat(scan_ids, np.int64),
-        "mass": mass,  # Use "mass" not "mz"
-        "intensity": _cat(intensities, np.float64),
-    })
+    frames, next_id = [], 0
+    for path in _mzml_paths(mzml_dir, filename_to_index, mzml_files):
+        frame = _ms2_peaks(path, filename_to_index[path.name], next_id)
+        next_id += frame.height
+        frames.append(frame)
+    spectra_df = pl.concat(frames) if frames else pl.DataFrame(schema=SPECTRA_SCHEMA)
     return spectra_df, filename_to_index
+
+
+def write_spectra_cache(out_dir: Path, filename_to_index: dict, mzml_files) -> dict:
+    """Write the MS2 peaks of each mzML to its own parquet in ``out_dir``.
+
+    One file is read and written at a time, so memory follows the largest
+    run, not the study. ``peak_id`` runs on across the files, as in
+    ``build_spectra_cache``.
+
+    Returns:
+        file index -> parquet path, for ``peaks_for_identifications``.
+    """
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    cache, next_id = {}, 0
+    for path in map(Path, mzml_files):
+        file_index = filename_to_index.setdefault(path.name, len(filename_to_index))
+        frame = _ms2_peaks(path, file_index, next_id)
+        next_id += frame.height
+        target = out_dir / f"{file_index}.parquet"
+        frame.write_parquet(target)
+        cache[file_index] = target
+        del frame
+    return cache
 
 
 def write_psm_exports(id_df: pl.DataFrame, seq_view, export_dir: Path, prefix: str) -> None:

@@ -29,11 +29,12 @@ def score_sort(idxml_path: Path) -> str:
     return "desc" if Path(idxml_path).parent.name == SEARCH_RESULTS else "asc"
 
 
-def build_psm_views(idxml_path: Path, cache_dir: Path, spectra_df: pl.DataFrame, filename_to_index: dict,
+def build_psm_views(idxml_path: Path, cache_dir: Path, spectra_df: pl.DataFrame | dict, filename_to_index: dict,
                     tolerance: float, ppm: bool, export_dir: Path | None = None) -> bool:
     """Cache the Table, Heatmap, SequenceView and LinePlot of one idXML.
 
     Args:
+        spectra_df: MS2 peaks, or the per-file cache of ``write_spectra_cache``.
         export_dir: Also write the PSM and fragment ion TSV exports there.
 
     Returns:
