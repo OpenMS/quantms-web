@@ -143,3 +143,11 @@ def test_raw_p_cutoff_without_hits():
 
     df = pd.DataFrame({"p-value": [0.3, 0.6], "p-adj": [0.6, 0.6]})
     assert raw_p_cutoff(df, 0.05) == 0.025
+
+
+def test_lead_accession_picks_the_first_target_member():
+    from src.common.differential import lead_accession
+    assert lead_accession("sp|P00925|ENO2_YEAST") == "sp|P00925|ENO2_YEAST"
+    assert lead_accession("rev_sp|P40557|EPS1_YEAST;sp|P33327|DHE2_YEAST") == "sp|P33327|DHE2_YEAST"
+    assert lead_accession("sp|P1|A;sp|P2|B") == "sp|P1|A"
+    assert lead_accession("rev_sp|P1|A") == "rev_sp|P1|A"

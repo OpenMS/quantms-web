@@ -3,7 +3,7 @@
 import streamlit as st
 
 import polars as pl
-from src.common.differential import comparison_groups, raw_p_cutoff
+from src.common.differential import comparison_groups, lead_accession, raw_p_cutoff
 from src.common.guide import ensure_group_comparison, show_comparison_settings
 from src.common.results_helpers import get_abundance_data, get_id_column, get_sample_group_map
 from src.common.insight_tables import plot_cache
@@ -33,6 +33,8 @@ def render(ctx) -> None:
     volcano_df = statistics_df.dropna(subset=["log2FC", "p-value", "p-adj"]).copy()
     # Short labels: "sp|P05161|ISG15_HUMAN" -> "ISG15_HUMAN", so neighbouring labels overlap less
     volcano_df["label"] = volcano_df[id_col].astype(str).str.split("|").str[-1]
+    # A clicked point picks its lead protein in every component of the run
+    volcano_df["accession"] = volcano_df[id_col].map(lead_accession)
     volcano_pl_lazy = pl.from_pandas(volcano_df).lazy()
     # 3. Configure UI sliders (changing thresholds does not invalidate cache)
     fc_thresh = st.slider(
@@ -66,6 +68,7 @@ def render(ctx) -> None:
         ns_color="#95A5A6",
         show_threshold_lines=True,
         threshold_line_style="dash",
+        interactivity={"protein": "accession"},
     )
     # 5. Render the component
     state_manager = shared_state()

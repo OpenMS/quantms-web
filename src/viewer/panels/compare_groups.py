@@ -1,7 +1,7 @@
 """compare_groups as a Viewer component."""
 
 import streamlit as st
-from src.common.differential import comparison_groups, count_significant
+from src.common.differential import comparison_groups, count_significant, lead_accession
 from src.common.guide import (
     ensure_group_comparison,
     page_link,
@@ -9,7 +9,7 @@ from src.common.guide import (
 )
 from src.common.insight_tables import show_insight_table
 from src.common.results_helpers import get_abundance_data, get_id_column, get_sample_group_map
-from src.viewer.scope import needs_results
+from src.viewer.scope import needs_results, shared_state
 
 
 def render(ctx) -> None:
@@ -76,12 +76,18 @@ def render(ctx) -> None:
             "p-adj": "adjusted p-value",
         }
     )
+    # Picking a row picks its lead protein in every component of the run
+    # (the Identification tables, the volcano plot), and the other way round
+    table["accession"] = table["Protein"].map(lead_accession)
     show_insight_table(
         table,
         name="compare-groups",
         layout="fitColumns",
+        state_manager=shared_state(),
+        interactivity={"protein": "accession"},
         column_overrides={
             "log2 fold change": {"formatter": "money", "formatterParams": {"thousand": False, "precision": 2}},
+            "accession": {"visible": False},
         },
     )
     st.caption("The table's download button saves it as CSV, in the current sort and filter.")

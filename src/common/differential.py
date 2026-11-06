@@ -189,6 +189,20 @@ def run_differential(
     return out
 
 
+def lead_accession(protein_group) -> str:
+    """The accession a protein group is picked by: its first target member.
+
+    Group names list accessions separated by ";" (``sp|P1|A;sp|P2|B``); the
+    Identification tables list single accessions, so a protein picked in the
+    comparison selects its lead protein there, and the other way round.
+    """
+    members = [m.strip() for m in str(protein_group).split(";") if m.strip()]
+    for member in members:
+        if not member.startswith(("rev_", "DECOY_", "decoy_")):
+            return member
+    return members[0] if members else str(protein_group)
+
+
 def raw_p_cutoff(statistics_df: pd.DataFrame, padj: float = 0.05) -> float:
     """The p-value at which the adjusted p-value crosses ``padj``.
 
