@@ -780,6 +780,15 @@ def page_setup(page: str = "") -> dict[str, Any]:
     # Render the sidebar
     params = render_sidebar(page)
 
+    # Image downloads of OpenMS-Insight components follow the sidebar's
+    # "image export format", like show_fig() does for plain Plotly figures
+    try:
+        from openms_insight import set_image_format
+    except ImportError:  # not installed, or a release without the setting
+        pass
+    else:
+        set_image_format(st.session_state.get("image-format", "svg"))
+
     # A local install has no captcha or consent banner. Set this on every run,
     # not only when the workspace is first resolved: the workspace switcher
     # drops every params.json key from the session, "controllo" included.

@@ -1,4 +1,4 @@
-"""File name of a PSM spectrum's SVG download."""
+"""File name of a PSM spectrum's image download (the extension follows the format)."""
 
 
 def test_plain_peptide():
