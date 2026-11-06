@@ -219,7 +219,7 @@ def render(ctx) -> None:
                 charge=int(psm["charge"]),
                 file_index=mzml_names.index(psm["file"]),
                 scan=int(psm["scan"]),
-                seqview_key="proteins_seqview",
+                seqview_key=scoped("proteins_seqview"),
                 key=scoped("proteins"),
                 tolerance=tolerance,
                 ppm=ppm,

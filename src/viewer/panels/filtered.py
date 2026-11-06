@@ -48,7 +48,7 @@ def render(ctx) -> None:
         "Search the sequence (in any modification form) or proteins with the box in the table's toolbar. "
         "Tighten the q-value with the filter button, and hide contaminants with the switch."
     )
-    mode = sequence_mode_selector()
+    mode = sequence_mode_selector("filtered")
     filtered_psm_table(
         cache_dir,
         f"table_{cache_id_prefix}",
@@ -69,7 +69,7 @@ def render(ctx) -> None:
         cache_dir,
         selected_file,
         state_manager,
-        seqview_key=f"seqview_{cache_id_prefix}",
+        seqview_key=scoped(f"seqview_{cache_id_prefix}"),
         workflow_params=run_params,
         mzml_files=psm_mzml_files(run_params, run_dir / "results"),
     )

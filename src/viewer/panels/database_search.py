@@ -40,7 +40,7 @@ def render(ctx) -> None:
     st.subheader("PSM Overview")
     heatmap(state_manager=state_manager, height=350, key=scoped("search_map"))
     st.subheader("PSM Table")
-    mode = sequence_mode_selector()
+    mode = sequence_mode_selector("search")
     psm_table(cache_dir, f"table_{cache_id_prefix}", mode, state_manager)
     st.subheader("Peptide Sequence")
     seq_view(key=scoped(f"seqview_{cache_id_prefix}"), state_manager=state_manager, height=533)
@@ -54,7 +54,7 @@ def render(ctx) -> None:
         cache_dir,
         selected_file,
         state_manager,
-        seqview_key=f"seqview_{cache_id_prefix}",
+        seqview_key=scoped(f"seqview_{cache_id_prefix}"),
         workflow_params=run_params,
         mzml_files=psm_mzml_files(run_params, run_dir / "results"),
     )

@@ -4,7 +4,8 @@ from pathlib import Path
 
 from streamlit.testing.v1 import AppTest
 
-from src.viewer.catalog import CATALOG, COMPARISON_STEPS, DEFAULT_LAYOUT, LABELS, MODULES
+from src.layout_manager import validate_layout
+from src.viewer.catalog import CATALOG, COMPARISON_STEPS, DEFAULT_LAYOUT, LABELS, MODULES, PRESETS
 
 PANELS = Path("src/viewer/panels")
 
@@ -64,3 +65,14 @@ def test_experiments_keep_their_own_comparison():
     at.run(timeout=30)
     assert not at.exception
     assert at.markdown[0].value == "A:k_A:a | B:k_B_e1:b | A:k_A:a | B:k_B_e1:b | after:None:k:None"
+
+
+def test_presets_are_valid_layouts():
+    assert DEFAULT_LAYOUT == PRESETS[0]["layout"]
+    assert len({p["name"] for p in PRESETS}) == len({p["label"] for p in PRESETS}) == len(PRESETS)
+    for preset in PRESETS:
+        assert validate_layout([preset["layout"]], CATALOG) == "", preset["name"]
+        assert preset.get("help")
+    # Every component is in at least one view, besides the clustered heatmap kept for Edit layout
+    shown = {n for p in PRESETS for row in p["layout"] for n in row}
+    assert {c["name"] for c in CATALOG} - shown == {"clustered_heatmap"}

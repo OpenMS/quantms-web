@@ -6,8 +6,15 @@ import streamlit as st
 from src.common.common import page_setup
 from src.common.guide import explain_empty_run, needs_results, page_intro
 from src.common.results_helpers import get_runs
-from src.layout_manager import MAX_EXPERIMENTS, layout_button, render_experiments, resolve_layout, selected_datasets
-from src.viewer.catalog import CATALOG, DEFAULT_LAYOUT, LABELS, ViewerContext, renderers
+from src.layout_manager import (
+    MAX_EXPERIMENTS,
+    layout_button,
+    layout_presets,
+    render_experiments,
+    resolve_layout,
+    selected_datasets,
+)
+from src.viewer.catalog import CATALOG, DEFAULT_LAYOUT, LABELS, PRESETS, ViewerContext, renderers
 from src.viewer.comparison import edit_comparison_button
 from src.viewer.export import export_section
 from src.workflow.RunManager import FINISHED
@@ -18,9 +25,9 @@ KEY = "viewer_run"
 params = page_setup()
 st.title("Viewer")
 page_intro(
-    "Every result of your analysis in one place. Pick the run to show above the components; "
-    "**Edit layout** chooses which components appear and where, and adds runs to compare side by "
-    "side. **Edit comparison** changes how the groups are compared. Files of every run are under "
+    "Every result of your analysis in one place. **View** shows the components for one question, "
+    "such as quality control or differential abundance; pick the run to show above them. **Edit "
+    "layout** arranges your own components and adds runs to compare side by side. **Edit comparison** changes how the groups are compared. Files of every run are under "
     "**Export** at the bottom.",
     background="""
 - **Run summary**: did the run work? Proteins, peptides, PSMs and the identification rate.
@@ -51,6 +58,7 @@ if st.session_state.get("_viewer_selected") != selected:
     st.session_state["_viewer_selected"] = selected
 
 layout_path = workspace / "layouts" / "viewer.json"
+layout_presets(layout_path, CATALOG, PRESETS, DEFAULT_LAYOUT, key="viewer_view")
 layout, side_by_side = resolve_layout(layout_path, CATALOG, DEFAULT_LAYOUT)
 
 

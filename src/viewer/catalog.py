@@ -32,13 +32,36 @@ CATALOG = [{"name": name, "label": label, "group": group} for name, label, group
 MODULES = {name: module for name, _, _, module in _COMPONENTS}
 LABELS = {c["name"]: c["label"] for c in CATALOG}
 
-# What most users read first, in the order of the former result pages
-DEFAULT_LAYOUT = [
-    ["run_summary"],
-    ["group_comparison"],
-    ["volcano", "pca"],
-    ["protein_explorer"],
+# Ready-made views, one per question users bring to their results, picked with
+# the View selector above the Viewer. The first is the default layout.
+PRESETS = [
+    {
+        "name": "overview", "label": "Overview",
+        "layout": [["run_summary"], ["id_quality"], ["protein_abundance"]],
+        "help": "Did the run work: key figures, identification quality and the protein abundances.",
+    },
+    {
+        "name": "identification", "label": "Identification",
+        "layout": [["protein_explorer"], ["psms"], ["psms_rescored"], ["mass_shifts"]],
+        "help": "Which proteins and peptides were found, down to the annotated spectra.",
+    },
+    {
+        "name": "quality_control", "label": "Quality control",
+        "layout": [["sample_counts"], ["id_quality"], ["psms_search"], ["pca"]],
+        "help": "Whether the samples and identifications can be trusted.",
+    },
+    {
+        "name": "differential", "label": "Differential abundance",
+        "layout": [["group_comparison"], ["volcano"], ["heatmap"]],
+        "help": "Which proteins differ between your groups.",
+    },
+    {
+        "name": "pathways", "label": "Pathways",
+        "layout": [["group_comparison"], ["go_enrichment"]],
+        "help": "What the differing proteins have in common (GO enrichment).",
+    },
 ]
+DEFAULT_LAYOUT = PRESETS[0]["layout"]
 
 # The steps of the group comparison, set in the Edit comparison dialog
 COMPARISON_STEPS = [
