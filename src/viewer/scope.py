@@ -19,8 +19,16 @@ CHAINS_KEY = "_viewer_chains"
 
 
 def scoped(key: str) -> str:
-    """``key`` for the experiment being drawn: the first keeps it, the others get a suffix."""
+    """``key`` for the experiment being drawn and its run.
+
+    The run is part of the key so that picking another run draws new components:
+    an Insight table kept under one key keeps the columns of the run it showed
+    first, and a selection made in one run means nothing in another.
+    """
     index = st.session_state.get(SCOPE_KEY)
+    run = st.session_state.get(RUN_KEY)
+    if run is not None:
+        key = f"{key}_{run}"
     return f"{key}_e{index}" if index else key
 
 

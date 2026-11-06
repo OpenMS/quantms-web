@@ -63,4 +63,4 @@ def test_experiments_keep_their_own_comparison():
     at = AppTest.from_string(_SCOPE_APP)
     at.run(timeout=30)
     assert not at.exception
-    assert at.markdown[0].value == "A:k:a | B:k_e1:b | A:k:a | B:k_e1:b | after:None:k:None"
+    assert at.markdown[0].value == "A:k_A:a | B:k_B_e1:b | A:k_A:a | B:k_B_e1:b | after:None:k:None"
