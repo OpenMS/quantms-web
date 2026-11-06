@@ -1,20 +1,24 @@
 // Helpers for the quantms-web scenarios: the Viewer shows the components of
-// the saved layout, so a scenario imports a layout through Edit layout to see
-// the component it checks.
-const fs = require("fs");
-const path = require("path");
+// the current view, so a scenario makes a view of its own (+ in the view bar)
+// holding the component it checks.
 
-// Opens the Viewer showing `rows` (rows of component names) for the run
-// picked above it, which after a run is the run that just finished.
+// Opens the Viewer showing `rows` (rows of component names, one component
+// per row) for the run picked above it, which after a run is the run that
+// just finished. `name` names the scenario's screenshots.
 async function showComponents(t, rows, name) {
   await t.open("viewer", { timeout: 10 * 60 * 1000 });
-  await t.clickButton("Edit layout");
-  const file = path.join(t.out, `${name}-layout.json`);
-  fs.writeFileSync(file, JSON.stringify([rows]));
-  const editor = await t.waitForComponent("#file");
-  await editor.locator("#file").setInputFiles(file);
+  const bar = await t.waitForComponent("button.v.add");
+  await bar.locator("button.v.add").click();
+  // + opens Customize views on a copy of the current view: empty it, then
+  // click each component in, every click adding a row
+  const editor = await t.waitForComponent("#component-search");
+  await editor.getByRole("button", { name: "Clear", exact: true }).click();
+  for (const component of rows.flat()) {
+    await editor.locator(`.chip[data-name="${component}"]`).click();
+  }
+  await t.shot(`${name}-view`);
   await editor.getByRole("button", { name: "Save", exact: true }).click();
-  // Save reruns the page, which closes the dialog and draws the new layout.
+  // Save reruns the page, which closes the dialog and draws the new view.
   await t.page.locator('[role="dialog"]').waitFor({ state: "detached", timeout: 120000 });
   await t.settle({ timeout: 10 * 60 * 1000 });
 }
