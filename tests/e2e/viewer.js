@@ -19,7 +19,9 @@ async function showComponents(t, rows, name) {
   await t.shot(`${name}-view`);
   await editor.getByRole("button", { name: "Save", exact: true }).click();
   // Save reruns the page, which closes the dialog and draws the new view.
-  await t.page.locator('[role="dialog"]').waitFor({ state: "detached", timeout: 120000 });
+  // The dialog goes only when that rerun ends, and the first draw after a
+  // run builds the components' caches (minutes on a Windows runner).
+  await t.page.locator('[role="dialog"]').waitFor({ state: "detached", timeout: 10 * 60 * 1000 });
   await t.settle({ timeout: 10 * 60 * 1000 });
 }
 
