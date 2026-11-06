@@ -19,18 +19,17 @@ async function checkTables(t, page) {
 }
 
 module.exports = async (t) => {
-  // The upload page fills the workspace with the example data.
-  await t.open("workflow_fileupload");
+  // Describe experiment fills a fresh workspace with the example data.
   await t.open("workflow_configure");
   // A fresh workspace selects every example file; keep two, one per group.
   // The demo files get their groups from their names.
   const files = t.page
     .locator('[data-testid="stMultiSelect"]')
-    .filter({ has: t.page.locator('[data-testid="stWidgetLabel"]', { hasText: "MS data files" }) })
+    .filter({ has: t.page.locator('[data-testid="stWidgetLabel"]', { hasText: "MS data" }) })
     .first();
   await files.locator('[title="Clear all"], [aria-label="Clear all"]').first().click();
   await t.settle();
-  for (const [file] of FILES) await t.choose("MS data files", file);
+  for (const [file] of FILES) await t.choose("MS data", file);
   await t.shot("configured");
 
   await t.open("workflow_run");
