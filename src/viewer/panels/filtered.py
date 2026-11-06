@@ -74,7 +74,6 @@ def render(ctx) -> None:
         workflow_params=run_params,
         mzml_files=psm_mzml_files(run_params, run_dir / "results"),
     )
-    st.subheader("Precursor ion chromatogram")
     show_precursor_xic(
         cache_dir,
         selected_file,

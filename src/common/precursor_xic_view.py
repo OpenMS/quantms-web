@@ -73,7 +73,7 @@ def show_precursor_xic(cache_dir: Path, idxml: Path, state_manager, *, mzml_file
     if len(present) > 1:
         every_run = st.segmented_control(
             "Show", ["Isotope peaks in this run", "Monoisotopic peak in every run"],
-            default="Isotope peaks in this run", key=f"{key}_xic_mode",
+            default="Isotope peaks in this run", key=f"{key}_xic_mode", label_visibility="collapsed",
         ) == "Monoisotopic peak in every run"
     if every_run:
         traces = _run_traces(tuple(str(p) for p in present), tuple(p.stat().st_mtime for p in present),
@@ -84,41 +84,15 @@ def show_precursor_xic(cache_dir: Path, idxml: Path, state_manager, *, mzml_file
         colors = {name: palette[i % len(palette)] for i, name in enumerate(names)}
         colors[xic.MS2_SERIES] = "#d62728"
         data = xic.with_ms2_marker(traces, ms2_rt)
-        st.caption(
-            f"m/z {mz:.4f} ({charge}+) within ±{xic.PPM:g} ppm, ±{xic.RUNS_RT_WINDOW:g} s around the MS2 spectrum "
-            "(the runs' retention times are not aligned). Similar peaks in the runs of a group are what the "
-            "quantification compares."
-        )
-        absent = [name for name in names if name not in set(traces["series"])]
-        if absent:
-            st.caption(f"No MS1 spectra in this window: {', '.join(absent)}.")
         cache_id = f"xic_runs_{idxml.stem}_{int(psm_id)}"
-        title = f"{hit['sequence']} {charge}+ in every run"
+        title = f"Precursor ion chromatogram: {hit['sequence']} {charge}+, m/z {mz:.4f}, every run"
     else:
         traces = _isotope_traces(str(mzml), Path(mzml).stat().st_mtime, mz, charge, ms2_rt)
         data = xic.with_ms2_marker(traces, ms2_rt)
         colors = {xic.isotope_label(k): ISOTOPE_COLORS[xic.isotope_label(k)] for k in range(xic.ISOTOPES)}
         colors[xic.MS2_SERIES] = ISOTOPE_COLORS[xic.MS2_SERIES]
-        summary = xic.summarize(traces, ms2_rt)
-        cols = st.columns(4)
-        cols[0].metric("Precursor m/z", f"{mz:.4f}", help=f"Monoisotopic, {charge}+, from the peptide sequence.")
-        cols[1].metric("Apex RT (s)", "–" if summary["apex_rt"] is None else f"{summary['apex_rt']:.1f}")
-        cols[2].metric(
-            "MS2 vs. apex (s)", "–" if summary["ms2_offset"] is None else f"{summary['ms2_offset']:+.1f}",
-            help="When the MS2 spectrum was taken, relative to the top of the elution peak.",
-        )
-        corr = summary["isotope_correlation"]
-        cols[3].metric(
-            "M / M+1 correlation", "–" if corr is None else f"{corr:.2f}",
-            help="How closely the first isotope peak follows the monoisotopic one. Close to 1 for a clean "
-            "peak; lower values point to another ion at the same m/z.",
-        )
-        st.caption(
-            f"Monoisotopic and isotope peaks within ±{xic.PPM:g} ppm, ±{xic.RT_WINDOW:g} s around the MS2 "
-            "spectrum (red line). The traces should rise and fall together."
-        )
         cache_id = f"xic_{idxml.stem}_{int(psm_id)}"
-        title = f"{hit['sequence']} {charge}+"
+        title = f"Precursor ion chromatogram: {hit['sequence']} {charge}+, m/z {mz:.4f}"
     if traces.empty:
         st.info("No MS1 spectra in this retention time window.")
         return
