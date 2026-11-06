@@ -6,8 +6,8 @@ from src.common.spectrum_view import ensure_psm_views, fragment_tolerance, psm_m
 from src.common.fragment_plots import fragment_error_plot, ion_table, ion_table_html, load_psm_fragments
 from src.common.result_filters import q_suggestions
 from src.common.sequence_display import filtered_psm_table, sequence_mode_selector
-from openms_insight import Heatmap, SequenceView, StateManager
-from src.viewer.scope import needs_results, scoped, show_fig
+from openms_insight import Heatmap, SequenceView
+from src.viewer.scope import needs_results, scoped, show_fig, shared_state, PSM_PRIVATE
 
 
 def render(ctx) -> None:
@@ -35,7 +35,7 @@ def render(ctx) -> None:
         st.warning("Visualization cache not found. Please re-run the workflow.")
         return
     # Initialize state manager for cross-component linking
-    state_manager = StateManager(scoped("filtered_state"))
+    state_manager = shared_state("filtered", PSM_PRIVATE)
     # Load components from cache (no data parameter needed)
     heatmap = Heatmap(cache_id=f"heatmap_{cache_id_prefix}", cache_path=str(cache_dir))
     seq_view = SequenceView(cache_id=f"seqview_{cache_id_prefix}", cache_path=str(cache_dir))

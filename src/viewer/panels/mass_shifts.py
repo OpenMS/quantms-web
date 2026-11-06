@@ -5,11 +5,11 @@ import shutil
 from pathlib import Path
 import polars as pl
 import streamlit as st
-from openms_insight import LinePlot, StateManager, Table
+from openms_insight import LinePlot, Table
 from src.common.guide import page_link
 from src.common.mass_shifts import MIN_PSMS, mass_shift_summary, psm_mass_shifts
 from src.common.results_helpers import get_run_dir, get_run_params, search_tolerances
-from src.viewer.scope import needs_results, scoped
+from src.viewer.scope import needs_results, scoped, shared_state
 
 
 def render(ctx) -> None:
@@ -129,7 +129,7 @@ def render(ctx) -> None:
                 {"field": "file", "title": "File"},
             ],
         )
-    state_manager = StateManager(scoped("mass_shifts_state"))
+    state_manager = shared_state()
     LinePlot(cache_id=ids["histogram"], cache_path=str(cache_dir))(
         key=scoped("mass_shift_histogram"), state_manager=state_manager, height=400
     )

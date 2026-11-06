@@ -6,8 +6,8 @@ from pathlib import Path
 from src.common.results_helpers import get_run_dir, get_run_params
 from src.common.spectrum_view import ensure_psm_views, psm_mzml_files, show_selected_psm_spectrum
 from src.common.sequence_display import psm_table, sequence_mode_selector
-from openms_insight import Heatmap, SequenceView, StateManager
-from src.viewer.scope import needs_results, scoped
+from openms_insight import Heatmap, SequenceView
+from src.viewer.scope import needs_results, scoped, shared_state, PSM_PRIVATE
 
 
 def render(ctx) -> None:
@@ -55,7 +55,7 @@ def render(ctx) -> None:
         st.warning("Visualization cache not found. Please re-run the workflow.")
         return
     # Initialize state manager for cross-component linking
-    state_manager = StateManager(scoped("rescoring_state"))
+    state_manager = shared_state("rescored", PSM_PRIVATE)
     # Load components from cache (no data parameter needed)
     heatmap = Heatmap(cache_id=f"heatmap_{cache_id_prefix}", cache_path=str(cache_dir))
     seq_view = SequenceView(cache_id=f"seqview_{cache_id_prefix}", cache_path=str(cache_dir))

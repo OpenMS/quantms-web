@@ -32,6 +32,25 @@ def scoped(key: str) -> str:
     return f"{key}_e{index}" if index else key
 
 
+# Identifiers of the PSM components that are row numbers of their own table,
+# so they mean another PSM in each (database search, rescored, filtered)
+PSM_PRIVATE = ("identification", "peak")
+
+
+def shared_state(owner: str = "", private: tuple = ()):
+    """The Insight state every component of the experiment being drawn shares.
+
+    One per experiment and run, not per component or view: a protein, peptide
+    or spectrum picked in one component stays picked in the others, also after
+    switching views. ``private`` identifiers (a row number of the component's
+    own table) are kept apart for ``owner``.
+    """
+    from src.layout_manager import experiment_state
+
+    index = st.session_state.get(SCOPE_KEY) or 0
+    return experiment_state("viewer", index, st.session_state.get(RUN_KEY), private=private, owner=owner)
+
+
 def shown_run() -> str | None:
     """The run of the experiment being drawn, None outside the Viewer."""
     return st.session_state.get(RUN_KEY)

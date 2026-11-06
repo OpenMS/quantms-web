@@ -23,14 +23,24 @@ def _start_over(ctx: ViewerContext) -> None:
     save_params(ctx.params)
 
 
-def edit_comparison_button(ctx: ViewerContext) -> None:
+def _open_key(index: int) -> str:
+    return f"comparison_dialog_open_{index}"
+
+
+def open_comparison(index: int = 0) -> None:
+    """Open the Edit comparison dialog of experiment ``index`` (drawn by ``edit_comparison_button``)."""
+    st.session_state[_open_key(index)] = True
+
+
+def edit_comparison_button(ctx: ViewerContext, button: bool = True) -> None:
     """A button opening the comparison steps of the experiment's run.
 
-    The dialog stays open over reruns of the page it did not ask for (the
-    Viewer's components can rerun it right after the click), until it is
-    closed or **Done** is pressed.
+    Without ``button`` only the dialog is drawn, opened by ``open_comparison``
+    (the Viewer's view bar does that for the first run). The dialog stays open
+    over reruns of the page it did not ask for (the Viewer's components can
+    rerun it right after the click), until it is closed or **Done** is pressed.
     """
-    open_key = f"comparison_dialog_open_{ctx.index}"
+    open_key = _open_key(ctx.index)
 
     def _closed() -> None:
         st.session_state[open_key] = False
@@ -57,7 +67,7 @@ def edit_comparison_button(ctx: ViewerContext) -> None:
             _closed()
             st.rerun()
 
-    if st.button("Edit comparison", key=f"comparison_open_{ctx.index}", icon=":material/tune:"):
+    if button and st.button("Edit comparison", key=f"comparison_open_{ctx.index}", icon=":material/tune:"):
         st.session_state[open_key] = True
     if st.session_state.get(open_key):
         _dialog()

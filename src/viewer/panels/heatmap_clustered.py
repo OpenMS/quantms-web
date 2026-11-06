@@ -1,7 +1,7 @@
 """results_heatmap_clustered as a Viewer component."""
 
 import streamlit as st
-from openms_insight import StateManager
+
 import numpy as np
 import polars as pl
 from src.common.insight_tables import plot_cache
@@ -14,7 +14,7 @@ from src.common.results_helpers import (
     log2_matrix,
 )
 from openms_insight import ClusteredHeatmap
-from src.viewer.scope import needs_results, scoped
+from src.viewer.scope import needs_results, scoped, shared_state
 
 
 def render(ctx) -> None:
@@ -83,7 +83,7 @@ def render(ctx) -> None:
         intensity_label="Z-score",
         group_colors=group_colors,
     )
-    state_manager = StateManager(scoped("heatmap_clustered_state"))
+    state_manager = shared_state()
     # Scale height with the number of proteins so row labels stay readable -
     # BaseComponent otherwise defaults to a flat 400px, too short for a
     # dendrogram+heatmap composite with more than a handful of rows.

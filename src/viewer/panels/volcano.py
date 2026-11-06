@@ -1,14 +1,14 @@
 """results_volcano as a Viewer component."""
 
 import streamlit as st
-from openms_insight import StateManager
+
 import polars as pl
 from src.common.differential import comparison_groups, raw_p_cutoff
 from src.common.guide import ensure_group_comparison, show_comparison_settings
 from src.common.results_helpers import get_abundance_data, get_id_column, get_sample_group_map
 from src.common.insight_tables import plot_cache
 from openms_insight import VolcanoPlot
-from src.viewer.scope import needs_results, scoped
+from src.viewer.scope import needs_results, scoped, shared_state
 
 
 def render(ctx) -> None:
@@ -68,7 +68,7 @@ def render(ctx) -> None:
         threshold_line_style="dash",
     )
     # 5. Render the component
-    state_manager = StateManager(scoped("volcano_state"))  # Inject the project state management object
+    state_manager = shared_state()
     volcano_plot_component(
         state_manager=state_manager,
         fc_threshold=fc_thresh,

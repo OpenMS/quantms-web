@@ -2,7 +2,7 @@
 
 import polars as pl
 import streamlit as st
-from openms_insight import StateManager
+
 from src.common.guide import ensure_group_comparison, show_comparison_settings
 from src.common.insight_tables import plot_cache, show_insight_table
 from src.common.results_helpers import (
@@ -13,7 +13,7 @@ from src.common.results_helpers import (
     sample_columns,
 )
 from openms_insight import PCAPlot
-from src.viewer.scope import needs_results, scoped
+from src.viewer.scope import needs_results, scoped, shared_state
 
 
 def render(ctx) -> None:
@@ -99,7 +99,7 @@ def render(ctx) -> None:
     pc_x = int(pc_x_label.replace("PC", ""))
     pc_y = int(pc_y_label.replace("PC", ""))
     # 5. Render the component
-    state_manager = StateManager(scoped("pca_state"))
+    state_manager = shared_state()
     pca_component(state_manager=state_manager, pc_x=pc_x, pc_y=pc_y, height=600, key=scoped("pca_plot"))
     st.caption(
         "Each point is a sample, placed by its overall protein profile. Samples of one group should "

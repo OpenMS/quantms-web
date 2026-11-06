@@ -1,4 +1,4 @@
-"""Viewer: every result of a run, arranged with Edit layout, several runs side by side."""
+"""Viewer: every result of a run in views users pick and make, several runs side by side."""
 from pathlib import Path
 
 import streamlit as st
@@ -6,16 +6,9 @@ import streamlit as st
 from src.common.common import page_setup
 from src.common.guide import explain_empty_run, needs_results, page_intro
 from src.common.results_helpers import get_runs
-from src.layout_manager import (
-    MAX_EXPERIMENTS,
-    layout_button,
-    layout_presets,
-    render_experiments,
-    resolve_layout,
-    selected_datasets,
-)
+from src.layout_manager import MAX_EXPERIMENTS, render_experiments, resolve_layout, selected_datasets, view_bar
 from src.viewer.catalog import CATALOG, DEFAULT_LAYOUT, LABELS, PRESETS, ViewerContext, renderers
-from src.viewer.comparison import edit_comparison_button
+from src.viewer.comparison import edit_comparison_button, open_comparison
 from src.viewer.export import export_section
 from src.workflow.RunManager import FINISHED
 from src.workflow.run_widgets import get_selected_run, run_label, set_selected_run
@@ -25,10 +18,11 @@ KEY = "viewer_run"
 params = page_setup()
 st.title("Viewer")
 page_intro(
-    "Every result of your analysis in one place. **View** shows the components for one question, "
-    "such as quality control or differential abundance; pick the run to show above them. **Edit "
-    "layout** arranges your own components and adds runs to compare side by side. **Edit comparison** changes how the groups are compared. Files of every run are under "
-    "**Export** at the bottom.",
+    "Every result of your analysis in one place. Each view shows the components for one question, "
+    "such as quality control or differential abundance; pick the run to show below the views. **+** "
+    "makes a view of your own, ✏️ orders the views and adds runs to compare side by side, ⚖️ "
+    "changes how the groups are compared. A protein, peptide or spectrum you pick stays picked "
+    "when you switch views. Files of every run are under **Export** at the bottom.",
     background="""
 - **Run summary**: did the run work? Proteins, peptides, PSMs and the identification rate.
 - **Group comparison**, **Volcano plot**, **PCA**, **Heatmap**, **GO enrichment**: which
@@ -58,7 +52,16 @@ if st.session_state.get("_viewer_selected") != selected:
     st.session_state["_viewer_selected"] = selected
 
 layout_path = workspace / "layouts" / "viewer.json"
-layout_presets(layout_path, CATALOG, PRESETS, DEFAULT_LAYOUT, key="viewer_view")
+view_bar(
+    layout_path, CATALOG, PRESETS, DEFAULT_LAYOUT, key="viewer_view",
+    actions=[{"id": "compare", "icon": "⚖️", "help": "Edit comparison: how the groups of the first run "
+              "are compared", "on_click": open_comparison}],
+    max_experiments=MAX_EXPERIMENTS, experiment_label="Run", target="the Viewer",
+    help_text=(
+        "Drag a view to order the bar, untick it to keep it under More. Your own views take up to 3 "
+        "components per row; ready-made views can be duplicated. Add runs to compare them side by side."
+    ),
+)
 layout, side_by_side = resolve_layout(layout_path, CATALOG, DEFAULT_LAYOUT)
 
 
@@ -68,18 +71,10 @@ def experiment_renderers(run_id: str, index: int):
 
 def buttons(index: int) -> None:
     run_id = selected_datasets(KEY, index + 1)[index]
-    if index == 0:
-        layout_button(
-            layout_path, CATALOG, DEFAULT_LAYOUT, key="viewer_layout",
-            max_experiments=MAX_EXPERIMENTS, experiment_label="Run", target="the Viewer",
-            export_filename="opendda-layout.json",
-            help_text=(
-                "Drag components into the grid (up to 3 per row). Add runs to compare them side by "
-                "side or one below the other, then press **Save**."
-            ),
-        )
     if run_id:
-        edit_comparison_button(ViewerContext(workspace=workspace, run_id=run_id, index=index, params=params))
+        # The first run's comparison opens from ⚖️ in the view bar
+        edit_comparison_button(ViewerContext(workspace=workspace, run_id=run_id, index=index, params=params),
+                               button=index > 0)
 
 
 picked = render_experiments(

@@ -1,7 +1,7 @@
 """results_heatmap as a Viewer component."""
 
 import streamlit as st
-from openms_insight import StateManager
+
 import numpy as np
 import polars as pl
 from src.common.insight_tables import plot_cache
@@ -14,7 +14,7 @@ from src.common.results_helpers import (
     log2_matrix,
 )
 from openms_insight import Heatmap
-from src.viewer.scope import needs_results, scoped
+from src.viewer.scope import needs_results, scoped, shared_state
 
 
 def render(ctx) -> None:
@@ -82,7 +82,7 @@ def render(ctx) -> None:
         )
 
         # Render the component
-        state_manager = StateManager(scoped("heatmap_state"))
+        state_manager = shared_state()
         heatmap_component(state_manager=state_manager, key=scoped("heatmap"))
         st.caption(
             "The most variable proteins (rows) across samples (columns), each row scaled to its own mean "

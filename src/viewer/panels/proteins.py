@@ -11,7 +11,7 @@ from src.common.result_filters import add_protein_flags, file_conditions, max_re
 from src.common.results_helpers import get_run_dir, get_run_params
 from src.common.spectrum_view import ensure_psm_views, fragment_tolerance, psm_mzml_files, show_spectrum
 from src.WorkflowTest import WorkflowTest, demo_group
-from src.viewer.scope import needs_results, scoped
+from src.viewer.scope import needs_results, scoped, shared_state
 
 
 def render(ctx) -> None:
@@ -82,7 +82,7 @@ def render(ctx) -> None:
     # The key figures count the proteins the table's filters leave, so they are
     # filled in once the table has been drawn with the viewer's filters
     figures = st.container()
-    state_manager = StateManager(scoped("proteins_page"))
+    state_manager = shared_state()
     # Columns the linked tables filter on: already shown by the selection above them
     HIDDEN = {"visible": False}
 
