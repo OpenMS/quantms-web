@@ -16,7 +16,7 @@ from scipy.stats import fisher_exact
 from src.workflow.WorkflowManager import WorkflowManager
 from src.common.common import page_setup
 from src.common.results_helpers import get_abundance_data
-from src.common.results_helpers import build_spectra_cache, load_idxml, search_results_dir
+from src.common.results_helpers import load_idxml, search_results_dir, write_spectra_cache
 from src.common.identified_spectra import SPECTRA_DIR, write_identified_spectra
 from src.common.psm_views import build_psm_views
 from src.common.contaminants import CONTAMINANT_PREFIX, append_fasta, write_contaminants
@@ -97,7 +97,6 @@ SEARCH_EXCLUDE = [
 ]
 # Orbitrap HCD (the "Orbitrap HCD" preset), the most common DDA setup.
 SEARCH_DEFAULTS = {
-    "threads": 8,
     "Search:enzyme": "Trypsin/P",
     "Search:decoys": "auto",
     "Search:peptide:missed_cleavages": 2,
@@ -151,6 +150,31 @@ def demo_group(filename: str) -> str:
 
 
 # params = page_setup()
+# Threads one ProSE process uses well: on a machine with many cores, several
+# processes at 16-32 threads, each searching a share of the files, finish
+# sooner than one process with all of them (ProSE's documentation).
+SEARCH_THREADS_PER_PROCESS = 16
+
+
+def search_batches(n_files: int, max_threads: int) -> list[list[int]]:
+    """Split the files of a search into the ProSE processes that run side by side.
+
+    One process per SEARCH_THREADS_PER_PROCESS threads of the budget (at
+    least one, at most one per file); the files are dealt out in order, as
+    evenly as possible, so each process gets a share of the threads.
+    """
+    if n_files <= 0:
+        return []
+    processes = max(1, min(n_files, int(max_threads) // SEARCH_THREADS_PER_PROCESS))
+    size, extra = divmod(n_files, processes)
+    batches, start = [], 0
+    for p in range(processes):
+        end = start + size + (1 if p < extra else 0)
+        batches.append(list(range(start, end)))
+        start = end
+    return batches
+
+
 class WorkflowTest(WorkflowManager):
     # Every run is kept as its own result set (runs/<id>/); the results pages
     # show the run picked under "Showing run".
@@ -392,10 +416,26 @@ class WorkflowTest(WorkflowManager):
         return tolerance, params.get("Search:fragment:mass_tolerance_unit", "ppm") == "ppm"
 
     def run_search(self, instance: str, in_mzml: list, out_idxml: list, database_fasta: Path) -> bool:
-        """Search the spectra with ProSE against the database (with its decoys)."""
+        """Search the spectra with ProSE against the database (with its decoys).
+
+        ProSE searches several files in one process: it builds the fragment
+        index once and reuses it, and each file gets all the threads of the
+        process. One process per file built the index once per file and,
+        with many files, ran as many processes as there are threads, each
+        with one thread and an index of its own in memory. The files are
+        split into ``search_batches()``: one process per
+        SEARCH_THREADS_PER_PROCESS threads of the budget.
+        """
+        batches = search_batches(len(in_mzml), self.executor._get_max_threads())
+        self.logger.log(
+            f"Searching {len(in_mzml)} file(s) in {len(batches)} ProSE process(es)", 1
+        )
         return self.executor.run_topp(
             "ProSE",
-            {"in": in_mzml, "out_idxml": out_idxml},
+            {
+                "in": [[in_mzml[i] for i in b] for b in batches],
+                "out_idxml": [[out_idxml[i] for i in b] for b in batches],
+            },
             {"database": str(database_fasta), "Search:decoys": "auto"},
             tool_instance_name=instance,
         )
@@ -1188,13 +1228,14 @@ class WorkflowTest(WorkflowManager):
             cache_dir = results_dir_path / "insight_cache"
             cache_dir.mkdir(parents=True, exist_ok=True)
 
-            # Get mzML directory
-            mzml_dir = Path(in_mzML[0]).parent
-
-            # Build spectra cache (once, shared by all stages). Every input mzML
-            # gets a fixed file index, so each PSM links to its own run's spectra.
+            # Spectra cache (once, shared by all stages): one parquet per input
+            # mzML, read only for the idXML of that file, so memory follows one
+            # run instead of the whole study. Every input mzML gets a fixed file
+            # index, so each PSM links to its own run's spectra.
             filename_to_index = {Path(m).name: i for i, m in enumerate(in_mzML)}
-            spectra_df, filename_to_index = build_spectra_cache(mzml_dir, filename_to_index, in_mzML)
+            spectra_dir = Path(self.workflow_dir, "spectra-cache")
+            shutil.rmtree(spectra_dir, ignore_errors=True)
+            spectra_df = write_spectra_cache(spectra_dir, filename_to_index, in_mzML)
 
             for idxml_file in search_results:
                 idxml_path = Path(idxml_file)
@@ -1267,6 +1308,7 @@ class WorkflowTest(WorkflowManager):
                     export_dir=results_dir_path / "exports",
                 ):
                     self.logger.log(f"⚠️ No identifications in {idxml_path.name}, skipping its result views")
+            shutil.rmtree(spectra_dir, ignore_errors=True)
 
             self.logger.log("✅ Filtering complete")
 
@@ -1499,13 +1541,14 @@ class WorkflowTest(WorkflowManager):
             cache_dir = results_dir_path / "insight_cache"
             cache_dir.mkdir(parents=True, exist_ok=True)
 
-            # Get mzML directory
-            mzml_dir = Path(in_mzML[0]).parent
-
-            # Build spectra cache (once, shared by all stages). Every input mzML
-            # gets a fixed file index, so each PSM links to its own run's spectra.
+            # Spectra cache (once, shared by all stages): one parquet per input
+            # mzML, read only for the idXML of that file, so memory follows one
+            # run instead of the whole study. Every input mzML gets a fixed file
+            # index, so each PSM links to its own run's spectra.
             filename_to_index = {Path(m).name: i for i, m in enumerate(in_mzML)}
-            spectra_df, filename_to_index = build_spectra_cache(mzml_dir, filename_to_index, in_mzML)
+            spectra_dir = Path(self.workflow_dir, "spectra-cache")
+            shutil.rmtree(spectra_dir, ignore_errors=True)
+            spectra_df = write_spectra_cache(spectra_dir, filename_to_index, in_mzML)
 
             for idxml_file in search_results:
                 idxml_path = Path(idxml_file)
@@ -1575,6 +1618,7 @@ class WorkflowTest(WorkflowManager):
                     export_dir=results_dir_path / "exports",
                 ):
                     self.logger.log(f"⚠️ No identifications in {idxml_path.name}, skipping its result views")
+            shutil.rmtree(spectra_dir, ignore_errors=True)
 
             # --- IDMapper ---
             self.logger.log("🗺️ Mapping IDs to isobaric consensus features...")
