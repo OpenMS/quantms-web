@@ -18,6 +18,16 @@
       "license": "MIT",
       "reason": "PyPI metadata says UNKNOWN, but the wheel ships an MIT LICENSE file (Copyright (c) 2022-2024 Alireza Ghasemi).",
       "attribution": "About dialog, Python packages (the wheel's LICENSE file)."
+    },
+    "streamlit-plotly-events": {
+      "license": "MIT",
+      "reason": "PyPI metadata names no license, but the wheel ships an MIT LICENSE file (dist-info/LICENSE); the bundled frontend keeps its MIT notices in *.LICENSE.txt.",
+      "attribution": "About dialog, Python packages (the wheel's LICENSE file)."
+    },
+    "tqdm": {
+      "license": "MPL-2.0 AND MIT",
+      "reason": "MPL-2.0 is file-level copyleft: it covers tqdm's own files, which ship unmodified as installed from PyPI; the app's code is not affected.",
+      "attribution": "About dialog, Python packages (license text from the installed package)."
     }
   }
 }
