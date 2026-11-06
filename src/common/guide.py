@@ -14,7 +14,6 @@ from src.common.results_helpers import get_abundance_data, get_id_column, get_sa
 # Page paths, so links survive a page being renamed in one place only.
 PAGES = {
     "home": ("content/quickstart.py", "Home", "🏠"),
-    "upload": ("content/workflow_fileupload.py", "Upload data", "📁"),
     "configure": ("content/workflow_configure.py", "Describe experiment", "⚙️"),
     "run": ("content/workflow_run.py", "Run analysis", "🚀"),
     "overview": ("content/results_overview.py", "Run summary", "🧾"),
@@ -68,15 +67,13 @@ def next_steps(*steps: tuple[str, str]) -> None:
         cols[1].markdown(why)
 
 
-def needs_results(message: str = "No results yet. Upload your data, describe the experiment and run the analysis first.") -> None:
+def needs_results(message: str = "No results yet. Describe your experiment (your runs, database and groups) and run the analysis first.") -> None:
     """Explain that the page needs a finished run, link to the start, and stop."""
     st.info(message)
-    cols = st.columns(3)
+    cols = st.columns(2)
     with cols[0]:
-        page_link("upload")
-    with cols[1]:
         page_link("configure")
-    with cols[2]:
+    with cols[1]:
         page_link("run")
     st.stop()
 

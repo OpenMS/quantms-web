@@ -18,8 +18,10 @@ inputs:
   mzML-files:
     types:
     - mzML
+    - raw
+    - d
     multiple: true
-    description: DDA LC-MS/MS runs.
+    description: DDA LC-MS/MS runs (Thermo .raw and Bruker .d are converted to mzML).
   fasta-file:
     types:
     - fasta
@@ -118,7 +120,6 @@ results:
   page: content/enrichment.py
 pages:
 - content/quickstart.py
-- content/workflow_fileupload.py
 - content/workflow_configure.py
 - content/workflow_run.py
 - content/results_overview.py

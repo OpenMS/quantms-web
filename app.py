@@ -26,7 +26,6 @@ if __name__ == '__main__':
             st.Page(Path("content", "quickstart.py"), title="Home", icon="🏠", default=True),
         ],
         "Step 1 · Set up and run": [
-            st.Page(Path("content", "workflow_fileupload.py"), title="Upload data", icon="📁"),
             st.Page(Path("content", "workflow_configure.py"), title="Describe experiment", icon="⚙️"),
             st.Page(Path("content", "workflow_run.py"), title="Run analysis", icon="🚀"),
         ],

@@ -210,8 +210,8 @@ def diagnose_empty_run(run_dir: Path, params: dict, ms2_spectra=None) -> dict | 
         )
         causes.append(
             "The precursor or fragment mass tolerance, or the enzyme, does not fit the data "
-            "(e.g. a high-resolution setting on ion-trap spectra). Try the instrument presets on "
-            "the Describe experiment page."
+            "(e.g. a high-resolution setting on ion-trap spectra). Pick your Instrument in "
+            "Your analysis on the Describe experiment page."
         )
         if not few:
             causes.append(

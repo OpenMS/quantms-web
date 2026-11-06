@@ -88,12 +88,13 @@ with steps[0]:
     st.markdown(
         """
 ### 1 · Set up and run
-Upload your **mzML** files and a **FASTA** file with the protein sequences of your
-organism (or import a public dataset from PRIDE). Say which sample belongs to which
-group, then press Run. A run takes minutes to hours depending on the data.
+Choose your runs (**mzML**, Thermo *.raw* or Bruker *.d*) and the protein sequences of
+your organism (a **FASTA** file or a UniProt proteome), or reanalyse a public dataset
+from PRIDE. Say which sample belongs to which group, then press Run. A run takes minutes
+to hours depending on the data.
 """
     )
-    page_link("upload", "Upload data")
+    page_link("configure", "Describe experiment")
 with steps[1]:
     st.markdown(
         """

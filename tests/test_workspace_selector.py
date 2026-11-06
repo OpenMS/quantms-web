@@ -25,7 +25,7 @@ def _workspace_selectbox(at):
 @pytest.fixture
 def app(tmp_path):
     # Any page that runs page_setup() renders the sidebar selector.
-    at = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "content" / "workflow_fileupload.py"))
+    at = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "content" / "workflow_run.py"))
     with open("settings.json", "r") as f:
         at.session_state.settings = json.load(f)
     at.session_state.settings["test"] = True

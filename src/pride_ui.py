@@ -1,4 +1,4 @@
-"""File Upload tab that imports a PRIDE Archive dataset for reprocessing.
+"""Imports a PRIDE Archive dataset for reprocessing (in Your analysis on Describe experiment).
 
 The user looks up an accession, picks the MS runs (mzML, or Thermo RAW which
 FileConverter turns into mzML), FASTA and SDRF files, and downloads them in a
@@ -145,8 +145,8 @@ def _file_selection(wf, lookup: dict, fallback: dict) -> None:
     c1, c2 = st.columns(2)
     fasta_files = c1.multiselect(
         "FASTA databases", fasta_options, default=fasta_options, key=f"pride-fasta-{acc}",
-        help="Most submissions do not include their database. Without one, add a FASTA in the "
-             "'FASTA database' tab.",
+        help="Most submissions do not include their database. Without one, choose a FASTA "
+             "or a UniProt proteome with Browse next to Protein database.",
         disabled=not fasta_options,
         placeholder="None in this dataset" if not fasta_options else "Choose files",
     )
@@ -332,22 +332,23 @@ def _setup_section(wf, job_dir: Path, status: dict) -> None:
                 st.caption(note)
 
     if not fasta_files:
-        st.warning("No FASTA database was imported. Add the protein database for this dataset's "
-                   "organism in the 'FASTA database' tab.")
+        st.warning("No FASTA database was imported. Choose the protein database for this dataset's "
+                   "organism with Browse next to Protein database (a UniProt proteome works too).")
     summary = f"Selects the {len(mzml_files)} imported mzML file(s)"
     if fasta_files:
         summary += f" and {Path(fasta_files[0]).name}"
     if settings:
         summary += ", and applies the SDRF settings above"
-    st.caption(summary + ". Review them on the Describe experiment page before running.")
+    st.caption(summary + ". Review them on this page before running.")
     if st.button("Use for the workflow", type="primary", use_container_width=True,
                  key="pride-apply"):
         apply_to_workflow(wf, mzml_files, fasta_files, settings)
-        st.success("Done. Open the Describe experiment page to review the settings.")
+        st.toast("The imported runs are selected.")
+        st.rerun()
 
 
 def pride_import_section(wf, fallback: dict = None) -> None:
-    """The PRIDE import tab.
+    """The PRIDE import (in Your analysis).
 
     ``fallback`` maps an upload key ("mzML-files", "fasta-file") to the example
     files its upload tab adds; they are cleared when the import replaces them.
