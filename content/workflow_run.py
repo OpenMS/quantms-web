@@ -1,6 +1,6 @@
 import streamlit as st
 from src.common.common import page_setup
-from src.common.guide import latest_empty_run, page_intro, show_empty_run
+from src.common.guide import latest_empty_run, next_steps, page_intro, show_empty_run
 from src.WorkflowTest import WorkflowTest
 
 params = page_setup()
@@ -22,5 +22,20 @@ if "workspace" in st.session_state:
         _, run_name, diagnosis = empty
         show_empty_run(run_name, diagnosis, links=False)
 
+wf_params = wf.parameter_manager.get_parameters_from_json()
+selected = wf_params.get("mzML-files") or []
+selected = [selected] if isinstance(selected, str) else selected
+mode = wf_params.get("analysis-mode", "LFQ")
+what = "Label-free analysis" if mode != "TMT" else "Isobaric (TMT/iTRAQ) analysis"
+st.info(
+    f"**{what}** of {len(selected)} run{'s' if len(selected) != 1 else ''}. "
+    "Change it on **Describe experiment**.",
+    icon="🧭",
+)
+
 wf.show_execution_section()
+
+next_steps(
+    ("viewer", "See whether the run went well and which proteins differ between your groups."),
+)
 

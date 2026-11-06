@@ -88,50 +88,52 @@ with steps[0]:
     st.markdown(
         """
 ### 1 · Set up and run
-Upload your **mzML** files and a **FASTA** file with the protein sequences of your
-organism (or import a public dataset from PRIDE). Say which sample belongs to which
-group, then press Run. A run takes minutes to hours depending on the data.
+Choose your runs (**mzML**, Thermo *.raw* or Bruker *.d*) and the protein sequences of
+your organism (a **FASTA** file or a UniProt proteome), or reanalyse a public dataset
+from PRIDE. Say which sample belongs to which group, then press Run. A run takes minutes
+to hours depending on the data.
 """
     )
-    page_link("upload", "Upload data")
+    page_link("configure", "Describe experiment")
 with steps[1]:
     st.markdown(
         """
 ### 2 · Read the main results
-The **run summary** tells you whether the run went well. **Compare groups** and the
-**volcano plot** show the proteins that go up or down between your groups.
-**Identified proteins** lists everything that was found.
+The **Viewer** opens on the **run summary**, which tells you whether the run went well,
+the **group comparison** and **volcano plot**, which show the proteins that go up or
+down between your groups, and the **identified proteins**.
 """
     )
-    page_link("compare", "Compare groups")
+    page_link("viewer", "Viewer")
 with steps[2]:
     st.markdown(
         """
 ### 3 · Explore further
-Check that replicates look alike (**PCA**, **clustered heatmap**), and find biological
-processes over-represented among the changed proteins (**GO enrichment**).
+**Edit layout** in the Viewer adds more components: check that replicates look alike
+(**PCA**, **clustered heatmap**), find biological processes over-represented among the
+changed proteins (**GO enrichment**), or put two runs side by side.
 """
     )
-    page_link("enrichment", "GO enrichment")
+    page_link("viewer", "Viewer")
 
-st.markdown("## Which page answers my question?")
+st.markdown("## Which component answers my question?")
 st.markdown(
     """
-| Your question | Page |
+| Your question | Viewer component |
 |---|---|
 | Did the run work, and how many proteins were found? | **Run summary** |
-| Which proteins are up or down between my groups? | **Compare groups**, **Volcano plot** |
+| Which proteins are up or down between my groups? | **Group comparison**, **Volcano plot** |
 | Is my protein of interest there, and which peptides support it? | **Identified proteins** |
-| How much of each protein is in each sample? | **Protein abundances** |
+| How much of each protein is in each sample? | **Protein and peptide abundances** |
 | Do my replicates agree? Is there an outlier sample? | **Sample similarity (PCA)**, **Clustered heatmap** |
 | What biology do the changed proteins point to? | **GO enrichment** |
-| I want the tables for my own analysis. | **Runs and downloads** |
+| I want the tables for my own analysis. | **Export**, below the Viewer |
 """
 )
 st.caption(
-    "The sections **Fine-tune the comparison** and **Quality control and details** in the sidebar "
-    "are for adjusting the statistics step by step and for checking the identifications in depth. "
-    "You can ignore them for a first analysis."
+    "**Edit comparison** adjusts the statistics step by step, and the components under "
+    "**Identification** (quality, peptide-spectrum matches, mass shifts, rescored and raw hits) check "
+    "the identifications in depth. You can ignore them for a first analysis."
 )
 
 st.markdown("## Two kinds of experiments")

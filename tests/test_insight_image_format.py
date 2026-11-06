@@ -15,7 +15,7 @@ from streamlit.testing.v1 import AppTest
 pytest.importorskip("openms_insight")
 from openms_insight.core import image_format  # noqa: E402
 
-PAGE = "content/workflow_fileupload.py"
+PAGE = "content/workflow_run.py"
 
 
 def _app() -> AppTest:

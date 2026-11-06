@@ -162,5 +162,7 @@ def show_insight_table(
         )
 
     table = Table(cache_id=cache_id, cache_path=str(cache_dir))
-    table(key=f"insight_table_{name}", height=height, state_manager=state_manager)
+    from src.viewer.scope import scoped
+
+    table(key=scoped(f"insight_table_{name}"), height=height, state_manager=state_manager)
     return table

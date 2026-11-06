@@ -41,6 +41,13 @@ RUN_DERIVED_KEYS = [
 GROUP_PREFIXES = ("mzML-group-", "TMT-group-")
 
 
+def _shown_run(runs: RunManager) -> str | None:
+    """The run the Viewer's experiment being drawn shows, else the one picked."""
+    from src.viewer.scope import shown_run
+
+    return shown_run() or get_selected_run(runs)
+
+
 def get_runs(workspace) -> RunManager:
     """The analysis runs of the workspace (a results/ from before runs became one)."""
     runs = RunManager(get_workflow_dir(workspace))
@@ -50,13 +57,13 @@ def get_runs(workspace) -> RunManager:
 
 def get_run_id(workspace) -> str | None:
     """The run the results pages show (the newest finished one unless picked)."""
-    return get_selected_run(get_runs(workspace))
+    return _shown_run(get_runs(workspace))
 
 
 def get_results_dir(workspace, run_id: str | None = None) -> Path:
     """Results folder of a run (default: the one shown). Missing if nothing ran yet."""
     runs = get_runs(workspace)
-    run_id = run_id or get_selected_run(runs)
+    run_id = run_id or _shown_run(runs)
     if run_id is None:
         return get_workflow_dir(workspace) / "results"
     return runs.results_dir(run_id)
@@ -73,7 +80,7 @@ def get_run_params(workspace, run_id: str | None = None) -> dict:
     workflow_dir = get_workflow_dir(workspace)
     current = ParameterManager(workflow_dir, "TOPP Workflow").get_parameters_from_json()
     runs = get_runs(workspace)
-    run_id = run_id or get_selected_run(runs)
+    run_id = run_id or _shown_run(runs)
     params = runs.params(run_id) if run_id else {}
     if not params:
         return current

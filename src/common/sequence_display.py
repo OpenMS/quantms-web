@@ -16,21 +16,28 @@ from openms_insight import Table
 
 from src.common.peptide_format import DISPLAY_MODES, format_sequence
 
-# The choice lives under MODE_KEY; the radio's own key is dropped by Streamlit
-# whenever a page without it runs, so it is seeded from MODE_KEY on each render
+# The choice lives under MODE_KEY and is shared by every PSM table. Each table
+# has its own radio (several can be on one page), seeded from MODE_KEY on each
+# render, so changing one changes them all.
 MODE_KEY = "sequence-display-mode"
-WIDGET_KEY = f"_{MODE_KEY}"
 DISPLAY_FIELD = "sequence_display"
 
 
-def sequence_mode_selector() -> str:
-    """Radio for the modification display; the choice is shared by every PSM page."""
-    if WIDGET_KEY not in st.session_state:
-        st.session_state[WIDGET_KEY] = st.session_state.get(MODE_KEY, DISPLAY_MODES[0])
+def sequence_mode_selector(name: str) -> str:
+    """Radio for the modification display of the PSM table ``name``."""
+    from src.viewer.scope import scoped
+
+    widget_key = scoped(f"_{MODE_KEY}-{name}")
+    st.session_state[widget_key] = st.session_state.get(MODE_KEY, DISPLAY_MODES[0])
+
+    def _changed() -> None:
+        st.session_state[MODE_KEY] = st.session_state[widget_key]
+
     mode = st.radio(
         "Modifications",
         DISPLAY_MODES,
-        key=WIDGET_KEY,
+        key=widget_key,
+        on_change=_changed,
         horizontal=True,
         help=(
             "Labels: modified residues carry a short label, e.g. M(ox), S(ph), C(cam). "

@@ -14,29 +14,10 @@ from src.common.results_helpers import get_abundance_data, get_id_column, get_sa
 # Page paths, so links survive a page being renamed in one place only.
 PAGES = {
     "home": ("content/quickstart.py", "Home", "🏠"),
-    "upload": ("content/workflow_fileupload.py", "Upload data", "📁"),
     "configure": ("content/workflow_configure.py", "Describe experiment", "⚙️"),
     "run": ("content/workflow_run.py", "Run analysis", "🚀"),
-    "overview": ("content/results_overview.py", "Run summary", "🧾"),
-    "proteins": ("content/results_proteins.py", "Identified proteins", "🧩"),
-    "abundance": ("content/results_abundance.py", "Protein abundances", "📋"),
-    "compare": ("content/compare_groups.py", "Compare groups", "⚖️"),
-    "volcano": ("content/results_volcano.py", "Volcano plot", "🌋"),
-    "pca": ("content/results_pca.py", "Sample similarity (PCA)", "📊"),
-    "heatmap": ("content/results_heatmap.py", "Heatmap", "🔥"),
-    "clustered": ("content/results_heatmap_clustered.py", "Clustered heatmap", "🧬"),
-    "enrichment": ("content/enrichment.py", "GO enrichment", "📉"),
-    "samples": ("content/results_samples.py", "Per-sample counts", "🧪"),
-    "download": ("content/results_download.py", "Runs and downloads", "🗂️"),
-    "filtering": ("content/filtering.py", "1. Filter proteins", "🧹"),
-    "imputation": ("content/imputation.py", "2. Missing values", "🩹"),
-    "normalization": ("content/normalization.py", "3. Normalize", "⚖️"),
-    "statistics": ("content/statistical.py", "4. Statistical test", "🔢"),
-    "qc": ("content/results_qc.py", "Identification quality", "🩺"),
-    "filtered": ("content/results_filtered.py", "Peptide-spectrum matches", "🎯"),
-    "search": ("content/results_database_search.py", "Raw search hits (ProSE)", "🔬"),
-    "rescoring": ("content/results_rescoring.py", "Rescored hits (Percolator)", "📈"),
-    "mass_shifts": ("content/results_mass_shifts.py", "Mass shifts", "📐"),
+    # Every result is a component of the Viewer
+    "viewer": ("content/viewer.py", "Viewer", "👁️"),
 }
 
 
@@ -68,15 +49,13 @@ def next_steps(*steps: tuple[str, str]) -> None:
         cols[1].markdown(why)
 
 
-def needs_results(message: str = "No results yet. Upload your data, describe the experiment and run the analysis first.") -> None:
+def needs_results(message: str = "No results yet. Describe your experiment (your runs, database and groups) and run the analysis first.") -> None:
     """Explain that the page needs a finished run, link to the start, and stop."""
     st.info(message)
-    cols = st.columns(3)
+    cols = st.columns(2)
     with cols[0]:
-        page_link("upload")
-    with cols[1]:
         page_link("configure")
-    with cols[2]:
+    with cols[1]:
         page_link("run")
     st.stop()
 
@@ -84,7 +63,7 @@ def needs_results(message: str = "No results yet. Upload your data, describe the
 def ensure_group_comparison(params: dict, show_errors: bool = True):
     """Make sure the group comparison exists, computing it with saved settings if not.
 
-    Steps the user applied by hand on the Downstream Analysis pages are kept;
+    Steps the user applied by hand in Edit comparison are kept;
     only the missing ones run. Returns the statistics table, or None when there
     is no abundance data or the samples do not form two groups.
     """
@@ -128,12 +107,8 @@ def show_comparison_settings() -> None:
         if lines:
             st.markdown("\n".join(f"- {line}" for line in lines))
         else:
-            st.markdown("Computed step by step on the Fine-tune pages.")
-        st.caption("Change any step on the Fine-tune pages; the plots follow.")
-        cols = st.columns(4)
-        for col, key in zip(cols, ["filtering", "imputation", "normalization", "statistics"]):
-            with col:
-                page_link(key)
+            st.markdown("Computed step by step in Edit comparison.")
+        st.caption("Change any step with **Edit comparison** above the run's components; the plots follow.")
 
 
 @st.cache_data(show_spinner="Checking the run...")

@@ -1,0 +1,172 @@
+"""filtering as a Viewer component."""
+
+import pandas as pd
+import polars as pl
+import streamlit as st
+from src.common.common import save_params
+from src.common.postprocessing_plots import filter_threshold_curve
+from src.common.insight_tables import show_insight_table
+from src.common.results_helpers import (
+    clear_downstream_steps,
+    get_abundance_data,
+    get_id_column,
+    get_sample_group_map,
+    group_metadata,
+    sample_columns,
+    postprocessing_param,
+)
+from openms_insight.analysis.filter import (
+    filter_low_abundance,
+    filter_low_repeatability,
+    filter_low_variance,
+)
+from src.viewer.scope import needs_results, show_fig
+
+
+def render(ctx) -> None:
+    params = ctx.params
+    STAT_COLUMNS = ["log2FC", "p-value", "p-adj", "stat"]
+
+    def strip_stat_columns(df: pd.DataFrame) -> pd.DataFrame:
+        """Keep preprocessing tables intensity-only before statistical analysis."""
+        return df.drop(columns=[c for c in STAT_COLUMNS if c in df.columns], errors="ignore")
+
+    result = get_abundance_data(ctx.workspace)
+    if result is None:
+        return needs_results()
+    pivot_df, expr_df, group_map = result
+    pivot_df = strip_stat_columns(pivot_df)
+    id_col = get_id_column(ctx.workspace, pivot_df)
+    sample_group_map = get_sample_group_map(ctx.workspace, pivot_df, group_map)
+    # 1. Identify actual sample columns dynamically
+    sample_cols = sample_columns(pivot_df, sample_group_map)
+    with st.expander(f"Input: {pivot_df.shape[0]:,} proteins in {len(sample_cols)} samples"):
+        show_insight_table(pivot_df, name="filtering-original")
+    # --- SECTION 2: Filter Configuration ---
+    st.subheader("Settings")
+    # Prepare Polars Metadata DataFrame required by openms_insight functions
+    metadata_pl = group_metadata(sample_group_map, sample_cols)
+    # User selection for filtering strategy. The default keeps proteins quantified
+    # in at least half of the samples of one group, which removes rows that
+    # imputation would otherwise have to invent most values for.
+    filter_options = ["Low Repeatability", "Low Abundance", "Low Variance"]
+    filter_method = st.selectbox(
+        "Filter by",
+        options=filter_options,
+        index=filter_options.index(postprocessing_param(params, "postproc-filter-method", filter_options)),
+        key="postproc-filter-method",
+        help="Recommended: Low Repeatability with at most 50 % missing values per group.",
+    )
+    # Render threshold sliders dynamically based on the selected filter method
+    threshold = 0.0  # set by the slider of the selected method below
+    if filter_method == "Low Abundance":
+        st.markdown(
+            "**Low Abundance Filter**: Keeps rows where at least one group's median is above the selected percentile threshold."
+        )
+        threshold = st.slider(
+            "Threshold Percentile (%)",
+            min_value=0.0,
+            max_value=100.0,
+            value=float(postprocessing_param(params, "postproc-filter-abundance-percentile")),
+            step=5.0,
+            key="postproc-filter-abundance-percentile",
+        )
+
+    elif filter_method == "Low Repeatability":
+        st.markdown(
+            "**Low Repeatability Filter**: Keeps rows where at least one group has a missing value ratio within the allowed maximum."
+        )
+        threshold = st.slider(
+            "Max Missing Ratio (%)",
+            min_value=0.0,
+            max_value=100.0,
+            value=float(postprocessing_param(params, "postproc-filter-max-missing")),
+            step=5.0,
+            key="postproc-filter-max-missing",
+            help="Allowed missing value (zero or null) ratio per group.",
+        )
+
+    elif filter_method == "Low Variance":
+        st.markdown(
+            "**Low Variance Filter**: Keeps rows where at least one group's variance is above the selected percentile threshold."
+        )
+        threshold = st.slider(
+            "Threshold Percentile (%)",
+            min_value=0.0,
+            max_value=100.0,
+            value=float(postprocessing_param(params, "postproc-filter-variance-percentile")),
+            step=5.0,
+            key="postproc-filter-variance-percentile",
+        )
+    save_params(params)
+
+    def run_filter(value: float) -> pl.LazyFrame:
+        """Apply the selected openms_insight filter at threshold ``value``."""
+        quant_lazy = pl.from_pandas(pivot_df).lazy()
+        if filter_method == "Low Abundance":
+            return filter_low_abundance(
+                quantification_data=quant_lazy,
+                metadata=metadata_pl,
+                group_column="group",
+                threshold_percentile=value,
+            )
+        if filter_method == "Low Repeatability":
+            # Convert percent slider input to ratio expected by the function (e.g., 50.0% -> 0.5)
+            return filter_low_repeatability(
+                quantification_data=quant_lazy,
+                metadata=metadata_pl,
+                group_column="group",
+                max_missing_ratio=value / 100.0,
+            )
+        return filter_low_variance(
+            quantification_data=quant_lazy,
+            metadata=metadata_pl,
+            group_column="group",
+            threshold_percentile=value,
+        )
+
+    with st.expander("📈 Help me choose a threshold", expanded=True):
+        st.caption(
+            "How many proteins the selected filter keeps at every threshold. Pick a "
+            "value before the curve drops steeply; flat stretches mean the exact value barely matters."
+        )
+        show_fig(
+            filter_threshold_curve(
+                lambda t: run_filter(t).select(pl.len()).collect().item(),
+                thresholds=[float(t) for t in range(0, 101, 5)],
+                current=threshold,
+                total=pivot_df.shape[0],
+                x_label=(
+                    "Max missing values per group (%)"
+                    if filter_method == "Low Repeatability"
+                    else "Threshold percentile (%)"
+                ),
+            ),
+            "filter-threshold-curve",
+        )
+    # --- SECTION 3: Filter Execution and Collected Results View ---
+    if st.button("Apply Filter", type="primary"):
+        filtered_lazy = run_filter(threshold)
+
+        # Collect the evaluated lazy graph and convert back to Pandas for visualization
+        filtered_df = strip_stat_columns(filtered_lazy.collect().to_pandas())
+        st.session_state["filtered_df"] = filtered_df
+        clear_downstream_steps("filtered_df")
+
+        st.success(f"Successfully applied **{filter_method}** filter!")
+    # Results are rendered from session state, outside the button block: the Insight
+    # table triggers a rerun the first time it is drawn, which would reset the button
+    # and wipe anything shown only while it is pressed.
+    filtered_df = st.session_state.get("filtered_df")
+    if filtered_df is not None:
+        # Display dataset scale compression stats
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Original Proteins", pivot_df.shape[0])
+        col2.metric("Filtered Proteins", filtered_df.shape[0])
+        col3.metric("Removed Proteins", pivot_df.shape[0] - filtered_df.shape[0], delta=None)
+
+        st.subheader("Filtered Abundance Table")
+        if filtered_df.empty:
+            st.warning("The filtered table is empty. Try relaxing the threshold constraints.")
+        else:
+            show_insight_table(filtered_df, name="filtering-filtered")

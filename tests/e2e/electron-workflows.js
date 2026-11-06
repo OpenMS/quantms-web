@@ -1,36 +1,27 @@
 // quantms-web scenario for electron/scripts/e2e.js: runs the label-free DDA
 // workflow (DecoyDatabase -> ProSE -> Percolator -> IDFilter -> ProteomicsLFQ)
 // on two of the bundled example files, one per sample group, inside the
-// Electron window, then checks that the result pages draw their tables.
+// Electron window, then checks that the Viewer draws their tables.
+const { checkTable } = require("./viewer");
+
 const RUN_TIMEOUT = 60 * 60 * 1000;
 const FILES = [
   ["B000248_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA.mzML"],
   ["B000264_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA.mzML"],
 ];
 
-async function checkTables(t, page) {
-  // The first visit after a run draws the result components from their
-  // caches, which took over two minutes on a macOS runner.
-  await t.open(page, { timeout: 10 * 60 * 1000 });
-  const frame = await t.waitForComponent(".tabulator-row", { timeout: 5 * 60 * 1000 });
-  const rows = await frame.locator(".tabulator-row").count();
-  t.log(`${page}: ${rows} table rows`);
-  await t.shot(`${page}-results`);
-}
-
 module.exports = async (t) => {
-  // The upload page fills the workspace with the example data.
-  await t.open("workflow_fileupload");
+  // Describe experiment fills a fresh workspace with the example data.
   await t.open("workflow_configure");
   // A fresh workspace selects every example file; keep two, one per group.
   // The demo files get their groups from their names.
   const files = t.page
     .locator('[data-testid="stMultiSelect"]')
-    .filter({ has: t.page.locator('[data-testid="stWidgetLabel"]', { hasText: "MS data files" }) })
+    .filter({ has: t.page.locator('[data-testid="stWidgetLabel"]', { hasText: "MS data" }) })
     .first();
   await files.locator('[title="Clear all"], [aria-label="Clear all"]').first().click();
   await t.settle();
-  for (const [file] of FILES) await t.choose("MS data files", file);
+  for (const [file] of FILES) await t.choose("MS data", file);
   await t.shot("configured");
 
   await t.open("workflow_run");
@@ -43,7 +34,12 @@ module.exports = async (t) => {
   });
   await t.shot("workflow-finished");
 
-  await checkTables(t, "results_database_search");
-  await checkTables(t, "results_filtered");
-  await checkTables(t, "results_abundance");
+  // The Viewer opens on the run that just finished, in its default layout.
+  await t.open("viewer", { timeout: 10 * 60 * 1000 });
+  await t.waitForComponent(".tabulator-row", { timeout: 5 * 60 * 1000 });
+  await t.shot("viewer-default");
+
+  await checkTable(t, "psms_search");
+  await checkTable(t, "psms");
+  await checkTable(t, "protein_abundance");
 };

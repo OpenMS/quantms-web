@@ -17,7 +17,6 @@ from streamlit.testing.v1 import AppTest
 # (loading them directly raises KeyError: 'url_pathname'), so they are covered
 # indirectly by test_app_loads.
 DIRECTLY_TESTABLE_PAGES = [
-    "content/workflow_fileupload.py",
     "content/workflow_configure.py",
     "content/workflow_run.py",
 ]

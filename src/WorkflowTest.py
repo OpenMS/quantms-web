@@ -27,6 +27,7 @@ from src.common.match_between_runs import MATCH_BETWEEN_RUNS_KEY, lfq_transfer_p
 from src.common.lfq_design import groups_from_design, initial_groups, is_fractionated, seed_design
 from src.common.qpx_export import app_version, export_run
 from src.workflow.ExperimentalDesign import design_path, load_design, save_design, to_openms_design
+from src.common import instrument
 from src.pride_ui import pride_import_section
 
 # Accession prefixes that mark decoy entries in a FASTA database.
@@ -63,8 +64,8 @@ many false matches hide among the real ones. *Reverse* is the standard choice.
 SEARCH_INFO = """
 **How peptides are identified.** ProSE, the OpenMS search engine, compares every
 fragmentation (MS2) spectrum with the fragment ions of the peptides of your FASTA database.
-The defaults fit a tryptic digest with carbamidomethylated cysteines. Pick the **instrument
-preset** at the top of the page to set the tolerances for your mass spectrometer; change the
+The defaults fit a tryptic digest with carbamidomethylated cysteines. Pick your **Instrument**
+in *Your analysis* above to set the tolerances for your mass spectrometer; change the
 rest only if your sample preparation differs:
 
 * **enzyme**: the protease you digested with (usually Trypsin/P).
@@ -75,15 +76,15 @@ rest only if your sample preparation differs:
   or *Phospho (STY)*. Each one added makes the search slower and less sensitive, so add only
   those you expect.
 * **precursor / fragment mass tolerance**: how far a measured mass may lie from the expected
-  one. Set by the instrument preset. A precursor tolerance above 1 Da searches openly for
-  unexpected mass shifts (see the *Open Search* preset).
+  one. Set by the Instrument. A precursor tolerance above 1 Da searches openly for
+  unexpected mass shifts (*Search: Open* in *Your analysis*).
 """
 
 SEARCH_DECOY_INFO = """* **Decoys**: your FASTA file already has decoy proteins (accessions starting with
   *{prefix}*), so they are searched as they are.
 """
 
-# ProSE settings shown by default; the rest is under "Show advanced parameters".
+# ProSE settings shown by default; the rest is in the tool's "All N parameters" dialog.
 SEARCH_INCLUDE = [
     "Search:enzyme", "Search:peptide:missed_cleavages",
     "Search:modifications:fixed", "Search:modifications:variable",
@@ -150,6 +151,49 @@ def demo_group(filename: str) -> str:
     return ""
 
 
+# Inputs the runs can come as: vendor files are converted to mzML when a run starts.
+MS_DATA_TYPES = ["mzML", "raw", "d"]
+DATABASE_TYPES = ("fasta", "fa")
+# The demo runs, each in the folder of its group, and the demo database.
+EXAMPLE_MZML = {
+    str(f): demo_group(f.name) for f in sorted(Path("example-data", "mzML").glob("*.mzML"))
+}
+EXAMPLE_FASTA = [str(f) for f in sorted(Path("example-data", "db").glob("*.fasta"))]
+
+MODE_LABELS = {"LFQ": "Label-free (LFQ)", "TMT": "Isobaric labels (TMT, iTRAQ)"}
+MODE_HELP = {
+    "LFQ": "every sample was measured in its own run (or its fractions).",
+    "TMT": "samples were labelled with isobaric tags and pooled into one run (or its fractions).",
+}
+INSTRUMENT_LABELS = {
+    instrument.ORBITRAP: "Orbitrap (HCD)",
+    instrument.TIMSTOF: "timsTOF",
+    instrument.ION_TRAP: "Ion trap (CID)",
+}
+OPEN_SEARCH, CLOSED_SEARCH = "Open Search", "Closed Search"
+SEARCH_LABELS = {CLOSED_SEARCH: "Standard", OPEN_SEARCH: "Open (±500 Da)"}
+SEARCH_HELP = (
+    "**Standard**: the precursor mass has to match a peptide of the database with the "
+    "modifications you chose, within the instrument's tolerance. **Open**: any precursor "
+    "within ±500 Da matches, so peptides with modifications nobody searched for are found "
+    "too; see *Mass shifts* for what they are."
+)
+
+
+def _no_preset_buttons(*args, **kwargs):
+    """The instrument and search presets are chosen in Your analysis, not by buttons.
+
+    A module-level function: the workflow object is pickled for its run.
+    """
+    return None
+
+
+@st.cache_data(show_spinner="Looking at the selected runs...", max_entries=64)
+def _instrument_recommendation(paths: tuple, converted_dir: str, mtimes: tuple):
+    """Cached per file set; `mtimes` makes a replaced file count again."""
+    return instrument.recommend(list(paths), converted_dir)
+
+
 # params = page_setup()
 # Threads one ProSE process uses well: on a machine with many cores, several
 # processes at 16-32 threads, each searching a share of the files, finish
@@ -183,60 +227,250 @@ class WorkflowTest(WorkflowManager):
 
     def __init__(self) -> None:
         super().__init__("TOPP Workflow", st.session_state["workspace"])
+        self.ui.preset_buttons = _no_preset_buttons
 
     def upload(self) -> None:
-        t = st.tabs(["MS data (mzML)", "FASTA database", "Import from PRIDE"])
-        fallback = {
-            "mzML-files": [str(f) for f in Path("example-data", "mzML").glob("*.mzML")],
-            "fasta-file": [str(f) for f in Path("example-data", "db").glob("*.fasta")],
-        }
-
+        """The upload widgets (the Browse dialogs of Your analysis draw the same ones)."""
+        t = st.tabs(["MS data", "Protein database (FASTA)"])
         with t[0]:
             self.ui.upload_widget(
                 key="mzML-files",
                 name="MS data",
-                file_types="mzML",
-                fallback=fallback["mzML-files"],
+                file_types=MS_DATA_TYPES,
+                fallback=EXAMPLE_MZML,
+                suggest_folders=True,
             )
-
         with t[1]:
             self.ui.upload_widget(
                 key="fasta-file",
-                name="Protein FASTA database",
-                file_types=("fasta", "fa"),
-                fallback=fallback["fasta-file"],
+                name="Protein database",
+                file_types=DATABASE_TYPES,
+                fallback=EXAMPLE_FASTA,
             )
 
-        with t[2]:
-            pride_import_section(self, fallback)
+    def current_params(self) -> dict:
+        """The parameters with the values the widgets hold in this rerun
+        (self.params is stale within a fragment rerun)."""
+        prefix = self.parameter_manager.param_prefix
+        current = dict(self.params)
+        current.update({k[len(prefix):]: v for k, v in st.session_state.items() if k.startswith(prefix)})
+        return current
+
+    def mode(self) -> str:
+        """LFQ or TMT, as chosen in Your analysis."""
+        mode = self.current_params().get("analysis-mode", "LFQ")
+        return mode if mode in MODE_LABELS else "LFQ"
+
+    def _choice(self, key, options, labels, default, label, help=None):
+        """A segmented choice stored as the workflow parameter `key`."""
+        widget = f"{self.parameter_manager.param_prefix}{key}"
+        if st.session_state.get(widget) not in options:
+            stored = self.params.get(key, default)
+            st.session_state[widget] = stored if stored in options else default
+        st.segmented_control(label, options, format_func=lambda o: labels[o], key=widget, help=help,
+                             on_change=self._keep_choice, args=(widget, default))
+        self.parameter_manager.save_parameters()
+        return st.session_state[widget]
+
+    @staticmethod
+    def _keep_choice(widget, default):
+        # A click on the chosen option clears a segmented control: keep a choice
+        if st.session_state.get(widget) is None:
+            st.session_state[widget] = default
+
+    # --- Instrument and search: presets of presets.json, read back from the settings ---
+
+    @staticmethod
+    def search_instance(mode: str) -> str:
+        return "ProSE-TMT" if mode == "TMT" else "ProSE"
+
+    def _search_values(self, mode: str) -> dict:
+        """The search settings in effect: defaults, the tool's ini and the stored values."""
+        instance = self.search_instance(mode)
+        values = dict(SEARCH_DEFAULTS_TMT if mode == "TMT" else SEARCH_DEFAULTS)
+        values.update(self.parameter_manager.get_topp_parameters("ProSE", tool_instance_name=instance))
+        # Fresh from params.json: a preset applied in this rerun is not in self.params
+        values.update(self.parameter_manager.get_parameters_from_json().get(instance, {}))
+        return values
+
+    @staticmethod
+    def _is_open(values: dict) -> bool:
+        return (values.get("Search:precursor:mass_tolerance_unit") == "Da"
+                and float(values.get("Search:precursor:mass_tolerance_upper", 0)) >= 100)
+
+    def current_instrument(self, mode: str) -> str | None:
+        """The instrument preset whose tolerances are set, or None for tolerances of your own."""
+        values = self._search_values(mode)
+        is_open = self._is_open(values)
+        same = self.parameter_manager._same_value
+        presets = self.parameter_manager.load_presets()
+        for name in instrument.PRESETS:
+            preset = presets.get(name, {}).get(self.search_instance(mode), {})
+            if not preset:
+                continue
+            if all(
+                same(values.get(k), v) for k, v in preset.items()
+                if not (is_open and k.startswith("Search:precursor:"))
+            ):
+                return name
+        return None
+
+    def current_search(self, mode: str) -> str:
+        return OPEN_SEARCH if self._is_open(self._search_values(mode)) else CLOSED_SEARCH
+
+    def _instrument_choice(self, mode: str, current: str | None) -> None:
+        key = "analysis-instrument"  # outside param_prefix: the preset values are the parameters
+        st.session_state[key] = current
+        st.segmented_control(
+            "Instrument", list(INSTRUMENT_LABELS), format_func=lambda o: INSTRUMENT_LABELS[o],
+            key=key, on_change=self._apply_instrument, args=(key, current, mode),
+            help="Sets the precursor and fragment mass tolerances of the search for your mass "
+                 "spectrometer. **Orbitrap (HCD)**: 10 ppm and 20 ppm. **timsTOF**: 20 ppm and "
+                 "40 ppm. **Ion trap (CID)**: 20 ppm and 0.5 Da.",
+        )
+
+    def _apply_instrument(self, key, current, mode):
+        chosen = st.session_state.get(key)
+        if chosen and chosen != current:
+            self._use_instrument(chosen, mode)
+
+    def _use_instrument(self, chosen, mode):
+        was_open = self.current_search(mode) == OPEN_SEARCH
+        self.ui._apply_preset_callback(chosen)
+        if was_open:
+            # The instrument presets also return to a standard search
+            self.parameter_manager.apply_preset(OPEN_SEARCH)
+
+    def _search_choice(self, mode: str, current_search: str, current_instrument: str | None) -> None:
+        key = "analysis-search"
+        st.session_state[key] = current_search
+        st.segmented_control(
+            "Search", list(SEARCH_LABELS), format_func=lambda o: SEARCH_LABELS[o], key=key,
+            on_change=self._apply_search, args=(key, current_search, current_instrument),
+            help=SEARCH_HELP,
+        )
+
+    def _apply_search(self, key, current, current_instrument):
+        chosen = st.session_state.get(key)
+        if not chosen or chosen == current:
+            return
+        if chosen == CLOSED_SEARCH and current_instrument:
+            # Back to the instrument's own precursor tolerance
+            self.ui._apply_preset_callback(current_instrument)
+        else:
+            self.ui._apply_preset_callback(chosen)
+
+    def _selected_runs(self) -> list:
+        selected = self.current_params().get("mzML-files") or []
+        return [selected] if isinstance(selected, str) else list(selected)
+
+    def _recommend_instrument(self, current: str | None) -> None:
+        """Recommend the instrument preset the selected runs were measured with,
+        and offer to apply it when the current settings differ."""
+        selected = self._selected_runs()
+        if not selected:
+            return
+        converted_dir = Path(self.workflow_dir, "converted-mzML")
+        mtimes = tuple(
+            Path(p).stat().st_mtime if Path(p).exists() else None for p in selected
+        ) + ((converted_dir.stat().st_mtime,) if converted_dir.exists() else ())
+        recommendation = _instrument_recommendation(tuple(selected), str(converted_dir), mtimes)
+        if recommendation.preset is None:
+            if recommendation.runs:
+                st.warning(recommendation.reason(), icon="⚠️")
+            return
+        text = recommendation.reason()
+        if recommendation.unreadable:
+            text += " Thermo .raw files are read once they are converted, when the analysis starts."
+        if current == recommendation.preset:
+            st.success(text, icon="✅")
+            return
+        c1, c2 = st.columns([4, 1], vertical_alignment="center")
+        c1.info(text, icon="💡")
+        c2.button(
+            f"Use {INSTRUMENT_LABELS[recommendation.preset]} settings",
+            key="apply_recommended_instrument",
+            on_click=self._use_instrument,
+            args=(recommendation.preset, self.mode()),
+            use_container_width=True,
+        )
+
+    def analysis_section(self) -> None:
+        """Your analysis: the runs and the database, the experiment type, the
+        instrument and the search, and what a start will do. Drawn above the
+        parameters, not in a fragment: the tabs of configure() follow these choices."""
+        with st.container(border=True):
+            st.markdown("##### Your analysis")
+            # The examples are in place before the first selection takes every file
+            self.ui._ensure_fallback("mzML-files", EXAMPLE_MZML)
+            self.preselect_all_inputs("mzML-files")
+            # reactive: drawn in the page itself, so a change reruns the page.
+            # Browse opens the runs by folder, with the upload and imports in the same dialog
+            self.ui.select_input_file(
+                "mzML-files", name="MS data", multiple=True, reactive=True,
+                upload=dict(file_types=MS_DATA_TYPES, fallback=EXAMPLE_MZML, suggest_folders=True),
+            )
+            self.ui.select_input_file(
+                "fasta-file", name="Protein database (FASTA)", multiple=False, reactive=True,
+                upload=dict(file_types=DATABASE_TYPES, fallback=EXAMPLE_FASTA, uniprot=True),
+            )
+            self.params = self.parameter_manager.get_parameters_from_json()
+            self.apply_decoy_default()
+
+            mode = self._choice(
+                "analysis-mode", list(MODE_LABELS), MODE_LABELS, "LFQ", "Experiment type",
+                help=" ".join(f"**{MODE_LABELS[m]}**: {h}" for m, h in MODE_HELP.items()),
+            )
+            current_instrument = self.current_instrument(mode)
+            current_search = self.current_search(mode)
+            c1, c2 = st.columns([3, 2])
+            with c1:
+                self._instrument_choice(mode, current_instrument)
+            with c2:
+                self._search_choice(mode, current_search, current_instrument)
+            if current_instrument is None:
+                st.caption(
+                    "The mass tolerances fit none of the instruments: they are your own "
+                    "(Database search tab), or pick your instrument to set them."
+                )
+            self._recommend_instrument(current_instrument)
+
+            with st.expander("🧬 Reanalyse a PRIDE dataset, set up from its sample metadata (SDRF)"):
+                pride_import_section(self, {"mzML-files": list(EXAMPLE_MZML), "fasta-file": EXAMPLE_FASTA})
+
+            params = self.current_params()
+            runs = len(self._selected_runs())
+            database = params.get("fasta-file")
+            st.info(self.summary(mode, runs, current_instrument, current_search,
+                                 Path(database).name if isinstance(database, str) else None), icon="🧭")
+
+    @staticmethod
+    def summary(mode: str, runs: int, instrument_preset: str | None, search: str,
+                database: str | None) -> str:
+        """What a start does, in one paragraph."""
+        if not runs:
+            return "Choose the runs to analyse with **📂 Browse**."
+        what = "label-free" if mode == "LFQ" else "isobaric (TMT/iTRAQ)"
+        article = "An" if what[0] in "aeiou" else "A"
+        text = (f"**{article} {what} analysis of {runs} run{'s' if runs != 1 else ''}**: "
+                f"{'an open' if search == OPEN_SEARCH else 'a'} database search")
+        if database:
+            text += f" against **{database}** with decoys and common contaminants"
+        else:
+            text += ", once you choose a protein database"
+        text += (f" ({INSTRUMENT_LABELS[instrument_preset]} tolerances)" if instrument_preset
+                 else " (your own tolerances)")
+        text += ", rescoring with Percolator, a 1 % FDR filter by default, protein inference and "
+        text += ("quantification across the runs, then the comparison of your groups."
+                 if mode == "LFQ" else
+                 "reporter ion quantification, then the comparison of your groups.")
+        return text
 
     @st.fragment
     def configure(self) -> None:
-        self.preselect_all_inputs("mzML-files")
-        # reactive=True so Group Selection tab updates when selection changes
-        self.ui.select_input_file("mzML-files", name="MS data files to analyse", multiple=True, reactive=True)
-        # reactive=True so the decoy default below follows the selected database
-        self.ui.select_input_file("fasta-file", name="Protein database (FASTA)", multiple=False, reactive=True)
-
+        # The runs, the database and the experiment type are chosen in Your analysis
         self.params = self.parameter_manager.get_parameters_from_json()
-        self.apply_decoy_default()
-        saved_mode = self.params.get("analysis-mode", "LFQ")
-
-        self.ui.input_widget(
-            key="analysis-mode",
-            default=saved_mode,
-            name="Experiment type",
-            widget_type="selectbox",
-            options=["LFQ", "TMT"],
-            help="LFQ (label-free): every sample was measured in its own run. "
-                 "TMT: samples were labelled with isobaric tags (TMT or iTRAQ) and pooled into one run.",
-            reactive=True
-        )
-
-        self.params = self.parameter_manager.get_parameters_from_json()
-        current_mode = self.params.get("analysis-mode", "LFQ")
-
-        if current_mode == "LFQ":
+        if self.mode() == "LFQ":
             self.render_lfq_tabs()
         else:
             self.render_tmt_tabs()
@@ -1147,6 +1381,25 @@ class WorkflowTest(WorkflowManager):
                 st.info(f"Added contaminants: {database_fasta.name}")
         return database_fasta, decoy_string
 
+    def alias_converted_runs(self, inputs: list, mzmls: list) -> None:
+        """Give each converted run the group of its vendor file.
+
+        The tools and the results pages name a run by its mzML file, while the
+        groups were set for the file the user selected (``run.raw``, ``run.d``).
+        Written to this run's parameter file, which the results pages read.
+        """
+        params = self.parameter_manager.get_parameters_from_json() or dict(self.params)
+        changed = False
+        for original, mzml in zip(inputs, mzmls):
+            source, target = f"mzML-group-{Path(original).name}", f"mzML-group-{Path(mzml).name}"
+            if source != target and source in self.params:
+                params[target] = self.params[source]
+                self.params[target] = self.params[source]
+                changed = True
+        if changed:
+            with open(self.parameter_manager.params_file, "w", encoding="utf-8") as f:
+                json.dump(params, f, indent=4)
+
     def execution(self) -> bool:
         """
         Refactored TOPP workflow execution:
@@ -1166,6 +1419,15 @@ class WorkflowTest(WorkflowManager):
 
         in_mzML = self.file_manager.get_files(self.params["mzML-files"])
         fasta_file = self.file_manager.get_files([self.params["fasta-file"]])[0]
+
+        # Thermo .raw files and Bruker .d folders are converted to mzML first
+        converted = self.executor.convert_to_mzml(in_mzML)
+        if converted is None:
+            self.logger.log("ERROR: A run could not be converted to mzML; see the log above.", 0)
+            return False
+        if converted != list(in_mzML):
+            self.alias_converted_runs(in_mzML, converted)
+        in_mzML = converted
 
         if len(in_mzML) < 1:
             st.error("At least one mzML file is required.")
@@ -1417,6 +1679,9 @@ class WorkflowTest(WorkflowManager):
             # A fractionated experiment needs the design, so ProteomicsLFQ combines
             # the fractions of each sample; otherwise every file is its own sample.
             design = load_design(self.workflow_dir, self.params["mzML-files"])
+            # Converted vendor runs are named by their mzML in the design for ProteomicsLFQ
+            names = {Path(a).name: Path(b).name for a, b in zip(self.params["mzML-files"], in_mzML)}
+            design["file"] = design["file"].map(lambda f: names.get(f, f))
             lfq_design = {}
             if is_fractionated(design):
                 design_file = save_design(quant_dir, design, in_mzML)
