@@ -68,32 +68,33 @@ def show_precursor_xic(cache_dir: Path, idxml: Path, state_manager, *, mzml_file
         return
     charge, ms2_rt = int(hit["charge"]), float(hit["rt"])
     mz = xic.precursor_mz(hit["sequence"], charge, fallback=float(hit["mz"]))
-    present = [Path(p) for p in mzml_files if p is not None and Path(p).is_file()]
-    every_run = False
-    if len(present) > 1:
-        every_run = st.segmented_control(
-            "Show", ["Isotope peaks in this run", "Monoisotopic peak in every run"],
-            default="Isotope peaks in this run", key=f"{key}_xic_mode", label_visibility="collapsed",
-        ) == "Monoisotopic peak in every run"
-    if every_run:
-        traces = _run_traces(tuple(str(p) for p in present), tuple(p.stat().st_mtime for p in present),
-                             mz, charge, ms2_rt)
-        palette = ["#1f77b4", "#ff7f0e", "#2ca02c", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22",
-                   "#17becf", "#aec7e8", "#ffbb78", "#98df8a"]
-        names = [p.stem for p in present]
-        colors = {name: palette[i % len(palette)] for i, name in enumerate(names)}
-        colors[xic.MS2_SERIES] = "#d62728"
-        data = xic.with_ms2_marker(traces, ms2_rt)
-        cache_id = f"xic_runs_{idxml.stem}_{int(psm_id)}"
-        title = f"Precursor ion chromatogram: {hit['sequence']} {charge}+, m/z {mz:.4f}, every run"
-    else:
-        traces = _isotope_traces(str(mzml), Path(mzml).stat().st_mtime, mz, charge, ms2_rt)
-        data = xic.with_ms2_marker(traces, ms2_rt)
-        colors = {xic.isotope_label(k): ISOTOPE_COLORS[xic.isotope_label(k)] for k in range(xic.ISOTOPES)}
-        colors[xic.MS2_SERIES] = ISOTOPE_COLORS[xic.MS2_SERIES]
-        cache_id = f"xic_{idxml.stem}_{int(psm_id)}"
-        title = f"Precursor ion chromatogram: {hit['sequence']} {charge}+, m/z {mz:.4f}"
+    label = f"{hit['sequence']} {charge}+, m/z {mz:.4f}"
+
+    # Isotope peaks of the precursor in the PSM's own run
+    traces = _isotope_traces(str(mzml), Path(mzml).stat().st_mtime, mz, charge, ms2_rt)
     if traces.empty:
         st.info("No MS1 spectra in this retention time window.")
+    else:
+        colors = {xic.isotope_label(k): ISOTOPE_COLORS[xic.isotope_label(k)] for k in range(xic.ISOTOPES)}
+        colors[xic.MS2_SERIES] = ISOTOPE_COLORS[xic.MS2_SERIES]
+        _plot(cache_dir, f"xic_{idxml.stem}_{int(psm_id)}", xic.with_ms2_marker(traces, ms2_rt), colors,
+              f"Precursor ion chromatogram: {label}")(
+            key=f"{key}_xic_plot", state_manager=state_manager, height=380
+        )
+
+    # The monoisotopic peak in every run, when the analysis has several
+    present = [Path(p) for p in mzml_files if p is not None and Path(p).is_file()]
+    if len(present) < 2:
         return
-    _plot(cache_dir, cache_id, data, colors, title)(key=f"{key}_xic_plot", state_manager=state_manager, height=380)
+    traces = _run_traces(tuple(str(p) for p in present), tuple(p.stat().st_mtime for p in present),
+                         mz, charge, ms2_rt)
+    if traces.empty:
+        return
+    palette = ["#1f77b4", "#ff7f0e", "#2ca02c", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22",
+               "#17becf", "#aec7e8", "#ffbb78", "#98df8a"]
+    colors = {p.stem: palette[i % len(palette)] for i, p in enumerate(present)}
+    colors[xic.MS2_SERIES] = "#d62728"
+    _plot(cache_dir, f"xic_runs_{idxml.stem}_{int(psm_id)}", xic.with_ms2_marker(traces, ms2_rt), colors,
+          f"Monoisotopic precursor peak in every run: {label}")(
+        key=f"{key}_xic_runs_plot", state_manager=state_manager, height=380
+    )
