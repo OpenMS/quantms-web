@@ -399,6 +399,8 @@ class WorkflowTest(WorkflowManager):
         """Your analysis: the runs and the database, the experiment type, the
         instrument and the search, and what a start will do. Drawn above the
         parameters, not in a fragment: the tabs of configure() follow these choices."""
+        # Whose settings these are, after a follow-up from the Viewer
+        self.ui.follow_up_notice()
         with st.container(border=True):
             st.markdown("##### Your analysis")
             # The examples are in place before the first selection takes every file

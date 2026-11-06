@@ -6,7 +6,10 @@ import streamlit as st
 from src.common.common import page_setup
 from src.common.guide import explain_empty_run, needs_results, page_intro
 from src.common.results_helpers import get_runs
-from src.layout_manager import MAX_EXPERIMENTS, render_experiments, resolve_layout, selected_datasets, view_bar
+from src.layout_manager import (
+    MAX_EXPERIMENTS, render_experiments, request_analysis, resolve_layout, selected_datasets, view_bar,
+)
+from src.viewer import analyses
 from src.viewer.catalog import CATALOG, DEFAULT_LAYOUT, LABELS, PRESETS, ViewerContext, renderers
 from src.viewer.comparison import edit_comparison_button, open_comparison
 from src.viewer.export import export_section
@@ -52,8 +55,33 @@ if st.session_state.get("_viewer_selected") != selected:
     st.session_state["_viewer_selected"] = selected
 
 layout_path = workspace / "layouts" / "viewer.json"
+VIEW_KEY = "viewer_view"
+# The experiment whose component asked for a missing analysis (its note's button)
+MISSING_INDEX = "_viewer_missing_experiment"
+
+
+def missing_options(missing, view):
+    """The dialog's choices for the run of the experiment that asked (the first for a view)."""
+    index = st.session_state.pop(MISSING_INDEX, 0)
+    run_id = selected_datasets(KEY, index + 1)[index]
+    if run_id is None:
+        return []
+    return analyses.options(
+        workspace, run_id, missing, view, index=index,
+        selection_key=lambda i: f"{KEY}_experiment_{i}",
+        view_args=(layout_path, CATALOG, PRESETS, DEFAULT_LAYOUT),
+    )
+
+
+def add_missing(missing, component, run_id, index):
+    st.session_state[MISSING_INDEX] = index
+    request_analysis(VIEW_KEY, missing, component=component)
+
+
 view_bar(
-    layout_path, CATALOG, PRESETS, DEFAULT_LAYOUT, key="viewer_view",
+    layout_path, CATALOG, PRESETS, DEFAULT_LAYOUT, key=VIEW_KEY,
+    available=analyses.available(workspace, selected_datasets(KEY, 1)[0] if datasets else None),
+    analyses=analyses.ANALYSES, unavailable_options=missing_options,
     actions=[{"id": "compare", "icon": "⚖️", "help": "Edit comparison: how the groups of the first run "
               "are compared", "on_click": open_comparison}],
     max_experiments=MAX_EXPERIMENTS, experiment_label="Run", target="the Viewer",
@@ -80,6 +108,8 @@ def buttons(index: int) -> None:
 picked = render_experiments(
     layout, side_by_side, datasets, experiment_renderers, key=KEY,
     labels=LABELS, experiment_label="Run", buttons=buttons,
+    components=CATALOG, available=lambda run_id: analyses.available(workspace, run_id),
+    analyses=analyses.ANALYSES, on_missing=add_missing,
 )
 if picked and picked[0] and picked[0] != selected:
     set_selected_run(runs, picked[0])

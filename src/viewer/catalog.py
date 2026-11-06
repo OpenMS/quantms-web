@@ -28,7 +28,19 @@ _COMPONENTS = [
     ("go_enrichment", "GO enrichment", "Group comparison", "enrichment"),
 ]
 
-CATALOG = [{"name": name, "label": label, "group": group} for name, label, group, _ in _COMPONENTS]
+# Components that need more than every run has: the analysis each needs (src/viewer/analyses.py)
+NEEDS = {
+    "heatmap": "samples",
+    "clustered_heatmap": "samples",
+    "group_comparison": "groups",
+    "volcano": "groups",
+    "go_enrichment": "groups",
+}
+
+CATALOG = [
+    {"name": name, "label": label, "group": group, **({"needs": NEEDS[name]} if name in NEEDS else {})}
+    for name, label, group, _ in _COMPONENTS
+]
 MODULES = {name: module for name, _, _, module in _COMPONENTS}
 LABELS = {c["name"]: c["label"] for c in CATALOG}
 
