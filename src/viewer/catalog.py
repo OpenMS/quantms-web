@@ -30,11 +30,21 @@ _COMPONENTS = [
 
 # Components that need more than every run has: the analysis each needs (src/viewer/analyses.py)
 NEEDS = {
-    "heatmap": "samples",
-    "clustered_heatmap": "samples",
-    "group_comparison": "groups",
-    "volcano": "groups",
-    "go_enrichment": "groups",
+    "run_summary": "identification",
+    "sample_counts": "identification",
+    "id_quality": "search",
+    "protein_explorer": "identification",
+    "psms": "identification",
+    "psms_rescored": "rescoring",
+    "psms_search": "search",
+    "mass_shifts": "identification",
+    "protein_abundance": "quantification",
+    "pca": "quantification",
+    "heatmap": ["quantification", "samples"],
+    "clustered_heatmap": ["quantification", "samples"],
+    "group_comparison": ["quantification", "groups"],
+    "volcano": ["quantification", "groups"],
+    "go_enrichment": ["quantification", "groups"],
 }
 
 # Components computed over the samples of every run of an experiment (a run and

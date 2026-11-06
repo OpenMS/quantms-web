@@ -12,6 +12,12 @@ these choices:
 - process more files with the settings of this run: a run of the added files
   only, which joins this run's experiment, so the comparison covers both;
 - show a run that has two groups, alone or side by side with this one.
+
+A run whose results lack what a component draws (no identifications, no raw
+search hits, no rescoring, no abundances) locks it the same way, and the
+dialog offers processing more files with the run's settings. The components
+that show one run's files look at the run picked under **Files of**, those
+computed over the experiment at every run of it.
 """
 from pathlib import Path
 
@@ -19,6 +25,8 @@ import streamlit as st
 
 from src.common.results_helpers import (
     experiment_fractions,
+    get_results_dir,
+    search_results_dir,
     experiment_runs,
     get_run_params,
     get_runs,
@@ -40,6 +48,32 @@ ANALYSES = {
                  "set in **Samples and groups** on the Describe experiment page."),
     },
 }
+# What a run's results hold (src/viewer/panels read the same folders)
+IDENTIFICATION = "identification"
+SEARCH = "search"
+RESCORING = "rescoring"
+QUANTIFICATION = "quantification"
+_RESULTS = {
+    IDENTIFICATION: {
+        "label": "identified peptides and proteins",
+        "help": "The files shown here have no identifications after FDR filtering.",
+    },
+    SEARCH: {
+        "label": "database search hits",
+        "help": "The files shown here have no database search hits.",
+    },
+    RESCORING: {
+        "label": "rescored hits",
+        "help": "The files shown here were not rescored with Percolator.",
+    },
+    QUANTIFICATION: {
+        "label": "protein abundances",
+        "help": "No run of this experiment has protein abundances.",
+    },
+}
+ANALYSES.update(_RESULTS)
+# Set by the Viewer before it asks what a run has: the experiment it draws
+INDEX_KEY = "_viewer_analyses_index"
 CONFIGURE_PAGE = Path("content", "workflow_configure.py")
 
 
@@ -78,11 +112,41 @@ def run_samples(workspace, run_id: str) -> int:
     return len(_experiment_files(workspace, run_id))
 
 
-def available(workspace, run_id) -> set | None:
-    """The analyses run ``run_id`` can show (None: no run)."""
+def _has(directory: Path, pattern: str) -> bool:
+    return directory.is_dir() and any(directory.glob(pattern))
+
+
+def run_results(workspace, run_id: str) -> set:
+    """What the results of one run hold (identification, search, rescoring, quantification)."""
+    results = get_results_dir(workspace, run_id)
+    has = set()
+    if _has(results / "psm_filter", "*.idXML"):
+        has.add(IDENTIFICATION)
+    if _has(search_results_dir(results), "*.idXML"):
+        has.add(SEARCH)
+    if _has(results / "percolator_results", "*.idXML"):
+        has.add(RESCORING)
+    if _has(results / "quant_results", "*.csv"):
+        has.add(QUANTIFICATION)
+    return has
+
+
+def available(workspace, run_id, index: int | None = None) -> set | None:
+    """The analyses run ``run_id`` can show as experiment ``index`` (None: no run).
+
+    Identifications, search hits and rescoring are those of the run picked
+    under **Files of**, abundances those of any run of the experiment.
+    """
     if run_id is None:
         return None
-    has = set()
+    from src.viewer.catalog import ViewerContext, experiment_member
+
+    if index is None:
+        index = st.session_state.get(INDEX_KEY, 0)
+    member = experiment_member(ViewerContext(workspace=workspace, run_id=run_id, index=index))
+    has = run_results(workspace, member) - {QUANTIFICATION}
+    if any(QUANTIFICATION in run_results(workspace, r) for r in experiment_runs(workspace, run_id)):
+        has.add(QUANTIFICATION)
     if run_samples(workspace, run_id) >= 2:
         has.add(SAMPLES)
     if len(set(run_groups(workspace, run_id).values())) >= 2:

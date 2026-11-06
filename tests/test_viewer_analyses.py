@@ -2,6 +2,8 @@
 import json
 from pathlib import Path
 
+import streamlit as st
+
 from src.viewer import analyses
 from src.viewer.catalog import CATALOG
 from src.workflow.RunManager import FINISHED, RunManager
@@ -23,11 +25,51 @@ def _set_current(workspace, params):
     Path(workspace, "topp-workflow", "params.json").write_text(json.dumps(params))
 
 
+def _needs(component):
+    need = component.get("needs") or []
+    return {need} if isinstance(need, str) else set(need)
+
+
 def test_components_comparing_samples_need_samples_or_groups():
-    needs = {c["name"]: c.get("needs") for c in CATALOG}
-    assert {n for n, v in needs.items() if v == analyses.GROUPS} == {"group_comparison", "volcano", "go_enrichment"}
-    assert {n for n, v in needs.items() if v == analyses.SAMPLES} == {"heatmap", "clustered_heatmap"}
-    assert set(needs.values()) - {None} == set(analyses.ANALYSES)
+    needs = {c["name"]: _needs(c) for c in CATALOG}
+    assert {n for n, v in needs.items() if analyses.GROUPS in v} == {"group_comparison", "volcano", "go_enrichment"}
+    assert {n for n, v in needs.items() if analyses.SAMPLES in v} == {"heatmap", "clustered_heatmap"}
+    assert set().union(*needs.values()) == set(analyses.ANALYSES)
+
+
+def test_every_component_needs_the_results_it_draws():
+    needs = {c["name"]: _needs(c) for c in CATALOG}
+    assert {n for n, v in needs.items() if analyses.QUANTIFICATION in v} == {
+        "protein_abundance", "pca", "heatmap", "clustered_heatmap", "group_comparison", "volcano", "go_enrichment"}
+    assert needs["psms_rescored"] == {analyses.RESCORING}
+    assert needs["psms_search"] == needs["id_quality"] == {analyses.SEARCH}
+    assert all(needs[n] for n in needs)
+
+
+def _results(workspace, run_id, folder, name):
+    from src.common.results_helpers import get_results_dir
+    directory = get_results_dir(workspace, run_id) / folder
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / name).write_text("x")
+
+
+def test_results_lock_what_the_picked_files_lack(tmp_path):
+    first = _run(tmp_path, "First", {"mzML-files": ["/in/a.mzML"]})
+    assert analyses.available(tmp_path, first) == set()
+    _results(tmp_path, first, "psm_filter", "a.idXML")
+    _results(tmp_path, first, "search_results", "a.idXML")
+    assert analyses.available(tmp_path, first) == {analyses.IDENTIFICATION, analyses.SEARCH}
+
+    # Abundances of any run of the experiment count; identifications those of the picked run
+    added = _added_run(tmp_path, first, "Added", {"mzML-files": ["/in/b.mzML"]})
+    _results(tmp_path, added, "quant_results", "q.csv")
+    assert analyses.QUANTIFICATION in analyses.available(tmp_path, first)
+    st.session_state["viewer-member-" + first + "-e0"] = added
+    try:
+        has = analyses.available(tmp_path, first, 0)
+    finally:
+        st.session_state.pop("viewer-member-" + first + "-e0")
+    assert analyses.IDENTIFICATION not in has and analyses.QUANTIFICATION in has
 
 
 def test_a_run_has_groups_once_two_of_its_samples_differ(tmp_path):

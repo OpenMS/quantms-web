@@ -81,7 +81,7 @@ def add_missing(missing, component, run_id, index):
 
 view_bar(
     layout_path, CATALOG, PRESETS, DEFAULT_LAYOUT, key=VIEW_KEY,
-    available=analyses.available(workspace, selected_datasets(KEY, 1)[0] if datasets else None),
+    available=analyses.available(workspace, selected_datasets(KEY, 1)[0] if datasets else None, 0),
     analyses=analyses.ANALYSES, unavailable_options=missing_options,
     actions=[{"id": "compare", "icon": "⚖️", "help": "Edit comparison: how the groups of the first run "
               "are compared", "on_click": open_comparison}],
@@ -101,6 +101,7 @@ def experiment_renderers(run_id: str, index: int):
 def buttons(index: int) -> None:
     run_id = selected_datasets(KEY, index + 1)[index]
     if run_id:
+        st.session_state[analyses.INDEX_KEY] = index  # what the run has is asked next, for this experiment
         member_picker(workspace, run_id, index)
         # The first run's comparison opens from ⚖️ in the view bar
         edit_comparison_button(ViewerContext(workspace=workspace, run_id=run_id, index=index, params=params),

@@ -9,10 +9,6 @@ from src.viewer.scope import needs_results, scoped, shared_state, PSM_PRIVATE
 
 
 def render(ctx) -> None:
-    st.info(
-        "**Score: ln(hyperscore)**, how well the matched b and y fragment ions explain the spectrum "
-        "(their number and intensity). Higher is better; the table starts with the best matches."
-    )
     run_dir = get_run_dir(ctx.workspace)
     run_params = get_run_params(ctx.workspace)
     search_dir = search_results_dir(run_dir / "results")
@@ -23,6 +19,10 @@ def render(ctx) -> None:
     if not search_files:
         st.warning("No identification output files found.")
         return
+    st.info(
+        "**Score: ln(hyperscore)**, how well the matched b and y fragment ions explain the spectrum "
+        "(their number and intensity). Higher is better; the table starts with the best matches."
+    )
     selected_file = st.selectbox(
         "Select identification result file", search_files, format_func=lambda x: x.name, key=scoped("search_file")
     )
