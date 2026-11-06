@@ -4,13 +4,16 @@
 import json
 
 import pyarrow.parquet as pq
+import pytest
 import pyopenms as poms
 
 from src.common.qpx_export import (
+    C13_DELTA,
     PROVENANCE_SCHEMA,
     PSM_SCHEMA,
     derive_id,
     logged_commands,
+    mass_error_ppm,
     missed_cleavages,
     parse_command,
     provenance_rows,
@@ -118,7 +121,7 @@ def test_provenance_lists_every_tool_and_parameter():
     assert comet_rows.set_index("parameter").loc["threads", "set by"] == "workflow"
 
 
-def _idxml(path):
+def _idxml(path, isotope_errors=None):
     prot = poms.ProteinIdentification()
     prot.setIdentifier("run")
     hits = []
@@ -129,11 +132,13 @@ def _idxml(path):
     prot.setHits(hits)
     peptides = poms.PeptideIdentificationList() if hasattr(poms, "PeptideIdentificationList") else []
     for i, (seq, td, acc) in enumerate([("PEPTM(Oxidation)IDEK", "target", "P1"), ("KEDITPEP", "decoy", "rev_P1")]):
+        isotope_error = isotope_errors[i] if isotope_errors else 0
         pep = poms.PeptideIdentification()
         pep.setIdentifier("run")
         pep.setScoreType("Posterior Error Probability")
         pep.setHigherScoreBetter(False)
-        pep.setMZ(500.0 + i)
+        # a hit matched k isotopes off (k = -isotope_error) is observed k * 13C/z above its m/z
+        pep.setMZ(poms.AASequence.fromString(seq).getMZ(2) - isotope_error * C13_DELTA / 2 if isotope_errors else 500.0 + i)
         pep.setRT(100.0 * (i + 1))
         pep.setMetaValue("spectrum_reference", f"controllerType=0 controllerNumber=1 scan={10 + i}")
         hit = poms.PeptideHit()
@@ -142,6 +147,8 @@ def _idxml(path):
         hit.setScore(0.01)
         hit.setMetaValue("target_decoy", td)
         hit.setMetaValue("MS:1001491", 0.002)
+        if isotope_errors:
+            hit.setMetaValue("isotope_error", isotope_error)
         ev = poms.PeptideEvidence()
         ev.setProteinAccession(acc)
         hit.setPeptideEvidences([ev])
@@ -174,6 +181,19 @@ def test_psm_view_from_an_idxml(tmp_path):
     assert abs(target["calculated_mz"] - poms.AASequence.fromString("PEPTM(Oxidation)IDEK").getMZ(2)) < 1e-3
     assert not target["is_decoy"] and decoy["is_decoy"]
     assert target["psm_id"] == derive_id([target["peptidoform"], 2, "sample1", [10]])
+
+
+def test_mass_error_is_to_the_matched_isotope(tmp_path):
+    assert mass_error_ppm(500.005, 500.0, 2) == pytest.approx(10.0)
+    # one isotope above at charge 2, reported by the engine as isotope_error -1
+    assert mass_error_ppm(500.0 + C13_DELTA / 2 + 0.005, 500.0, 2, -1) == pytest.approx(10.0)
+    assert mass_error_ppm(500.0, None, 2) is None
+
+    idxml = tmp_path / "sample1_filter.idXML"
+    _idxml(idxml, isotope_errors=[-1, 0])
+    write_psms([idxml], ["sample1.mzML"], tmp_path / "run.psm.parquet", to_proforma=lambda s: s)
+    errors = pq.read_table(tmp_path / "run.psm.parquet").column("mass_error_ppm").to_pylist()
+    assert errors == [pytest.approx(0.0, abs=0.01), pytest.approx(0.0, abs=0.01)]
 
 
 def test_provenance_view_round_trip(tmp_path):

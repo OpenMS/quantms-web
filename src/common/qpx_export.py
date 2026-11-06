@@ -39,6 +39,9 @@ import pyarrow.parquet as pq
 QPX_SPEC_VERSION = "1.2"
 QPX_DIR = "qpx"
 PSM_IDENTITY = ("peptidoform", "charge", "run_file_name", "scan")
+# Mass difference between the 13C and 12C isotopes: a search engine that matches
+# a precursor picked one or more isotope peaks off reports the offset per hit
+C13_DELTA = 1.0033548378
 
 # Shared QPX struct types (types.yaml)
 SCORE = pa.struct([
@@ -192,6 +195,18 @@ SCORES = [
 ]
 
 
+def mass_error_ppm(observed: float, calculated: Optional[float], charge: int, isotope_error=None) -> Optional[float]:
+    """Precursor m/z error in ppm to the isotope peak the search engine matched.
+
+    ``isotope_error`` is the engine's offset (Sage: -1 when the observed m/z is
+    one isotope above the monoisotope); without it the error is to the monoisotope.
+    """
+    if not calculated:
+        return None
+    offset = int(isotope_error) * C13_DELTA / charge if isotope_error and charge else 0.0
+    return 1e6 * (observed + offset - calculated) / calculated
+
+
 def psm_rows(idxml_path, run_file_name: str, to_proforma) -> List[dict]:
     """The QPX psm rows of one idXML (top hit of each spectrum)."""
     from src.common.results_helpers import load_idxml
@@ -233,7 +248,7 @@ def psm_rows(idxml_path, run_file_name: str, to_proforma) -> List[dict]:
             "is_decoy": str(_meta(hit, "target_decoy") or "").startswith("decoy"),
             "calculated_mz": calculated,
             "observed_mz": observed,
-            "mass_error_ppm": 1e6 * (observed - calculated) / calculated if calculated else None,
+            "mass_error_ppm": mass_error_ppm(observed, calculated, charge, _float(_meta(hit, "isotope_error"))),
             "additional_scores": scores or None,
             "predicted_rt": None,
             "run_file_name": run_file_name,
