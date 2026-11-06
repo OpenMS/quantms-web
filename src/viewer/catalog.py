@@ -2,7 +2,7 @@
 
 Component names are stored in saved layouts: never rename one.
 """
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from importlib import import_module
 from pathlib import Path
 from typing import Callable, Dict
@@ -35,6 +35,14 @@ NEEDS = {
     "group_comparison": "groups",
     "volcano": "groups",
     "go_enrichment": "groups",
+}
+
+# Components computed over the samples of every run of an experiment (a run and
+# the runs that processed more files for it). The others show the files of one
+# run of it, picked above them.
+EXPERIMENT_WIDE = {
+    "protein_abundance", "group_comparison", "volcano", "pca", "heatmap",
+    "clustered_heatmap", "go_enrichment",
 }
 
 CATALOG = [
@@ -99,12 +107,64 @@ def panel(module: str) -> Callable:
     return import_module(f"src.viewer.panels.{module}").render
 
 
-def draw(module: str, ctx: ViewerContext) -> None:
-    """Draw one component (or comparison step) for the context's run."""
-    with experiment(ctx.run_id, ctx.index):
-        panel(module)(ctx)
+def draw(module: str, ctx: ViewerContext, name: str = "") -> None:
+    """Draw one component (or comparison step) for the context's run.
+
+    A component that shows one run's files, in an experiment of several runs,
+    shows the run picked above it (the first run unless picked).
+    """
+    run_id = ctx.run_id
+    if name and name not in EXPERIMENT_WIDE:
+        run_id = experiment_member(ctx, name)
+    with experiment(run_id, ctx.index):
+        panel(module)(replace(ctx, run_id=run_id) if run_id != ctx.run_id else ctx)
+
+
+def _member_key(run_id: str, index: int) -> str:
+    return f"viewer-member-{run_id}-e{index}"
+
+
+def experiment_member(ctx: ViewerContext, name: str = "") -> str:
+    """The run of ``ctx.run_id``'s experiment whose files the components that
+    show one run's files show (picked with ``member_picker``, else the first)."""
+    import streamlit as st
+
+    from src.common.results_helpers import get_runs
+
+    members = get_runs(ctx.workspace).experiment(ctx.run_id)
+    picked = st.session_state.get(_member_key(ctx.run_id, ctx.index))
+    return picked if picked in members else ctx.run_id
+
+
+def member_picker(workspace, run_id: str, index: int) -> None:
+    """**Files of**: which run of an experiment of several runs the components
+    that show one run's files (PSMs, identified proteins, QC) show. Drawn once
+    per experiment, next to its run selector; nothing for a run alone."""
+    import streamlit as st
+
+    from src.common.results_helpers import get_runs
+
+    runs = get_runs(workspace)
+    members = runs.experiment(run_id)
+    if len(members) < 2:
+        return
+
+    def label(member: str) -> str:
+        files = runs.params(member).get("mzML-files") or []
+        count = 1 if isinstance(files, str) else len(files)
+        return f"{(runs.get(member) or {}).get('name') or member} ({count} {'file' if count == 1 else 'files'})"
+
+    key = _member_key(run_id, index)
+    if st.session_state.get(key) not in members:
+        st.session_state[key] = members[0]
+    st.segmented_control(
+        "Files of", members, key=key, format_func=label,
+        help="This experiment's files were processed in several runs (Process more files). "
+             "Abundances, the group comparison, PCA and the heatmaps cover all of them; "
+             "identifications and quality control show the files of the run picked here.",
+    )
 
 
 def renderers(ctx: ViewerContext) -> Dict[str, Callable[[], None]]:
     """Component name -> function drawing it for the context's run."""
-    return {name: (lambda module=module: draw(module, ctx)) for name, module in MODULES.items()}
+    return {name: (lambda module=module, name=name: draw(module, ctx, name)) for name, module in MODULES.items()}

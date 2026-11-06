@@ -10,7 +10,7 @@ from src.layout_manager import (
     MAX_EXPERIMENTS, render_experiments, request_analysis, resolve_layout, selected_datasets, view_bar,
 )
 from src.viewer import analyses
-from src.viewer.catalog import CATALOG, DEFAULT_LAYOUT, LABELS, PRESETS, ViewerContext, renderers
+from src.viewer.catalog import CATALOG, DEFAULT_LAYOUT, LABELS, PRESETS, ViewerContext, member_picker, renderers
 from src.viewer.comparison import edit_comparison_button, open_comparison
 from src.viewer.export import export_section
 from src.workflow.RunManager import FINISHED
@@ -46,7 +46,8 @@ explain_empty_run(workspace, finished[0]["id"] if finished else None)
 if not finished:
     needs_results()
 
-datasets = {r["id"]: run_label(r) for r in finished}
+# A run that processed more files for an earlier run is shown with it, as one experiment
+datasets = {r["id"]: run_label(r, len(runs.added_runs(r["id"]))) for r in runs.experiments(FINISHED)}
 # A run picked elsewhere (👁️ under Export, or a run that has just finished)
 # becomes the first experiment's run
 selected = get_selected_run(runs)
@@ -100,6 +101,7 @@ def experiment_renderers(run_id: str, index: int):
 def buttons(index: int) -> None:
     run_id = selected_datasets(KEY, index + 1)[index]
     if run_id:
+        member_picker(workspace, run_id, index)
         # The first run's comparison opens from ⚖️ in the view bar
         edit_comparison_button(ViewerContext(workspace=workspace, run_id=run_id, index=index, params=params),
                                button=index > 0)

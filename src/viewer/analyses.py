@@ -9,15 +9,20 @@ these choices:
 
 - give the samples groups (Describe experiment; groups apply without a new run),
   when the run has two or more samples;
-- process more files with the settings of this run (a follow-up run);
+- process more files with the settings of this run: a run of the added files
+  only, which joins this run's experiment, so the comparison covers both;
 - show a run that has two groups, alone or side by side with this one.
 """
 from pathlib import Path
 
 import streamlit as st
 
-from src.common.fractions import fraction_samples
-from src.common.results_helpers import get_results_dir, get_run_params, get_runs
+from src.common.results_helpers import (
+    experiment_fractions,
+    experiment_runs,
+    get_run_params,
+    get_runs,
+)
 from src.layout_manager import load_views, save_views, select_view
 from src.workflow.RunManager import FINISHED
 
@@ -38,8 +43,14 @@ ANALYSES = {
 CONFIGURE_PAGE = Path("content", "workflow_configure.py")
 
 
+def _experiment_files(workspace, run_id: str) -> list[str]:
+    """The input files of every run of ``run_id``'s experiment."""
+    return get_runs(workspace).experiment_files(run_id, "mzML-files")
+
+
 def run_groups(workspace, run_id: str) -> dict:
-    """``{sample: group}`` of a run's samples with a group, from its current settings.
+    """``{sample: group}`` of the samples of a run's experiment with a group,
+    from its current settings.
 
     The rule of ``load_abundance_data``: a fractionated run groups by the
     conditions of its design, label-free runs by the group of each file, TMT
@@ -49,25 +60,22 @@ def run_groups(workspace, run_id: str) -> dict:
     if params.get("analysis-mode", "LFQ") == "TMT":
         return {k: v for k, v in params.items()
                 if k.startswith("TMT-group-") and v and str(v).lower() != "skip"}
-    fractions = fraction_samples(get_results_dir(workspace, run_id), params)
+    fractions = experiment_fractions(workspace, run_id, params)
     if fractions:
         return {info["sample"]: info["condition"] for info in fractions.values() if info["condition"]}
-    files = params.get("mzML-files") or []
-    files = [files] if isinstance(files, str) else files
-    names = [Path(f).name for f in files]
+    names = [Path(f).name for f in _experiment_files(workspace, run_id)]
     return {n: params[f"mzML-group-{n}"] for n in names if params.get(f"mzML-group-{n}")}
 
 
 def run_samples(workspace, run_id: str) -> int:
-    """The number of samples a run measured (files, fractions or channels)."""
+    """The number of samples a run's experiment measured (files, fractions or channels)."""
     params = get_run_params(workspace, run_id)
     if params.get("analysis-mode", "LFQ") == "TMT":
         return max(len([k for k in params if k.startswith("TMT-group-")]), 2)
-    fractions = fraction_samples(get_results_dir(workspace, run_id), params)
+    fractions = experiment_fractions(workspace, run_id, params)
     if fractions:
         return len({info["sample"] for info in fractions.values()})
-    files = params.get("mzML-files") or []
-    return 1 if isinstance(files, str) else len(files)
+    return len(_experiment_files(workspace, run_id))
 
 
 def available(workspace, run_id) -> set | None:
@@ -104,7 +112,7 @@ def _show(view_args, selection_key, index, run_id, view, side_by_side) -> None:
 
 def _follow_up(run_id: str) -> None:
     from src.WorkflowTest import WorkflowTest  # the page set up the workspace already
-    WorkflowTest().follow_up(run_id, page=CONFIGURE_PAGE, note="to add more files")
+    WorkflowTest().follow_up(run_id, page=CONFIGURE_PAGE, note="to add more files", add_files="mzML-files")
 
 
 def options(workspace, run_id: str, missing, view, *, selection_key, view_args, index: int = 0) -> list:
@@ -123,14 +131,15 @@ def options(workspace, run_id: str, missing, view, *, selection_key, view_args, 
     choices.append({
         "label": "Process more files with these settings",
         "icon": ":material/library_add:",
-        "help": (f"Opens Describe experiment with the settings and samples of {name}, to add files and "
-                 "give them groups. The new run is kept next to this one."),
+        "help": (f"Opens Describe experiment with the settings and groups of {name}, to pick the files "
+                 "to add and give them groups. Only those are processed; the Viewer then shows them "
+                 f"with the files of {name} as one experiment, and compares the groups over all of them."),
         "primary": not choices,
         "on_click": lambda: _follow_up(run_id),
     })
     view_name = view["name"] if view else None
-    having = [r["id"] for r in runs.list_runs(FINISHED)
-              if r["id"] != run_id and set(missing) <= (available(workspace, r["id"]) or set())]
+    having = [r["id"] for r in runs.experiments(FINISHED)
+              if r["id"] != runs.experiment_root(run_id) and set(missing) <= (available(workspace, r["id"]) or set())]
     for other in having[:1]:
         other_name = _name(runs, other)
         choices.append({
