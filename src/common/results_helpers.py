@@ -60,6 +60,29 @@ def get_run_id(workspace) -> str | None:
     return _shown_run(get_runs(workspace))
 
 
+def experiment_runs(workspace, run_id: str | None = None) -> list[str]:
+    """The runs of the shown run's experiment (default: the one shown), oldest first.
+
+    A run that processed more files for an earlier run (Process more files)
+    belongs to that run's experiment; what compares samples is computed over
+    every run of it. One run alone is an experiment of its own.
+    """
+    runs = get_runs(workspace)
+    run_id = run_id or _shown_run(runs)
+    if run_id is None:
+        return []
+    return runs.experiment(run_id) or [run_id]
+
+
+def experiment_fractions(workspace, run_id: str | None = None, params: dict | None = None) -> dict | None:
+    """``fraction_samples`` over every run of the experiment, None if none is fractionated."""
+    params = get_run_params(workspace, run_id) if params is None else params
+    found = {}
+    for member in experiment_runs(workspace, run_id):
+        found.update(fraction_samples(get_results_dir(workspace, member), params) or {})
+    return found or None
+
+
 def get_results_dir(workspace, run_id: str | None = None) -> Path:
     """Results folder of a run (default: the one shown). Missing if nothing ran yet."""
     runs = get_runs(workspace)
@@ -76,7 +99,11 @@ def get_run_dir(workspace, run_id: str | None = None) -> Path:
 
 
 def get_run_params(workspace, run_id: str | None = None) -> dict:
-    """Parameters of a run (default: the one shown), with the current sample groups."""
+    """Parameters of a run (default: the one shown), with the current sample groups.
+
+    In an experiment of several runs (Process more files) the groups of the
+    files every run added are there too.
+    """
     workflow_dir = get_workflow_dir(workspace)
     current = ParameterManager(workflow_dir, "TOPP Workflow").get_parameters_from_json()
     runs = get_runs(workspace)
@@ -84,6 +111,9 @@ def get_run_params(workspace, run_id: str | None = None) -> dict:
     params = runs.params(run_id) if run_id else {}
     if not params:
         return current
+    # The groups of the files other runs of its experiment added, as those runs set them
+    for member in runs.experiment(run_id)[1:] if run_id else []:
+        params = params | {k: v for k, v in runs.params(member).items() if k.startswith(GROUP_PREFIXES)}
     return params | {k: v for k, v in current.items() if k.startswith(GROUP_PREFIXES)}
 
 
@@ -541,7 +571,8 @@ def write_psm_exports(id_df: pl.DataFrame, seq_view, export_dir: Path, prefix: s
 
 @st.cache_data
 def load_abundance_data(
-    workspace_path: str, csv_mtime: float, params_mtime: float = 0.0, run_id: str | None = None
+    workspace_path: str, csv_mtime: float, params_mtime: float = 0.0, run_id: str | None = None,
+    members: tuple = (),
 ) -> tuple | None:
     """Load CSV and build abundance matrices for downstream preprocessing.
 
@@ -552,6 +583,9 @@ def load_abundance_data(
             changing group assignments in Configure invalidates the cache
             even when the CSV itself hasn't changed)
         run_id: The run to load (default: the newest finished one)
+        members: The runs of its experiment (``experiment_runs``): their samples
+            are put together, so the comparison covers the files every run
+            added. Default: ``run_id`` alone.
 
     Returns:
         Tuple of (pivot_df, expr_df, group_map) or None if data unavailable
@@ -560,23 +594,24 @@ def load_abundance_data(
     workflow_params = get_run_params(workspace_path, run_id)
     analysis_mode = workflow_params.get("analysis-mode", "LFQ")
 
+    members = tuple(members) or (run_id,)
+
     if analysis_mode == "LFQ":
-        if not quant_dir.exists():
+        # One long table of every run of the experiment: each file is its own sample
+        frames = []
+        for member in members:
+            member_dir = get_results_dir(workspace_path, member) / "quant_results"
+            csv_files = sorted(member_dir.glob("*.csv")) if member_dir.exists() else []
+            if not csv_files:
+                continue
+            try:
+                frames.append(pd.read_csv(csv_files[0]))
+            except Exception:
+                continue
+        frames = [f for f in frames if not f.empty]
+        if not frames:
             return None
-
-        csv_files = sorted(quant_dir.glob("*.csv"))
-        if not csv_files:
-            return None
-
-        csv_file = csv_files[0]
-
-        try:
-            df = pd.read_csv(csv_file)
-        except Exception:
-            return None
-
-        if df.empty:
-            return None
+        df = pd.concat(frames, ignore_index=True)
 
         # Get optional group mapping from parameters.
         # Group information is not required at this stage; statistical testing
@@ -589,7 +624,8 @@ def load_abundance_data(
         }
 
         # The fractions of one sample are one column; otherwise every file is a sample
-        fractions = fraction_samples(get_results_dir(workspace_path, run_id), params)
+        fractions = experiment_fractions(workspace_path, members[0], params) if len(members) > 1 \
+            else fraction_samples(get_results_dir(workspace_path, run_id), params)
         df["Sample"] = df["Reference"].map(lambda ref: sample_of(ref, fractions))
         if fractions:
             group_map = {
@@ -641,6 +677,8 @@ def load_abundance_data(
         return pivot_df, expr_df, group_map
 
     else:
+        if len(members) > 1:
+            return _merge_isobaric(workspace_path, csv_mtime, params_mtime, members)
         if not quant_dir.exists():
             return None
 
@@ -720,6 +758,45 @@ def load_abundance_data(
         return pivot_df, expr_df, group_map
 
 
+def _merge_isobaric(workspace_path: str, csv_mtime: float, params_mtime: float, members: tuple) -> tuple | None:
+    """The channels of every run of an experiment in one table, by protein.
+
+    Each run is a labelled set of its own: its channels keep their names with
+    the run's name added, and the channel groups (one per channel position, as
+    the runs share their settings) apply to the channels of every run.
+    """
+    runs = get_runs(workspace_path)
+    parts = []
+    for member in members:
+        result = load_abundance_data(workspace_path, csv_mtime, params_mtime, member)
+        if result is not None:
+            parts.append((member, result))
+    if not parts:
+        return None
+    if len(parts) == 1:
+        return parts[0][1]
+    merged, group_map = None, parts[0][1][2]
+    for member, (pivot_df, _, _) in parts:
+        protein_col = pivot_df.columns[0]
+        name = (runs.get(member) or {}).get("name") or member
+        samples = [c for c in pivot_df.columns if re.search(r"sample\d+\[", str(c))]
+        part = pivot_df.rename(columns={c: f"{c} · {name}" for c in samples})
+        if merged is None:
+            merged = part
+        else:
+            keep = [protein_col] + [f"{c} · {name}" for c in samples]
+            merged = merged.merge(part[keep], how="outer", left_on=merged.columns[0], right_on=protein_col)
+            if protein_col != merged.columns[0] and protein_col in merged.columns:
+                merged = merged.drop(columns=[protein_col])
+    protein_col = merged.columns[0]
+    sample_cols = [c for c in merged.columns if re.search(r"sample\d+\[", str(c))]
+    expr_df = merged.set_index(protein_col)[sample_cols]
+    expr_df = expr_df.replace(0, np.nan)
+    expr_df = np.log2(expr_df + 1)
+    expr_df = expr_df.dropna()
+    return merged, expr_df, group_map
+
+
 def get_abundance_data(workspace: Path, include_contaminants: bool = False) -> tuple | None:
     """Wrapper that handles cache key (workspace + CSV mtime + params mtime).
 
@@ -733,21 +810,20 @@ def get_abundance_data(workspace: Path, include_contaminants: bool = False) -> t
     """
     workflow_dir = get_workflow_dir(workspace)
     run_id = get_run_id(workspace)
-    quant_dir = get_results_dir(workspace, run_id) / "quant_results"
-
-    if not quant_dir.exists():
-        return None
-
-    csv_files = sorted(quant_dir.glob("*.csv"))
+    members = tuple(experiment_runs(workspace, run_id))
+    csv_files = []
+    for member in members or (run_id,):
+        quant_dir = get_results_dir(workspace, member) / "quant_results"
+        csv_files += sorted(quant_dir.glob("*.csv"))[:1] if quant_dir.exists() else []
     if not csv_files:
         return None
 
-    csv_mtime = csv_files[0].stat().st_mtime
+    csv_mtime = max(f.stat().st_mtime for f in csv_files)
 
     params_file = workflow_dir / "params.json"
     params_mtime = params_file.stat().st_mtime if params_file.exists() else 0.0
 
-    result = load_abundance_data(str(workspace), csv_mtime, params_mtime, run_id)
+    result = load_abundance_data(str(workspace), csv_mtime, params_mtime, run_id, members)
     if result is None or include_contaminants:
         return result
     pivot_df, expr_df, group_map = result
@@ -798,8 +874,8 @@ def get_sample_group_map(workspace: Path, pivot_df: pd.DataFrame, group_map: dic
         except (TypeError, ValueError):
             continue
         target_substring = f"sample{sample_idx}["
-        real_full_name = next((name for name in actual_sample_names if target_substring in name), None)
-        if real_full_name:
+        # An experiment of several labelled runs has this channel once per run
+        for real_full_name in (name for name in actual_sample_names if target_substring in str(name)):
             norm_map[real_full_name] = v if v and v.strip() else UNASSIGNED
     # Channels left without a group (not skipped) count as "Unassigned"
     for name in actual_sample_names:
