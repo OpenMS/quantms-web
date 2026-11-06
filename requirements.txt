@@ -32,7 +32,7 @@ gitdb==4.0.12
     # via gitpython
 gitpython==3.2.1
     # via streamlit
-idna==3.15
+idna==3.20
     # via requests
 jinja2==3.1.6
     # via
@@ -125,7 +125,7 @@ toml==0.10.2
     # via streamlit
 tornado==6.6
     # via streamlit
-typing-extensions==4.13.0
+typing-extensions==4.16.0
     # via
     #   altair
     #   referencing
