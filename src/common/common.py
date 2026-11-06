@@ -780,6 +780,15 @@ def page_setup(page: str = "") -> dict[str, Any]:
     # Render the sidebar
     params = render_sidebar(page)
 
+    # Image downloads of OpenMS-Insight components follow the sidebar's
+    # "image export format", like show_fig() does for plain Plotly figures
+    try:
+        from openms_insight import set_image_format
+    except ImportError:  # not installed, or a release without the setting
+        pass
+    else:
+        set_image_format(st.session_state.get("image-format", "svg"))
+
     # A local install has no captcha or consent banner. Set this on every run,
     # not only when the workspace is first resolved: the workspace switcher
     # drops every params.json key from the session, "controllo" included.
@@ -991,11 +1000,20 @@ def render_sidebar(page: str = "") -> None:
 
         # All pages have settings, workflow indicator and logo
         with st.expander("⚙️ **Settings**"):
-            img_formats = ["svg", "png", "jpeg", "webp"]
+            # The formats OpenMS-Insight can export, so the list never offers
+            # one its components cannot produce
+            try:
+                from openms_insight import IMAGE_FORMATS
+            except ImportError:  # not installed, or a release without the list
+                IMAGE_FORMATS = ("svg", "png", "jpeg", "webp")
+            img_formats = list(IMAGE_FORMATS)
+            if st.session_state.get("image-format") not in img_formats:
+                st.session_state.pop("image-format", None)
+            saved = params.get("image-format", "svg")
             st.selectbox(
                 "image export format",
                 img_formats,
-                img_formats.index(params["image-format"]),
+                img_formats.index(saved) if saved in img_formats else 0,
                 key="image-format",
             )
             st.markdown("## Spectrum Plotting")
