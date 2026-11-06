@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -60,6 +61,17 @@ def psm_lookup(idxml: str, mtime: float) -> pd.DataFrame:
 @st.cache_data(show_spinner="Predicting the spectrum...")
 def _predict(peptide: str, charge: int, instrument: str) -> pd.DataFrame | None:
     return predict_fragments(_model(), peptide, charge, instrument)
+
+
+def svg_name(peptide: str, charge: int, scan: int) -> str:
+    """File name (without extension) of a PSM's spectrum download, e.g. ``PEPTIDEK_2+_scan1234``.
+
+    Modifications such as ``M(Oxidation)`` become ``M-Oxidation``; anything
+    else a file system might reject is dropped.
+    """
+    name = re.sub(r"[\[\]()]+", "-", str(peptide)).strip("-.")
+    name = re.sub(r"[^A-Za-z0-9_+.-]+", "", name).replace("-.", ".")[:80] or "spectrum"
+    return f"{name}_{int(charge)}+_scan{int(scan)}"
 
 
 def show_spectrum(cache_dir: Path, run: str, state_manager, *, peptide: str, charge: int, file_index: int,
@@ -144,6 +156,7 @@ def show_spectrum(cache_dir: Path, run: str, state_manager, *, peptide: str, cha
         x_label="m/z",
         y_label="Relative intensity (%)",
         styling={"unhighlightedColor": "#CCCCCC", "highlightColor": "#E74C3C", "selectedColor": "#F3A712"},
+        svg_filename=svg_name(peptide, charge, scan),
     )(key=f"{key}_mirror", state_manager=state_manager, height=height, sequence_view_top_key=seqview_key)
 
 
