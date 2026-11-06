@@ -23,6 +23,7 @@ from src.common.contaminants import CONTAMINANT_PREFIX, append_fasta, write_cont
 from src.common.fdr_display import FDR_QUICK_CHOICES, fdr_applied, fdr_label, matching_quick_choice, percent_label, q_label
 from src.common.isobaric import ISOBARIC_CHANNELS
 from src.common.ms2_prediction import peptdeep_available
+from src.common.match_between_runs import MATCH_BETWEEN_RUNS_KEY, lfq_transfer_params, match_between_runs
 from src.common.lfq_design import groups_from_design, initial_groups, is_fractionated, seed_design
 from src.common.qpx_export import app_version, export_run
 from src.workflow.ExperimentalDesign import design_path, load_design, save_design, to_openms_design
@@ -543,12 +544,25 @@ class WorkflowTest(WorkflowManager):
             * **intThreshold**: the faintest signal that counts as a peptide (raise it for noisy data).
             * **psmFDR** / **proteinFDR**: the false discovery rate at peptide and protein level
               (0.01 = 1 %, the community standard).
+            * **Match between runs**: a peptide identified in one run is also quantified in the
+              runs where its signal was measured but not identified. Fewer missing values, at the
+              cost of a longer run and some transfers to the wrong signal.
             """)
+            self.ui.input_widget(
+                key=MATCH_BETWEEN_RUNS_KEY,
+                default=False,
+                name="Match between runs",
+                widget_type="checkbox",
+                help=(
+                    "Also quantify a peptide in runs where it was not identified, using the "
+                    "aligned retention time and m/z of its identification in another run. "
+                    "Fills in missing values; best for runs of similar samples on one LC setup."
+                ),
+            )
             self.ui.input_TOPP(
                 "ProteomicsLFQ",
                 custom_defaults={
                     "threads": 12,
-                    "targeted_only": "true",
                     "feature_with_id_min_score": 0.1,
                     "Seeding:intThreshold": 1000.0,
                     "psmFDR": 0.01,
@@ -1367,6 +1381,9 @@ class WorkflowTest(WorkflowManager):
                 lfq_design = {"design": str(design_file)}
                 self.logger.log(f"Experimental design with fractions: {design_file}")
 
+            if match_between_runs(self.params):
+                self.logger.log("Match between runs: on (unidentified features are linked to identified ones)")
+
             with st.spinner("ProteomicsLFQ"):
                     combined_in = " ".join(in_mzML)
                     combined_ids = " ".join(filter_results)
@@ -1395,6 +1412,7 @@ class WorkflowTest(WorkflowManager):
                             {
                                 "fasta": str(database_fasta),
                                 **lfq_design,
+                                **lfq_transfer_params(self.params),
                                 "threads": 12,
                                 # Disable FAIMS/IM handling to avoid segfault in OpenMS 3.5.0
                                 "PeptideQuantification:extract:IM_window": "0.0",
