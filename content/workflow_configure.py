@@ -1,6 +1,6 @@
 import streamlit as st
 from src.common.common import page_setup
-from src.common.guide import next_steps, page_intro
+from src.common.guide import PAGES, page_intro
 from src.WorkflowTest import WorkflowTest
 
 
@@ -42,6 +42,7 @@ concentrations) is used until you add your own.
 wf.analysis_section()
 wf.show_parameter_section()
 
-next_steps(
-    ("run", "Start the analysis of the selected runs."),
-)
+# Opens Run analysis and starts the analysis there at once
+st.markdown("---")
+wf.show_run_button(PAGES["run"][0], label="Run analysis",
+                   help="Save these settings, open Run analysis and start the analysis of the selected runs.")

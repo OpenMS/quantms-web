@@ -19,7 +19,7 @@ if "settings" not in st.session_state:
 
 if __name__ == '__main__':
     # Sections follow the path a user takes: set up and run, then read every
-    # result in the Viewer.
+    # result on Explore results.
     pages = {
         "Start here": [
             st.Page(Path("content", "quickstart.py"), title="Home", icon="🏠", default=True),
@@ -29,7 +29,7 @@ if __name__ == '__main__':
             st.Page(Path("content", "workflow_run.py"), title="Run analysis", icon="🚀"),
         ],
         "Step 2 · Results": [
-            st.Page(Path("content", "viewer.py"), title="Viewer", icon="👁️"),
+            st.Page(Path("content", "viewer.py"), title="Explore results", icon="👁️"),
         ],
     }
 

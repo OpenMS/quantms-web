@@ -16,7 +16,7 @@ from src.workflow.run_widgets import get_selected_run, run_label, set_selected_r
 KEY = "viewer_run"
 
 params = page_setup()
-st.title("Viewer")
+st.title("Explore results")
 page_intro(
     "Every result of your analysis in one place. Each view shows the components for one question, "
     "such as quality control or differential abundance; pick the run to show below the views. **+** "

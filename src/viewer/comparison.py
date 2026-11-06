@@ -50,7 +50,7 @@ def edit_comparison_button(ctx: ViewerContext, button: bool = True) -> None:
         st.caption(
             "The group comparison runs these four steps on the run's protein abundances, with "
             "recommended settings until you change one. Apply a step to update the steps after it, "
-            "then press **Done** to see the result in the Viewer."
+            "then press **Done** to see the result on Explore results."
         )
         tabs = st.tabs([label for _, label in COMPARISON_STEPS])
         for tab, (module, _) in zip(tabs, COMPARISON_STEPS):

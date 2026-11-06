@@ -16,8 +16,8 @@ PAGES = {
     "home": ("content/quickstart.py", "Home", "🏠"),
     "configure": ("content/workflow_configure.py", "Describe experiment", "⚙️"),
     "run": ("content/workflow_run.py", "Run analysis", "🚀"),
-    # Every result is a component of the Viewer
-    "viewer": ("content/viewer.py", "Viewer", "👁️"),
+    # Every result is a component of the results page
+    "viewer": ("content/viewer.py", "Explore results", "👁️"),
 }
 
 
