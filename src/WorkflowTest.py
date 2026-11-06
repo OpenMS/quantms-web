@@ -224,6 +224,8 @@ class WorkflowTest(WorkflowManager):
     # Every run is kept as its own result set (runs/<id>/); the results pages
     # show the run picked under "Showing run".
     multi_run = True
+    # Start analysis (settings adding files to an experiment) opens the Run page
+    run_page = Path("content", "workflow_run.py")
 
     def __init__(self) -> None:
         super().__init__("TOPP Workflow", st.session_state["workspace"])

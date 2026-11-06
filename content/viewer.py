@@ -70,6 +70,12 @@ def missing_options(missing, view):
     return analyses.options(workspace, run_id, missing)
 
 
+def add_files():
+    run_id = selected_datasets(KEY, 1)[0]
+    if run_id is not None:
+        analyses.add_files(run_id)
+
+
 def add_missing(missing, component, run_id, index):
     st.session_state[MISSING_INDEX] = index
     request_analysis(VIEW_KEY, missing, component=component)
@@ -80,7 +86,9 @@ view_bar(
     available=analyses.available(workspace, selected_datasets(KEY, 1)[0] if datasets else None, 0),
     analyses=analyses.ANALYSES, unavailable_options=missing_options,
     actions=[{"id": "compare", "icon": "⚖️", "help": "Edit comparison: how the groups of the first run "
-              "are compared", "on_click": open_comparison}],
+              "are compared", "on_click": open_comparison},
+             {"id": "add-files", "icon": "➕", "label": "Add files", "on_click": add_files,
+              "help": "Process more files with the first run's settings and add them to its experiment"}],
     max_experiments=MAX_EXPERIMENTS, experiment_label="Run", target="the Viewer",
     help_text=(
         "Drag a view to order the bar, untick it to keep it under More. Your own views take up to 3 "

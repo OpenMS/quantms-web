@@ -151,7 +151,9 @@ def _name(runs, run_id: str) -> str:
     return (runs.get(run_id) or {}).get("name") or run_id
 
 
-def _follow_up(run_id: str) -> None:
+def add_files(run_id: str) -> None:
+    """Open Describe experiment with the settings of ``run_id``'s experiment,
+    to pick files that are processed and added to it."""
     from src.WorkflowTest import WorkflowTest  # the page set up the workspace already
     WorkflowTest().follow_up(run_id, page=CONFIGURE_PAGE, note="to add more files", add_files="mzML-files")
 
@@ -165,5 +167,5 @@ def options(workspace, run_id: str, missing) -> list:
         "help": (f"Opens Describe experiment with the settings and groups of {name}, to pick the files "
                  "to add and give them groups. Only those are processed; the Viewer then shows them "
                  f"with the files of {name} as one experiment, and compares the groups over all of them."),
-        "on_click": lambda: _follow_up(run_id),
+        "on_click": lambda: add_files(run_id),
     }]
