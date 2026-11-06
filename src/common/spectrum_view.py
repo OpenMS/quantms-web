@@ -18,6 +18,7 @@ from src.common.ms2_prediction import (
 from src.common.identified_spectra import spectra_sources
 from src.common.psm_features import features_by_id, features_frame
 from src.common.results_helpers import parse_idxml, search_tolerances
+from src.common.plot_style import spectrum_styling
 
 
 def fragment_tolerance(workflow_params: dict) -> tuple[float, bool]:
@@ -155,7 +156,7 @@ def show_spectrum(cache_dir: Path, run: str, state_manager, *, peptide: str, cha
         title_bottom=f"Predicted by AlphaPeptDeep ({instrument})",
         x_label="m/z",
         y_label="Relative intensity (%)",
-        styling={"unhighlightedColor": "#CCCCCC", "highlightColor": "#E74C3C", "selectedColor": "#F3A712"},
+        styling=spectrum_styling(),
         svg_filename=svg_name(peptide, charge, scan),
     )(key=f"{key}_mirror", state_manager=state_manager, height=height, sequence_view_top_key=seqview_key)
 
