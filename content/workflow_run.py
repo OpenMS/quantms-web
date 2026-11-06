@@ -36,7 +36,6 @@ st.info(
 wf.show_execution_section()
 
 next_steps(
-    ("overview", "See whether the run went well: identifications, error rate and quality."),
-    ("compare", "Find the proteins that differ between your groups."),
+    ("viewer", "See whether the run went well and which proteins differ between your groups."),
 )
 

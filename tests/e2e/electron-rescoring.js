@@ -4,6 +4,8 @@
 // checks that AlphaPeptDeep predicted the matches inside the packaged app.
 // The first use downloads the AlphaPeptDeep models, so the runner needs
 // network access.
+const { showComponents } = require("./viewer");
+
 const RUN_TIMEOUT = 60 * 60 * 1000;
 const SWITCH = "Add predicted-spectrum features";
 
@@ -35,7 +37,7 @@ module.exports = async (t) => {
   });
   await t.shot("rescoring-run-finished");
 
-  await t.open("results_rescoring", { timeout: 10 * 60 * 1000 });
+  await showComponents(t, [["psms_rescored"]], "psms_rescored");
   await t.waitForText("Rescored with predicted spectra and retention times.", { timeout: 5 * 60 * 1000 });
   // One summary row per file: "... | NCE 30 | 1,234 of 1,300 | 0.85 | 0.26 |"
   const text = await t.page.locator("body").innerText();
