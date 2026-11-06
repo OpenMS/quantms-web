@@ -96,22 +96,12 @@ def test_tmt_channels_skipped_take_no_part(tmp_path):
     assert analyses.GROUPS in analyses.available(tmp_path, run_id)
 
 
-def test_options_add_groups_or_files_and_bring_in_a_run_with_groups(tmp_path):
+def test_options_only_process_more_files(tmp_path):
     single = _run(tmp_path, "One file", {"mzML-files": ["/in/a.mzML"]})
-    grouped = _run(tmp_path, "Grouped", {"mzML-files": ["/in/b.mzML", "/in/c.mzML"]})
-    _set_current(tmp_path, {"mzML-group-b.mzML": "x", "mzML-group-c.mzML": "y"})
-    args = dict(selection_key=lambda i: f"sel{i}", view_args=None)
-
-    labels = [o["label"] for o in analyses.options(tmp_path, single, [analyses.GROUPS], None, **args)]
-    # One file has nothing to group: more files are the way
-    assert labels == ["Process more files with these settings", "Show Grouped",
-                      "Compare side by side with Grouped"]
-
     two = _run(tmp_path, "Two, no groups", {"mzML-files": ["/in/d.mzML", "/in/e.mzML"]})
-    labels = [o["label"] for o in analyses.options(tmp_path, two, [analyses.GROUPS], None, index=1, **args)]
-    assert labels[:2] == ["Give the samples groups", "Process more files with these settings"]
-    assert not any(label.startswith("Compare") for label in labels)
-    assert grouped != two
+    for run_id in (single, two):
+        labels = [o["label"] for o in analyses.options(tmp_path, run_id, [analyses.GROUPS])]
+        assert labels == ["Process more files with these settings"]
 
 
 def _added_run(workspace, first, name, params):
@@ -160,9 +150,6 @@ def test_more_files_join_the_experiment_and_its_comparison(tmp_path):
     assert set(pivot["ProteinName"]) == {"P1", "P2", "P3"}
     assert group_map["drug1.mzML"] == "treated"
 
-    # The experiment is listed once, and "Show" offers no run of it
+    # The experiment is listed once
     runs = RunManager(Path(tmp_path, "topp-workflow"))
     assert [r["id"] for r in runs.experiments()] == [first]
-    args = dict(selection_key=lambda i: f"sel{i}", view_args=None)
-    labels = [o["label"] for o in analyses.options(tmp_path, first, [analyses.GROUPS], None, **args)]
-    assert not any(label.startswith("Show") for label in labels)

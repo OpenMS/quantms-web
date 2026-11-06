@@ -4,18 +4,13 @@ The heatmaps compare the samples of a run, so they
 need two or more; the group comparison (group comparison, volcano plot, GO
 enrichment) needs them in at least two groups. A run of one file, or one whose
 samples all share a group, cannot fill them: the view bar locks the views
-holding them, and their place in a view shows a note. Both open a dialog with
-these choices:
-
-- give the samples groups (Describe experiment; groups apply without a new run),
-  when the run has two or more samples;
-- process more files with the settings of this run: a run of the added files
-  only, which joins this run's experiment, so the comparison covers both;
-- show a run that has two groups, alone or side by side with this one.
+holding them, and their place in a view shows a note. Both open a dialog that
+offers one thing: process more files with the settings of this run, a run of
+the added files only, which joins this run's experiment, so the comparison is
+computed over both.
 
 A run whose results lack what a component draws (no identifications, no raw
-search hits, no rescoring, no abundances) locks it the same way, and the
-dialog offers processing more files with the run's settings. The components
+search hits, no rescoring, no abundances) locks it the same way. The components
 that show one run's files look at the run picked under **Files of**, those
 computed over the experiment at every run of it.
 """
@@ -31,8 +26,6 @@ from src.common.results_helpers import (
     get_run_params,
     get_runs,
 )
-from src.layout_manager import load_views, save_views, select_view
-from src.workflow.RunManager import FINISHED
 
 # What the components in catalog.NEEDS need
 GROUPS = "groups"
@@ -158,67 +151,19 @@ def _name(runs, run_id: str) -> str:
     return (runs.get(run_id) or {}).get("name") or run_id
 
 
-def _show(view_args, selection_key, index, run_id, view, side_by_side) -> None:
-    """Show ``run_id`` (with ``view``): in experiment ``index``, or beside it."""
-    path, components, presets, default = view_args
-    if side_by_side:
-        state = load_views(path, components, presets, default)
-        state.update(experiments=2, side_by_side=True)
-        if view:
-            state["current"] = view
-        save_views(path, state)
-        st.session_state[selection_key(1)] = run_id
-        return
-    st.session_state[selection_key(index)] = run_id
-    if view:
-        select_view(path, view, components, presets, default)
-
-
 def _follow_up(run_id: str) -> None:
     from src.WorkflowTest import WorkflowTest  # the page set up the workspace already
     WorkflowTest().follow_up(run_id, page=CONFIGURE_PAGE, note="to add more files", add_files="mzML-files")
 
 
-def options(workspace, run_id: str, missing, view, *, selection_key, view_args, index: int = 0) -> list:
-    """The dialog's choices for run ``run_id`` lacking ``missing`` (samples, groups)."""
-    runs = get_runs(workspace)
-    name = _name(runs, run_id)
-    choices = []
-    if GROUPS in missing and run_samples(workspace, run_id) >= 2:
-        choices.append({
-            "label": "Give the samples groups",
-            "icon": ":material/group_work:",
-            "help": ("Opens Describe experiment, where **Samples and groups** says which sample belongs "
-                     "to which group. Groups apply to this run without running it again."),
-            "on_click": lambda: st.switch_page(CONFIGURE_PAGE),
-        })
-    choices.append({
+def options(workspace, run_id: str, missing) -> list:
+    """The dialog's choice for run ``run_id`` lacking ``missing``: process more files."""
+    name = _name(get_runs(workspace), run_id)
+    return [{
         "label": "Process more files with these settings",
         "icon": ":material/library_add:",
         "help": (f"Opens Describe experiment with the settings and groups of {name}, to pick the files "
                  "to add and give them groups. Only those are processed; the Viewer then shows them "
                  f"with the files of {name} as one experiment, and compares the groups over all of them."),
-        "primary": not choices,
         "on_click": lambda: _follow_up(run_id),
-    })
-    view_name = view["name"] if view else None
-    having = [r["id"] for r in runs.experiments(FINISHED)
-              if r["id"] != runs.experiment_root(run_id) and set(missing) <= (available(workspace, r["id"]) or set())]
-    for other in having[:1]:
-        other_name = _name(runs, other)
-        choices.append({
-            "label": f"Show {other_name}",
-            "icon": ":material/swap_horiz:",
-            "help": f"{other_name} has {' and '.join(ANALYSES[m]['label'] for m in missing)}.",
-            "primary": False,
-            "on_click": lambda other=other: _show(view_args, selection_key, index, other, view_name, False),
-        })
-        if index == 0:
-            choices.append({
-                "label": f"Compare side by side with {other_name}",
-                "icon": ":material/splitscreen_right:",
-                "help": f"Shows {name} and {other_name} next to each other in this view.",
-                "primary": False,
-                "on_click": lambda other=other: _show(view_args, selection_key, index, other, view_name, True),
-            })
-    return choices
+    }]

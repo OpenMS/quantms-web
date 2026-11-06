@@ -67,11 +67,7 @@ def missing_options(missing, view):
     run_id = selected_datasets(KEY, index + 1)[index]
     if run_id is None:
         return []
-    return analyses.options(
-        workspace, run_id, missing, view, index=index,
-        selection_key=lambda i: f"{KEY}_experiment_{i}",
-        view_args=(layout_path, CATALOG, PRESETS, DEFAULT_LAYOUT),
-    )
+    return analyses.options(workspace, run_id, missing)
 
 
 def add_missing(missing, component, run_id, index):
