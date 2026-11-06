@@ -7,11 +7,13 @@ from openms_insight import SequenceView, StateManager
 from src.common.common import page_setup
 from src.common.guide import needs_results, next_steps, page_intro
 from src.common.insight_tables import show_insight_table
+from src.common.contaminants import is_contaminant
 from src.common.protein_table import build_tables, collect_psms, coverage_html, read_fasta
 from src.common.fractions import fraction_samples
+from src.common.result_filters import add_protein_flags, file_conditions, max_replicates, protein_numeric_filters
 from src.common.results_helpers import run_picker, get_run_dir, get_run_params
 from src.common.spectrum_view import ensure_psm_views, fragment_tolerance, psm_mzml_files, show_spectrum
-from src.WorkflowTest import WorkflowTest
+from src.WorkflowTest import WorkflowTest, demo_group
 
 params = page_setup()
 run_picker()
@@ -22,7 +24,8 @@ page_intro(
     "Every protein found in any sample, with the evidence behind it. **Click a protein** to see "
     "which parts of its sequence were covered by peptides; **click a peptide** to list the spectra "
     "that identified it, and **click one of those** to see the spectrum with its fragment ions "
-    "annotated. Use the search fields in the table header to look up your protein of interest.",
+    "annotated. Search for your protein of interest with the box in the table's toolbar, and narrow the list "
+    "(e.g. at least 2 peptides) with its filter button.",
     background="""
 - A protein is identified through its **peptides**, and each peptide through one or more
   **PSMs** (peptide-spectrum matches: a fragmentation spectrum explained by that peptide).
@@ -57,39 +60,52 @@ mzml_names = [Path(f).name for f in run_params.get("mzML-files", []) or []]
 source_files = [*idxml_files, *([fasta_path] if fasta_path and fasta_path.is_file() else [])]
 
 
-@st.cache_data(show_spinner="Building protein tables...")
-def load_tables(
-    paths: tuple[str, ...], fasta: str | None, mtimes: tuple[float, ...], mzml_names: tuple[str, ...],
-    samples: tuple[tuple[str, str], ...] = (),
-):
+@st.cache_data(show_spinner="Reading the identifications...")
+def load_psms(paths: tuple[str, ...], fasta: str | None, mtimes: tuple[float, ...], mzml_names: tuple[str, ...]):
     # mtimes only key the cache, so a re-run of the workflow invalidates it
     psms = collect_psms([Path(p) for p in paths], list(mzml_names))
     fasta_entries = read_fasta(fasta) if fasta else {}
-    files = sorted(psms["file"].unique())
-    return (*build_tables(psms, fasta_entries, files, dict(samples) or None), fasta_entries)
+    return psms, fasta_entries
 
 
 # A run whose samples were split into fractions counts per sample, not per file
 fractions = fraction_samples(filter_dir.parent, run_params) or {}
+sample_of = {f: info["sample"] for f, info in fractions.items()}
 
 
+@st.cache_data(show_spinner="Building protein tables...")
+def load_tables(paths: tuple[str, ...], fasta: str | None, mtimes: tuple[float, ...], mzml_names: tuple[str, ...],
+                conditions: tuple, samples: tuple = ()):
+    psms, fasta_entries = load_psms(paths, fasta, mtimes, mzml_names)
+    files = sorted(psms["file"].unique())
+    proteins, peptides, psms_long, coverage = build_tables(psms, fasta_entries, files, dict(samples) or None)
+    if not proteins.empty:
+        proteins = add_protein_flags(proteins, psms_long, dict(conditions), dict(samples) or None)
+    return proteins, peptides, psms_long, coverage, fasta_entries
+
+
+# Conditions from Describe experiment, for "found in n replicates"
+conditions = file_conditions(
+    mzml_names,
+    lambda name: (fractions.get(name) or {}).get("condition")
+    or run_params.get(f"mzML-group-{name}") or demo_group(name),
+)
 proteins, peptides, psms_long, coverage, fasta_entries = load_tables(
     tuple(str(p) for p in idxml_files),
     str(fasta_path) if fasta_path and fasta_path.is_file() else None,
     tuple(p.stat().st_mtime for p in source_files),
     tuple(mzml_names),
-    tuple(sorted((f, info["sample"]) for f, info in fractions.items())),
+    tuple(sorted(conditions.items())),
+    tuple(sorted(sample_of.items())),
 )
 
 if proteins.empty:
     st.info("No target proteins were identified.")
     st.stop()
 
-c1, c2, c3 = st.columns(3)
-c1.metric("Proteins", f"{len(proteins):,}")
-c2.metric("Peptides", f"{peptides['peptide'].nunique():,}")
-c3.metric("Target PSMs", f"{psms_long.drop_duplicates(['file', 'scan', 'peptide']).shape[0]:,}")
-
+# The key figures count the proteins the table's filters leave, so they are
+# filled in once the table has been drawn with the viewer's filters
+figures = st.container()
 state_manager = StateManager("proteins_page")
 # Columns the linked tables filter on: already shown by the selection above them
 HIDDEN = {"visible": False}
@@ -100,14 +116,42 @@ def decimals(n: int) -> dict:
 
 
 st.subheader("Proteins")
-show_insight_table(
-    proteins, name="proteins", cache_dir=cache_dir, source_files=source_files,
+protein_table = show_insight_table(
+    proteins.assign(not_contaminant=~proteins["contaminant"]),
+    name="proteins", cache_dir=cache_dir, source_files=source_files,
+    extra_key=f"menu-v1|{'per-sample' if fractions else ''}|{sorted(conditions.items())}",
     title="proteins", height=450, state_manager=state_manager,
     interactivity={"protein": "accession"},
-    column_overrides={"coverage (%)": decimals(1)},
-    # per-sample columns for fractionated runs; the cache follows the source files only
-    extra_key="per-sample" if fractions else "",
+    column_overrides={
+        "coverage (%)": decimals(1),
+        "contaminant": {"formatter": "tickCross", "sorter": "boolean", "visible": False},
+        "not_contaminant": HIDDEN,
+        **({"replicates": {"headerTooltip": "Most files of one condition with a PSM of this protein"}}
+           if "replicates" in proteins.columns else {}),
+    },
+    toggle_filters=[{"label": "Hide contaminants", "column": "not_contaminant", "default": True}],
+    search=[c for c in ("accession", "gene", "description") if c in proteins.columns],
+    search_placeholder="Accession, gene or name",
+    numeric_filters=protein_numeric_filters(
+        max_replicates(conditions, sample_of) if "replicates" in proteins.columns else 0
+    ),
 )
+
+shown = protein_table.export_data(state_manager.get_all_selections())
+shown_psms = psms_long[psms_long["accession"].isin(shown["accession"].to_list())]
+clean_psms = shown_psms[~shown_psms["accession"].map(is_contaminant)]
+contaminants = int(shown["contaminant"].sum())
+with figures:
+    c1, c2, c3 = st.columns(3)
+    c1.metric(
+        "Proteins", f"{shown.height - contaminants:,}",
+        help=f"Matching the table's filters, without the {contaminants} contaminants among them. "
+             f"{len(proteins):,} proteins in total.",
+    )
+    c2.metric("Peptides", f"{clean_psms['peptide'].nunique():,}")
+    c3.metric("Target PSMs", f"{clean_psms.drop_duplicates(['file', 'scan', 'peptide']).shape[0]:,}")
+if shown.is_empty():
+    st.info("No protein matches the table's filters. Remove one with its × above the table.")
 
 selected = state_manager.get_selection("protein")
 if selected in coverage and selected in fasta_entries:
@@ -123,10 +167,10 @@ if selected in coverage and selected in fasta_entries:
 st.subheader("Peptides of the selected protein")
 show_insight_table(
     peptides, name="protein_peptides", cache_dir=cache_dir, source_files=source_files,
+    extra_key="per-sample" if fractions else "",
     title="peptides", height=350, state_manager=state_manager,
     filters={"protein": "accession"}, interactivity={"peptide": "peptide"},
     column_overrides={"accession": HIDDEN},
-    extra_key="per-sample" if fractions else "",
 )
 
 st.subheader("PSMs of the selected peptide")
