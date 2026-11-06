@@ -3,7 +3,7 @@ import streamlit as st
 from pathlib import Path
 from src.common.common import page_setup
 from src.common.results_helpers import run_picker, get_run_dir, get_run_params
-from src.common.spectrum_view import fragment_tolerance, psm_mzml_files, show_selected_psm_spectrum
+from src.common.spectrum_view import ensure_psm_views, fragment_tolerance, psm_mzml_files, show_selected_psm_spectrum
 from src.common.common import show_fig
 from src.common.guide import needs_results, next_steps, page_intro
 from src.common.fragment_plots import fragment_error_plot, ion_table, ion_table_html, load_psm_fragments
@@ -62,7 +62,7 @@ selected_file = st.selectbox(
 cache_id_prefix = selected_file.stem
 
 # Check if cache exists
-if not (cache_dir / f"table_{cache_id_prefix}").is_dir():
+if not ensure_psm_views(run_dir / "results", selected_file, run_params):
     st.warning("Visualization cache not found. Please re-run the workflow.")
     st.stop()
 
@@ -100,7 +100,7 @@ st.caption(
 )
 show_selected_psm_spectrum(
     cache_dir, selected_file, state_manager, seqview_key=f"seqview_{cache_id_prefix}",
-    workflow_params=run_params, mzml_files=psm_mzml_files(run_params),
+    workflow_params=run_params, mzml_files=psm_mzml_files(run_params, run_dir / "results"),
 )
 
 st.subheader("Fragment ions")

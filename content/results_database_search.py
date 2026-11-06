@@ -4,7 +4,7 @@ from pathlib import Path
 from src.common.common import page_setup
 from src.common.guide import needs_results, next_steps, page_intro
 from src.common.results_helpers import run_picker, get_run_dir, get_run_params, search_results_dir
-from src.common.spectrum_view import psm_mzml_files, show_selected_psm_spectrum
+from src.common.spectrum_view import ensure_psm_views, psm_mzml_files, show_selected_psm_spectrum
 from src.common.sequence_display import psm_table, sequence_mode_selector
 from openms_insight import Heatmap, SequenceView, StateManager
 
@@ -58,7 +58,7 @@ selected_file = st.selectbox(
 cache_id_prefix = selected_file.stem
 
 # Check if cache exists
-if not (cache_dir / f"table_{cache_id_prefix}").is_dir():
+if not ensure_psm_views(run_dir / "results", selected_file, run_params):
     st.warning("Visualization cache not found. Please re-run the workflow.")
     st.stop()
 
@@ -88,7 +88,7 @@ st.caption(
 )
 show_selected_psm_spectrum(
     cache_dir, selected_file, state_manager, seqview_key=f"seqview_{cache_id_prefix}",
-    workflow_params=run_params, mzml_files=psm_mzml_files(run_params),
+    workflow_params=run_params, mzml_files=psm_mzml_files(run_params, run_dir / "results"),
 )
 
 next_steps(

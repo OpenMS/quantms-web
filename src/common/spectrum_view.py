@@ -14,6 +14,7 @@ from src.common.ms2_prediction import (
     cosine_similarity, instrument_of, load_model, match_peaks, mirror_frame, peptdeep_available, predict_fragments,
     spectral_angle,
 )
+from src.common.identified_spectra import spectra_sources
 from src.common.psm_features import features_by_id, features_frame
 from src.common.results_helpers import parse_idxml, search_tolerances
 
@@ -93,7 +94,10 @@ def show_spectrum(cache_dir: Path, run: str, state_manager, *, peptide: str, cha
 
     measured = _measured(str(parquet), parquet.stat().st_mtime, int(file_index), int(scan))
     if measured.is_empty():
-        st.info("The measured spectrum of this PSM was not found. Re-run the analysis to create it.")
+        st.info(
+            "The measured spectrum of this PSM was not found. A run opened from a ZIP without its mzML files "
+            "only holds the spectra of its final, filtered PSMs; otherwise re-run the analysis to create it."
+        )
         return
 
     observed = match_peaks(
@@ -155,7 +159,7 @@ def show_selected_psm_spectrum(cache_dir: Path, idxml: Path, state_manager, *, s
         return
     hit = hits.loc[int(psm_id)]
     tolerance, ppm = fragment_tolerance(workflow_params)
-    mzml = Path(mzml_files[int(file_index)]) if int(file_index) < len(mzml_files) else None
+    mzml = mzml_files[int(file_index)] if int(file_index) < len(mzml_files) else None
     show_spectrum(
         cache_dir, idxml.stem, state_manager, peptide=hit["sequence"], charge=int(hit["charge"]),
         file_index=int(file_index), scan=int(scan), seqview_key=seqview_key, key=seqview_key,
@@ -191,10 +195,32 @@ def show_psm_features(idxml: Path, psm_id: int) -> None:
         )
 
 
-def psm_mzml_files(workflow_params: dict) -> list[Path]:
-    """A run's mzML inputs, in the order that numbers them in the viewer caches."""
+def psm_mzml_files(workflow_params: dict, results_dir: Path | None = None) -> list[Path | None]:
+    """A run's mzML inputs, in the order that numbers them in the viewer caches.
+
+    With ``results_dir``, an input that is not there is replaced by the run's
+    own subset of its identified spectra (``results/spectra``), or ``None``
+    when the run has none.
+    """
     from src.WorkflowTest import WorkflowTest
 
     wf = WorkflowTest()
     names = workflow_params.get("mzML-files") or []
-    return [Path(f) for f in wf.file_manager.get_files(names)] if names else []
+    files = [Path(f) for f in wf.file_manager.get_files(names)] if names else []
+    return spectra_sources(files, results_dir) if results_dir is not None else files
+
+
+def ensure_psm_views(results_dir: Path, idxml: Path, workflow_params: dict) -> bool:
+    """Whether the viewer caches of ``idxml`` exist, making them first for a run opened from a ZIP.
+
+    A run's ZIP leaves the caches out but carries the identified spectra; the
+    caches are built again from those (or from the input mzML when it is
+    there). Runs without the spectra are left as they are.
+    """
+    from src.common.psm_views import rebuild_psm_views
+
+    if (Path(results_dir, "insight_cache") / f"table_{Path(idxml).stem}").is_dir():
+        return True
+    tolerance, ppm = fragment_tolerance(workflow_params)
+    with st.spinner("Preparing the spectrum views of this run (first time only)..."):
+        return rebuild_psm_views(results_dir, idxml, psm_mzml_files(workflow_params), tolerance, ppm)

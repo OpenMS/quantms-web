@@ -12,7 +12,7 @@ from src.common.protein_table import build_tables, collect_psms, coverage_html, 
 from src.common.fractions import fraction_samples
 from src.common.result_filters import add_protein_flags, file_conditions, max_replicates, protein_numeric_filters
 from src.common.results_helpers import run_picker, get_run_dir, get_run_params
-from src.common.spectrum_view import fragment_tolerance, show_spectrum
+from src.common.spectrum_view import ensure_psm_views, fragment_tolerance, psm_mzml_files, show_spectrum
 from src.WorkflowTest import WorkflowTest, demo_group
 
 params = page_setup()
@@ -195,7 +195,8 @@ if not match.empty:
     psm = match.iloc[0]
     run, psm_id = str(selected_psm).rsplit(":", 1)
     st.subheader(f"Spectrum of {psm['peptide']} (scan {psm['scan']}, {Path(psm['file']).stem})")
-    if not (cache_dir / f"seqview_{run}").is_dir() or psm["file"] not in mzml_names:
+    has_views = psm["file"] in mzml_names and ensure_psm_views(run_dir / "results", filter_dir / f"{run}.idXML", run_params)
+    if not has_views or not (cache_dir / f"seqview_{run}").is_dir():
         st.info("No spectrum viewer data for this run. Re-run the analysis to create it.")
     else:
         viewer_state = StateManager("proteins_page_spectrum")
@@ -212,9 +213,8 @@ if not match.empty:
             key="proteins_seqview", state_manager=viewer_state, height=420,
         )
         tolerance, ppm = fragment_tolerance(run_params)
-        mzml_path = next(
-            (Path(f) for f in wf.file_manager.get_files(run_params["mzML-files"]) if Path(f).name == psm["file"]), None,
-        )
+        # The input mzML, or the run's own copy of its identified spectra
+        mzml_path = psm_mzml_files(run_params, run_dir / "results")[mzml_names.index(psm["file"])]
         show_spectrum(
             cache_dir, run, viewer_state, peptide=psm["peptide"], charge=int(psm["charge"]),
             file_index=mzml_names.index(psm["file"]), scan=int(psm["scan"]), seqview_key="proteins_seqview",
