@@ -4,6 +4,7 @@ import streamlit as st
 from src.common.results_helpers import get_run_dir, get_run_params
 from src.common.spectrum_view import ensure_psm_views, fragment_tolerance, psm_mzml_files, show_selected_psm_spectrum
 from src.common.fragment_plots import fragment_error_plot, ion_table, ion_table_html, load_psm_fragments
+from src.common.precursor_xic_view import show_precursor_xic
 from src.common.result_filters import q_suggestions
 from src.common.sequence_display import filtered_psm_table, sequence_mode_selector
 from openms_insight import Heatmap, SequenceView
@@ -72,6 +73,14 @@ def render(ctx) -> None:
         seqview_key=scoped(f"seqview_{cache_id_prefix}"),
         workflow_params=run_params,
         mzml_files=psm_mzml_files(run_params, run_dir / "results"),
+    )
+    st.subheader("Precursor ion chromatogram")
+    show_precursor_xic(
+        cache_dir,
+        selected_file,
+        state_manager,
+        mzml_files=psm_mzml_files(run_params),
+        key=scoped(f"psm_xic_{cache_id_prefix}"),
     )
     st.subheader("Fragment ions")
     fragments_tsv = run_dir / "results" / "exports" / f"{cache_id_prefix}_fragment_ions.tsv"
