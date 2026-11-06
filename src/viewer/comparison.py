@@ -24,9 +24,18 @@ def _start_over(ctx: ViewerContext) -> None:
 
 
 def edit_comparison_button(ctx: ViewerContext) -> None:
-    """A button opening the comparison steps of the experiment's run."""
+    """A button opening the comparison steps of the experiment's run.
 
-    @st.dialog("Edit comparison", width="large")
+    The dialog stays open over reruns of the page it did not ask for (the
+    Viewer's components can rerun it right after the click), until it is
+    closed or **Done** is pressed.
+    """
+    open_key = f"comparison_dialog_open_{ctx.index}"
+
+    def _closed() -> None:
+        st.session_state[open_key] = False
+
+    @st.dialog("Edit comparison", width="large", on_dismiss=_closed)
     def _dialog() -> None:
         st.caption(
             "The group comparison runs these four steps on the run's protein abundances, with "
@@ -45,7 +54,10 @@ def edit_comparison_button(ctx: ViewerContext) -> None:
             _start_over(ctx)
             st.rerun()
         if right.button("Done", type="primary", key=f"comparison_done_{ctx.index}"):
+            _closed()
             st.rerun()
 
     if st.button("Edit comparison", key=f"comparison_open_{ctx.index}", icon=":material/tune:"):
+        st.session_state[open_key] = True
+    if st.session_state.get(open_key):
         _dialog()
