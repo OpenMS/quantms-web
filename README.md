@@ -4,3 +4,4 @@ openms_insight-0.6.1.dev20261106: t0mdavid-m/OpenMS-Insight#54 (claude/image-for
 openms_insight-0.6.1.dev20261107: t0mdavid-m/OpenMS-Insight main at ac0eddd (#54 to #62).
 openms_insight-0.6.1.dev2026110702: t0mdavid-m/OpenMS-Insight#66 (claude/project-thread-yg5qdw at 49834a1, on main ac0eddd).
 openms_insight-0.6.1.dev2026110703: t0mdavid-m/OpenMS-Insight#67 (claude/project-thread-69v1m1 at 70dc777, on main ac0eddd).
+openms_insight-0.6.1.dev2026110713: OpenMS-Insight main 7380a9c (#54 to #68) with #67 (claude/project-thread-69v1m1 at 70dc777) merged.
