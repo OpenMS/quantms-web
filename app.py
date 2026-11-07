@@ -18,18 +18,16 @@ if "settings" not in st.session_state:
             st.session_state.settings = json.load(f)
 
 if __name__ == '__main__':
-    # Sections follow the path a user takes: set up and run, then read every
-    # result in the Viewer.
+    # One section follows the path a user takes: describe the experiment, run
+    # it, then read every result on Explore results.
     pages = {
         "Start here": [
             st.Page(Path("content", "quickstart.py"), title="Home", icon="🏠", default=True),
         ],
-        "Step 1 · Set up and run": [
+        "Analysis": [
             st.Page(Path("content", "workflow_configure.py"), title="Describe experiment", icon="⚙️"),
             st.Page(Path("content", "workflow_run.py"), title="Run analysis", icon="🚀"),
-        ],
-        "Step 2 · Results": [
-            st.Page(Path("content", "viewer.py"), title="Viewer", icon="👁️"),
+            st.Page(Path("content", "viewer.py"), title="Explore results", icon="👁️"),
         ],
     }
 

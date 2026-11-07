@@ -99,27 +99,27 @@ with steps[1]:
     st.markdown(
         """
 ### 2 · Read the main results
-The **Viewer** opens on the **run summary**, which tells you whether the run went well,
+**Explore results** opens on the **run summary**, which tells you whether the run went well,
 the **group comparison** and **volcano plot**, which show the proteins that go up or
 down between your groups, and the **identified proteins**.
 """
     )
-    page_link("viewer", "Viewer")
+    page_link("viewer")
 with steps[2]:
     st.markdown(
         """
 ### 3 · Explore further
-**Edit layout** in the Viewer adds more components: check that replicates look alike
+**Edit layout** on Explore results adds more components: check that replicates look alike
 (**PCA**, **clustered heatmap**), find biological processes over-represented among the
 changed proteins (**GO enrichment**), or put two runs side by side.
 """
     )
-    page_link("viewer", "Viewer")
+    page_link("viewer")
 
 st.markdown("## Which component answers my question?")
 st.markdown(
     """
-| Your question | Viewer component |
+| Your question | Component on Explore results |
 |---|---|
 | Did the run work, and how many proteins were found? | **Run summary** |
 | Which proteins are up or down between my groups? | **Group comparison**, **Volcano plot** |
@@ -127,7 +127,7 @@ st.markdown(
 | How much of each protein is in each sample? | **Protein and peptide abundances** |
 | Do my replicates agree? Is there an outlier sample? | **Sample similarity (PCA)**, **Clustered heatmap** |
 | What biology do the changed proteins point to? | **GO enrichment** |
-| I want the tables for my own analysis. | **Export**, below the Viewer |
+| I want the tables for my own analysis. | **Export**, at the bottom of Explore results |
 """
 )
 st.caption(

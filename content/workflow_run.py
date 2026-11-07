@@ -1,6 +1,6 @@
 import streamlit as st
 from src.common.common import page_setup
-from src.common.guide import latest_empty_run, next_steps, page_intro, show_empty_run
+from src.common.guide import PAGES, latest_empty_run, next_steps, page_intro, show_empty_run
 from src.WorkflowTest import WorkflowTest
 
 params = page_setup()
@@ -10,10 +10,10 @@ wf = WorkflowTest()
 st.title("Run the analysis")
 page_intro(
     "Start the analysis and follow its progress. It runs on the server, so you can close "
-    "this page and come back later with the same workspace. When it has finished, open "
-    "**Run summary** under *Main results* in the sidebar.\n\n"
-    "Each run is kept: to try other settings, change them and start again. The results "
-    "pages show the newest run; switch runs with **Showing run** at the top of each results page."
+    "this page and come back later with the same workspace. When it has finished, press "
+    "**Explore results**.\n\n"
+    "Each run is kept: to try other settings, change them and start again. **Explore results** "
+    "shows the newest run; pick another one in its run selector."
 )
 # A run that kept no PSM or protein stops with an error; say why in plain words
 if "workspace" in st.session_state:
@@ -33,7 +33,7 @@ st.info(
     icon="🧭",
 )
 
-wf.show_execution_section()
+wf.show_execution_section(results_page=PAGES["viewer"][0], results_label="Explore results")
 
 next_steps(
     ("viewer", "See whether the run went well and which proteins differ between your groups."),

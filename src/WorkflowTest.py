@@ -448,6 +448,18 @@ class WorkflowTest(WorkflowManager):
             st.info(self.summary(mode, runs, current_instrument, current_search,
                                  Path(database).name if isinstance(database, str) else None), icon="🧭")
 
+    def run_bar_summary(self) -> str:
+        """One line for the Run bar: analysis, runs and database."""
+        params = self.current_params()
+        mode = params.get("analysis-mode", "LFQ")
+        runs = len(self._selected_runs())
+        database = params.get("fasta-file")
+        parts = ["Label-free" if mode == "LFQ" else "Isobaric (TMT/iTRAQ)",
+                 f"{runs} run{'s' if runs != 1 else ''}"]
+        if isinstance(database, str) and database:
+            parts.append(Path(database).name)
+        return " · ".join(parts) + " · settings are saved when the analysis starts"
+
     @staticmethod
     def summary(mode: str, runs: int, instrument_preset: str | None, search: str,
                 database: str | None) -> str:
