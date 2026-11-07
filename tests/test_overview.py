@@ -8,12 +8,14 @@ import pytest
 # test_parameter_defaults (collected later) needs to import it with a mock.
 
 
-def _mzml(path, n_ms1=2, n_ms2=5):
+def _mzml(path, n_ms1=2, n_ms2=5, n_profile=0):
     exp = poms.MSExperiment()
     for level, n in ((1, n_ms1), (2, n_ms2)):
         for i in range(n):
             spec = poms.MSSpectrum()
             spec.setMSLevel(level)
+            if level == 2:
+                spec.setType(2 if i < n_profile else 1)
             spec.setRT(float(i))
             spec.set_peaks(([100.0, 200.0], [1.0, 2.0]))
             exp.addSpectrum(spec)
@@ -21,11 +23,18 @@ def _mzml(path, n_ms1=2, n_ms2=5):
 
 
 def _idxml(path, hits):
-    """hits: (sequence, charge, observed m/z, "target" or "decoy")."""
+    """hits: (sequence, charge, observed m/z, "target" or "decoy"[, protein accession])."""
     prot = poms.ProteinIdentification()
     prot.setIdentifier("run")
+    proteins = []
+    for _, _, _, _, *accession in hits:
+        if accession:
+            protein = poms.ProteinHit()
+            protein.setAccession(accession[0])
+            proteins.append(protein)
+    prot.setHits(proteins)
     peptides = []
-    for seq, charge, mz, td in hits:
+    for seq, charge, mz, td, *accession in hits:
         pep = poms.PeptideIdentification()
         pep.setIdentifier("run")
         pep.setMZ(mz)
@@ -33,6 +42,10 @@ def _idxml(path, hits):
         hit.setSequence(poms.AASequence.fromString(seq))
         hit.setCharge(charge)
         hit.setMetaValue("target_decoy", td)
+        if accession:
+            evidence = poms.PeptideEvidence()
+            evidence.setProteinAccession(accession[0])
+            hit.setPeptideEvidences([evidence])
         pep.setHits([hit])
         peptides.append(pep)
     if hasattr(poms, "PeptideIdentificationList"):
@@ -134,3 +147,25 @@ def test_run_overview_file_without_psms(tmp_path):
     assert row_a["Target PSMs"] == 1
     assert row_b["Target PSMs"] == 0 and row_b["Peptides"] == 0
     assert figures["Target PSMs"] == 1
+
+
+def test_run_overview_diagnosis_columns(tmp_path):
+    """Profile spectra, contaminant PSMs (trypsin left out) and PSMs at the window edge."""
+    from src.common.overview import run_overview
+
+    wf = tmp_path / "topp-workflow"
+    a = tmp_path / "a.mzML"
+    _mzml(a, n_ms2=4, n_profile=1)
+    _idxml(wf / "results" / "psm_filter" / "a_filter.idXML", [
+        ("PEPTIDEK", 2, _mz("PEPTIDEK", 2, ppm=19.0), "target", "CON__sp|P04264|K2C1_HUMAN"),
+        ("PEPTIDEK", 3, _mz("PEPTIDEK", 3, ppm=1.0), "target", "CON__sp|P00761|TRYP_PIG"),
+        ("ELVISK", 2, _mz("ELVISK", 2, ppm=-2.0), "target", "sp|P12345|ABC_HUMAN"),
+        ("ELVISR", 2, _mz("ELVISR", 2, ppm=-1.0), "target"),
+    ])
+
+    row = run_overview(wf, [str(a)], precursor_ppm=20.0)[0].iloc[0]
+    assert row["Profile MS2 (%)"] == 25.0
+    assert row["Contaminant PSMs (%)"] == 25.0
+    assert row["At window edge (%)"] == 25.0
+    # Without a ppm tolerance the edge stays empty
+    assert pd.isna(run_overview(wf, [str(a)])[0].iloc[0]["At window edge (%)"])

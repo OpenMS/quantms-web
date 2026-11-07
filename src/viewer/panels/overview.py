@@ -4,31 +4,43 @@ from pathlib import Path
 import streamlit as st
 from src.common.empty_result import fdr_summary
 from src.common.insight_tables import show_insight_table
-from src.common.overview import run_overview
-from src.common.results_helpers import get_abundance_data, get_run_dir, get_run_params
+from src.common.overview import PER_FILE_COLUMNS, run_overview
+from src.common.results_helpers import get_abundance_data, get_run_dir, get_run_params, search_tolerances
 from src.viewer.scope import needs_results
 
 
-def render(ctx) -> None:
+@st.cache_data(show_spinner="Summarizing the run...")
+def _overview(workflow_dir: str, files: tuple, precursor_ppm, mtimes: tuple):
+    """run_overview, cached on the inputs' and results' modification times."""
+    return run_overview(workflow_dir, list(files), precursor_ppm=precursor_ppm)
+
+
+def load_overview(ctx):
+    """The shown run's per-file table and key figures, with what they were read from.
+
+    Returns (per_file, figures, workflow_params, cache_dir, sources), or None
+    when the run has no filtered identifications. Shared by the run summary and
+    the diagnostics component, so the files are read once.
+    """
     run_dir = get_run_dir(ctx.workspace)
     filter_dir = run_dir / "results" / "psm_filter"
-    cache_dir = run_dir / "results" / "insight_cache"
     workflow_params = get_run_params(ctx.workspace)
     mzml_files = [str(f) for f in workflow_params.get("mzML-files", [])]
     if not filter_dir.is_dir() or not any(filter_dir.glob("*.idXML")):
+        return None
+    sources = sorted(filter_dir.glob("*.idXML")) + [run_dir / "logs" / "commands-and-run-times.log"]
+    tolerances = search_tolerances(workflow_params)
+    precursor_ppm = tolerances["precursor"] if tolerances["precursor_unit"] == "ppm" else None
+    mtimes = tuple(Path(p).stat().st_mtime if Path(p).exists() else 0.0 for p in mzml_files + sources)
+    per_file, figures = _overview(str(run_dir), tuple(mzml_files), precursor_ppm, mtimes)
+    return per_file, figures, workflow_params, run_dir / "results" / "insight_cache", sources
+
+
+def render(ctx) -> None:
+    loaded = load_overview(ctx)
+    if loaded is None:
         return needs_results()
-    log_file = run_dir / "logs" / "commands-and-run-times.log"
-    sources = sorted(filter_dir.glob("*.idXML")) + [log_file]
-
-    def _mtimes(paths) -> tuple:
-        return tuple(Path(p).stat().st_mtime if Path(p).exists() else 0.0 for p in paths)
-
-    @st.cache_data(show_spinner="Summarizing the run...")
-    def _overview(workflow_dir: str, files: tuple, mtimes: tuple):
-        """run_overview, cached on the inputs' and results' modification times."""
-        return run_overview(workflow_dir, list(files))
-
-    per_file, figures = _overview(str(run_dir), tuple(mzml_files), _mtimes(mzml_files + [str(p) for p in sources]))
+    per_file, figures, workflow_params, cache_dir, sources = loaded
     abundance = get_abundance_data(ctx.workspace)
     proteins = samples = conditions = None
     if abundance is not None:
@@ -71,7 +83,7 @@ def render(ctx) -> None:
     st.caption(f"Counts at {fdr:g} % PSM FDR.")
     # One row per file; the fractional columns go as text, since the table stores
     # floats as float32 and would show 36.8 as 36.79999923706055
-    per_file_view = per_file.copy()
+    per_file_view = per_file[PER_FILE_COLUMNS].copy()
     for col in ("ID rate (%)", "Mass error (ppm)"):
         per_file_view[col] = per_file_view[col].map(lambda v: "" if v is None or v != v else f"{v:g}")
     show_insight_table(
