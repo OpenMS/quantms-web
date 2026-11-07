@@ -78,3 +78,12 @@ def test_unexplained_low_rate_points_at_the_settings():
 
     flagged = diagnose_identifications(pd.DataFrame([_row("a", targets=800)]), PARAMS)
     assert "database, enzyme and modifications" in flagged.iloc[0]["Likely causes"]
+
+
+def test_all_files_lists_the_short_ones_first():
+    from src.common.id_diagnosis import diagnose_identifications
+
+    per_file = pd.DataFrame([_row("a"), _row("b", targets=500), _row("c")])
+    table = diagnose_identifications(per_file, PARAMS, all_files=True)
+    assert list(table["File"]) == ["b", "a", "c"]
+    assert table.iloc[0]["Likely causes"] and table.iloc[1]["Likely causes"] == ""

@@ -89,18 +89,19 @@ def _causes(row, tolerances: dict) -> list:
     return [text for _, text in causes[:MAX_CAUSES]]
 
 
-def diagnose_identifications(per_file: pd.DataFrame, workflow_params: dict) -> pd.DataFrame:
+def diagnose_identifications(per_file: pd.DataFrame, workflow_params: dict, all_files: bool = False) -> pd.DataFrame:
     """Files of a run whose ID rate falls short, with the rate expected and the likely causes.
 
     One row per such file (DIAGNOSIS_COLUMNS; the causes joined by spaces),
-    empty when every file reaches the expected rate. A file the run did not
-    search (no ID rate and no MS2 count) is left out.
+    empty when every file reaches the expected rate. With ``all_files`` the
+    other files follow, their causes empty. A file the run did not search (no
+    ID rate and no MS2 count) is left out.
     """
     expected = EXPECTED_ID_RATE[search_kind(workflow_params)]
     tolerances = search_tolerances(workflow_params)
     rates = pd.to_numeric(per_file["ID rate (%)"], errors="coerce")
     median = rates.median() if rates.notna().sum() >= MIN_FILES_FOR_MEDIAN else None
-    rows = []
+    rows, fine = [], []
     for (_, row), rate in zip(per_file.iterrows(), rates):
         no_ms2 = _value(row, "MS2 spectra") == 0
         if rate != rate and not no_ms2:
@@ -108,6 +109,8 @@ def diagnose_identifications(per_file: pd.DataFrame, workflow_params: dict) -> p
         low = no_ms2 or rate < expected
         outlier = median is not None and not no_ms2 and rate < BATCH_SHARE * median
         if not (low or outlier):
+            fine.append({"File": row["File"], "ID rate (%)": float(rate), "Expected (%)": expected,
+                         "Likely causes": ""})
             continue
         causes = _causes(row, tolerances)
         if outlier and not low:
@@ -121,4 +124,4 @@ def diagnose_identifications(per_file: pd.DataFrame, workflow_params: dict) -> p
             "Expected (%)": expected,
             "Likely causes": " ".join(causes[:MAX_CAUSES]),
         })
-    return pd.DataFrame(rows, columns=DIAGNOSIS_COLUMNS)
+    return pd.DataFrame(rows + (fine if all_files else []), columns=DIAGNOSIS_COLUMNS)
