@@ -69,9 +69,6 @@ def render(ctx) -> None:
     # Render algorithmic options sub-menus based on the parent selection
     strategy_opt = scope_opt = None  # only the selected class's option is shown
     if impute_category == "MAR (Missing At Random)":
-        st.markdown(
-            "**Group Character Imputation**: Fills missing metrics leveraging sample properties belonging to the same group."
-        )
         mar_options = ["median", "mean"]
         strategy_opt = st.radio(
             "Mathematical Strategy",
@@ -82,9 +79,6 @@ def render(ctx) -> None:
         )
 
     elif impute_category == "MNAR (Missing Not At Random)":
-        st.markdown(
-            "**Smallest Value Imputation**: Replaces missing items with the minimum values detected to reflect technical dropout limits."
-        )
         scope_options = ["row", "global"]
         scope_opt = st.radio(
             "Detection Minimum Scope",
@@ -113,15 +107,7 @@ def render(ctx) -> None:
         if not grouped_samples:
             st.info("Assign sample groups in Configure to see these plots.")
         else:
-            st.caption(
-                "Mean intensity of proteins with and without missing values. If the "
-                "orange curve sits clearly lower, values fall below the detection limit (choose MNAR); if the curves overlap, dropout is random (MAR fits)."
-            )
             show_fig(missingness_vs_intensity(base_df, grouped_samples), "imputation-missingness")
-            st.caption(
-                "Where the current setting places the filled-in values (red) relative to "
-                "observed ones (blue). They should sit at the low edge of the observed values; a separate spike far below them inflates fold changes."
-            )
             preview_df = run_imputation().collect().to_pandas()
             show_fig(imputed_value_preview(base_df, preview_df, grouped_samples), "imputation-preview")
     # --- SECTION 3: Imputation Execution ---

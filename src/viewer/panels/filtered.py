@@ -12,11 +12,6 @@ from src.viewer.scope import needs_results, scoped, show_fig, shared_state, PSM_
 
 
 def render(ctx) -> None:
-    st.info(
-        "**q-value**: the lowest false discovery rate at which this match would still be "
-        "accepted. 0.01 means it passes a 1 % FDR; lower is more confident. **Score** is the "
-        "rescoring's posterior error probability by default (the chance that this one match is wrong)."
-    )
     run_dir = get_run_dir(ctx.workspace)
     run_params = get_run_params(ctx.workspace)
     filter_dir = run_dir / "results" / "psm_filter"
@@ -45,10 +40,6 @@ def render(ctx) -> None:
     heatmap(state_manager=state_manager, height=350, key=scoped("filtered_map"))
     st.subheader("PSM Table")
     run_fdr = min(float(run_params.get("psm-fdr-percent", 1.0)), 100.0)
-    st.caption(
-        "Search the sequence (in any modification form) or proteins with the box in the table's toolbar. "
-        "Tighten the q-value with the filter button, and hide contaminants with the switch."
-    )
     mode = sequence_mode_selector("filtered")
     filtered_psm_table(
         cache_dir,
@@ -61,11 +52,6 @@ def render(ctx) -> None:
     st.subheader("Peptide Sequence")
     seq_view(key=scoped(f"seqview_{cache_id_prefix}"), state_manager=state_manager, height=533)
     st.subheader("MS2 spectrum")
-    st.caption(
-        "Top: the measured spectrum, with peaks explained by the peptide's fragment ions coloured. Bottom, mirrored: "
-        "the spectrum a deep-learning model (AlphaPeptDeep) predicts for the peptide. A correct match shows the same "
-        "strong peaks on both sides."
-    )
     show_selected_psm_spectrum(
         cache_dir,
         selected_file,

@@ -18,6 +18,7 @@ PAGES = {
     "run": ("content/workflow_run.py", "Run analysis", "🚀"),
     # Every result is a component of the results page
     "viewer": ("content/viewer.py", "Explore results", "👁️"),
+    "export": ("content/workflow_export.py", "Export results", "📤"),
 }
 
 

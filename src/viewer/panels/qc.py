@@ -35,21 +35,12 @@ def render(ctx) -> None:
         return needs_results()
     if all_psms is not None and not all_psms.empty:
         st.subheader("Score distribution")
-        st.caption(
-            "All PSMs before FDR filtering. Decoys model the incorrect matches: targets to the "
-            "right of the decoy peak are the correct identifications. The dashed line is the "
-            "lowest target score that passes the PSM FDR."
-        )
         if not all_psms["decoy"].any():
             st.warning("No decoy PSMs found, so the score distribution cannot show the incorrect matches.")
         show_fig(score_distribution(all_psms, fdr), "qc-score-distribution")
     if filtered is not None and not filtered.empty:
         st.subheader("Precursor mass error")
-        st.caption(
-            f"Target PSMs at the PSM FDR ({fdr * 100:.3g} %). A median far from 0 ppm points to a "
-            "calibration offset; a distribution as wide as the precursor tolerance suggests the "
-            "tolerance could be tighter."
-        )
+        st.caption(f"Target PSMs at the PSM FDR ({fdr * 100:.3g} %).")
         show_fig(precursor_error_histogram(filtered), "qc-precursor-error")
 
         st.subheader("PSMs per file")

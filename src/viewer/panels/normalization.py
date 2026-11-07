@@ -65,7 +65,6 @@ def render(ctx) -> None:
     with st.expander(f"Input: {base_df.shape[0]:,} proteins in {len(sample_cols)} samples"):
         show_insight_table(base_df, name="normalization-input")
     st.markdown("### Steps so far")
-    st.caption("Data flows in order: Filtering -> Imputation -> Normalization")
     step_rows = [
         {
             "Step": "Filtering",
@@ -104,13 +103,7 @@ def render(ctx) -> None:
     st.subheader("Settings")
     # Prepare structural Polars metadata DataFrame required by backend functions
     metadata_pl = group_metadata(sample_group_map, sample_cols)
-    st.caption(
-        "Recommended: log2 transformation, median normalization and no row scaling. "
-        "Statistical Inference reports the difference of group means as log2FC, so "
-        "it expects log2-scaled intensities; median normalization shifts each sample "
-        "by a constant and is only meaningful on a log scale; row scaling removes the "
-        "fold changes the volcano plot shows."
-    )
+    st.caption("Recommended: log2, median normalization, no row scaling.")
     col1, col2, col3 = st.columns(3)
     with col1:
         st.markdown("### 🧬 1. Mathematical Transformation")
@@ -176,10 +169,6 @@ def render(ctx) -> None:
 
     grouped_samples = metadata_pl["sample_id"].to_list()
     with st.expander("📈 Help me choose a method", expanded=True):
-        st.caption(
-            "Each box is one sample's intensity distribution, before (top) and after "
-            "(bottom) the current settings. After a good normalization the medians line up; a sample that stays offset may have a loading or acquisition problem."
-        )
         if not grouped_samples:
             st.info("Assign sample groups in Configure to see this plot.")
         else:

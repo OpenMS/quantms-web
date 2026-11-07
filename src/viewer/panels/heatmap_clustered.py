@@ -87,8 +87,4 @@ def render(ctx) -> None:
     # dendrogram+heatmap composite with more than a handful of rows.
     heatmap_height = max(600, min(1400, 300 + top_n * 20))
     heatmap_component(state_manager=state_manager, height=heatmap_height, key=scoped("clustered_heatmap"))
-    st.caption(
-        "Same Z-scored proteins as the heatmap, with rows and columns reordered so similar ones sit together "
-        "(dendrograms). If the sample dendrogram splits along the group color bar, the groups differ consistently."
-    )
     show_comparison_settings()

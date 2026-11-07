@@ -3,8 +3,9 @@ from pathlib import Path
 
 import streamlit as st
 
+from src.common import result_export
 from src.common.common import page_setup
-from src.common.guide import explain_empty_run, needs_results, page_intro
+from src.common.guide import explain_empty_run, needs_results
 from src.common.results_helpers import get_runs
 from src.layout_manager import (
     MAX_EXPERIMENTS, render_experiments, request_analysis, resolve_layout, selected_datasets, view_bar,
@@ -12,7 +13,6 @@ from src.layout_manager import (
 from src.viewer import analyses
 from src.viewer.catalog import CATALOG, DEFAULT_LAYOUT, LABELS, PRESETS, ViewerContext, member_picker, renderers
 from src.viewer.comparison import edit_comparison_button, open_comparison
-from src.viewer.export import export_section
 from src.workflow.RunManager import FINISHED
 from src.workflow.run_widgets import get_selected_run, run_label, set_selected_run
 
@@ -20,25 +20,6 @@ KEY = "viewer_run"
 
 params = page_setup()
 st.title("Explore results")
-page_intro(
-    "Every result of your analysis in one place. Each view shows the components for one question, "
-    "such as quality control or differential abundance; pick the run to show below the views. **+** "
-    "makes a view of your own, ✏️ orders the views and adds runs to compare side by side, ⚖️ "
-    "changes how the groups are compared. A protein, peptide or spectrum you pick stays picked "
-    "when you switch views. Files of every run are under **Export** at the bottom.",
-    background="""
-- **Run summary**: did the run work? Proteins, peptides, PSMs and the identification rate.
-- **Group comparison**, **Volcano plot**, **PCA**, **Heatmap**, **GO enrichment**: which
-  proteins differ between your groups, and what they have in common.
-- **Identified proteins**: a protein's coverage, its peptides and their annotated spectra.
-- **Identification quality**, **Peptide-spectrum matches**, **Mass shifts**: whether the
-  identifications can be trusted, down to single spectra.
-- **Diagnostics**: every file's identification rate against the rate its kind of search
-  usually reaches; files that fall short come first, with their likely causes.
-""",
-    background_title="What the components show",
-)
-
 workspace = Path(st.session_state["workspace"])
 runs = get_runs(workspace)
 finished = runs.list_runs(FINISHED)
@@ -50,7 +31,7 @@ if not finished:
 
 # A run that processed more files for an earlier run is shown with it, as one experiment
 datasets = {r["id"]: run_label(r, len(runs.added_runs(r["id"]))) for r in runs.experiments(FINISHED)}
-# A run picked elsewhere (👁️ under Export, or a run that has just finished)
+# A run picked elsewhere (a run that has just finished, or imported from a ZIP)
 # becomes the first experiment's run
 selected = get_selected_run(runs)
 if st.session_state.get("_viewer_selected") != selected:
@@ -78,6 +59,10 @@ def add_files():
         analyses.add_files(run_id)
 
 
+def export_run():
+    result_export.open_dialog(runs, selected_datasets(KEY, 1)[0] if datasets else None)
+
+
 def add_missing(missing, component, run_id, index):
     st.session_state[MISSING_INDEX] = index
     request_analysis(VIEW_KEY, missing, component=component)
@@ -90,7 +75,10 @@ view_bar(
     actions=[{"id": "compare", "icon": "⚖️", "help": "Edit comparison: how the groups of the first run "
               "are compared", "on_click": open_comparison},
              {"id": "add-files", "icon": "➕", "label": "Add files", "on_click": add_files,
-              "help": "Process more files with the first run's settings and add them to its experiment"}],
+              "help": "Process more files with the first run's settings and add them to its experiment"},
+             {"id": "export", "icon": "📤" if result_export.is_local() else "⬇️",
+              "on_click": export_run,
+              "help": f"{result_export.verb()} the files of the first run"}],
     max_experiments=MAX_EXPERIMENTS, experiment_label="Run", target="the Viewer",
     help_text=(
         "Drag a view to order the bar, untick it to keep it under More. Your own views take up to 3 "
@@ -124,5 +112,3 @@ if picked and picked[0] and picked[0] != selected:
     set_selected_run(runs, picked[0])
     st.session_state["_viewer_selected"] = picked[0]
 
-st.divider()
-export_section(workspace)

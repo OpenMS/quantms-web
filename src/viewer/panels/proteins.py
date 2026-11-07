@@ -138,10 +138,7 @@ def render(ctx) -> None:
         description, sequence = fasta_entries[selected]
         mask = coverage[selected]
         st.subheader(f"Coverage of {selected}")
-        st.caption(
-            f"{description} · {len(sequence)} residues · {mask.sum()} covered ({100 * mask.mean():.1f} %). "
-            "Covered residues are highlighted; every occurrence of a peptide counts."
-        )
+        st.caption(f"{description} · {len(sequence)} residues · {100 * mask.mean():.1f} % covered")
         st.html(coverage_html(sequence, mask))
     st.subheader("Peptides of the selected protein")
     show_insight_table(
@@ -158,7 +155,6 @@ def render(ctx) -> None:
         column_overrides={"accession": HIDDEN},
     )
     st.subheader("PSMs of the selected peptide")
-    st.caption("One row per spectrum that identified the peptide. Click a row to see its annotated spectrum below.")
     show_insight_table(
         psms_long,
         name="protein_psms",
@@ -197,12 +193,6 @@ def render(ctx) -> None:
             viewer_state.set_selection("identification", int(psm_id))
             viewer_state.set_selection("file", mzml_names.index(psm["file"]))
             viewer_state.set_selection("spectrum", int(psm["scan"]))
-            st.caption(
-                "Peaks explained by fragment ions of the peptide are coloured: b ions contain its start, "
-                "y ions its end. Click a peak to find it in the sequence. Below the measured spectrum, "
-                "mirrored, is the spectrum a deep-learning model (AlphaPeptDeep) predicts for this peptide: "
-                "a correct match shows the same strong peaks on both sides."
-            )
             SequenceView(cache_id=f"seqview_{run}", cache_path=str(cache_dir))(
                 key=scoped("proteins_seqview"),
                 state_manager=viewer_state,
