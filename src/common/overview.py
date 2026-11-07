@@ -9,8 +9,9 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from pyopenms import AASequence, MSExperiment, MzMLFile, PeakFileOptions
+from pyopenms import AASequence, MSExperiment, MzMLFile, PeakFileOptions, SpectrumSettings
 
+from src.common.contaminants import CONTAMINANT_PREFIX
 from src.common.results_helpers import extract_filename_from_idxml, load_idxml
 
 # Mass difference between the 13C and 12C isotopes; precursor picks up to
@@ -30,9 +31,22 @@ PER_FILE_COLUMNS = [
     "Search (s)",
 ]
 
+# Columns the identification diagnosis (src/common/id_diagnosis.py) reads besides
+# PER_FILE_COLUMNS: the share of MS2 spectra stored as profile data, the share of
+# target PSMs on a contaminant (trypsin left out, it is in every digest) and the
+# share whose precursor error lies at the edge of the searched window
+DIAGNOSIS_COLUMNS = ["Profile MS2 (%)", "Contaminant PSMs (%)", "At window edge (%)"]
 
-def count_ms2_spectra(mzml_path) -> int | None:
-    """Number of MS2 spectra in an mzML, read without peak data; None if unreadable."""
+# A PSM is at the window edge when its error is beyond this share of the tolerance
+EDGE_OF_WINDOW = 0.9
+
+
+def ms2_summary(mzml_path) -> tuple[int | None, float | None]:
+    """MS2 spectra of an mzML and the share (%) stored as profile data, read without peaks.
+
+    (None, None) if the file is missing or unreadable; the share is None
+    without MS2 spectra.
+    """
     try:
         options = PeakFileOptions()
         options.setMSLevels([2])
@@ -41,9 +55,20 @@ def count_ms2_spectra(mzml_path) -> int | None:
         mzml.setOptions(options)
         exp = MSExperiment()
         mzml.load(str(mzml_path), exp)
-        return exp.getNrSpectra()
     except Exception:  # missing or unreadable file: shown as empty, not an error
-        return None
+        return None, None
+    n = exp.getNrSpectra()
+    if not n:
+        return 0, None
+    # Spectra of unknown type count as centroided
+    profile_type = SpectrumSettings.SpectrumType.PROFILE
+    profile = sum(1 for spec in exp.getSpectra() if spec.getType() == profile_type)
+    return n, round(100 * profile / n, 1)
+
+
+def count_ms2_spectra(mzml_path) -> int | None:
+    """Number of MS2 spectra in an mzML, read without peak data; None if unreadable."""
+    return ms2_summary(mzml_path)[0]
 
 
 def precursor_error_ppm(sequence: AASequence, charge: int, observed_mz: float) -> float | None:
@@ -58,8 +83,20 @@ def precursor_error_ppm(sequence: AASequence, charge: int, observed_mz: float) -
     return min(errors, key=abs)
 
 
+def _is_contaminant(hit) -> bool:
+    """Whether a hit's proteins are all contaminants other than trypsin."""
+    accessions = [e.getProteinAccession() for e in hit.getPeptideEvidences()]
+    accessions = [a.decode() if isinstance(a, bytes) else str(a) for a in accessions]
+    return bool(accessions) and all(
+        a.startswith(CONTAMINANT_PREFIX) and "TRYP_" not in a for a in accessions
+    )
+
+
+PSM_COLUMNS = ["sequence", "decoy", "ppm", "contaminant"]
+
+
 def read_psms(idxml_path) -> pd.DataFrame:
-    """Top hit of every spectrum in an idXML: sequence, decoy flag and precursor error."""
+    """Top hit of every spectrum in an idXML: sequence, decoy flag, precursor error, contaminant flag."""
     _, peptides = load_idxml(idxml_path)
     rows = []
     for pep in peptides:
@@ -75,8 +112,9 @@ def read_psms(idxml_path) -> pd.DataFrame:
             "sequence": sequence.toString(),
             "decoy": str(target_decoy).startswith("decoy"),
             "ppm": precursor_error_ppm(sequence, hit.getCharge(), pep.getMZ()),
+            "contaminant": _is_contaminant(hit),
         })
-    return pd.DataFrame(rows, columns=["sequence", "decoy", "ppm"])
+    return pd.DataFrame(rows, columns=PSM_COLUMNS)
 
 
 def search_times(log_path, mzml_files) -> dict:
@@ -106,11 +144,19 @@ def _by_input(directory: Path, names: list) -> dict:
     return {extract_filename_from_idxml(p, names): p for p in sorted(directory.glob("*.idXML"))}
 
 
-def run_overview(workflow_dir, mzml_files) -> tuple[pd.DataFrame, dict]:
-    """Per-file table (PER_FILE_COLUMNS) and run-wide key figures of a finished run.
+def _share(mask: pd.Series) -> float | None:
+    """Percentage of True in a boolean Series, None when it is empty."""
+    return round(100 * float(mask.astype(bool).mean()), 1) if len(mask) else None
 
-    PSM counts are at the PSM FDR set for the run (the IDFilter output). Files
-    the run did not reach show empty cells.
+
+def run_overview(workflow_dir, mzml_files, precursor_ppm: float | None = None) -> tuple[pd.DataFrame, dict]:
+    """Per-file table and run-wide key figures of a finished run.
+
+    The table has PER_FILE_COLUMNS, then DIAGNOSIS_COLUMNS. PSM counts are at
+    the PSM FDR set for the run (the IDFilter output). Files the run did not
+    reach show empty cells. ``precursor_ppm`` is the searched precursor
+    tolerance in ppm (the wider side), for the share of PSMs at its edge;
+    without it (a tolerance in Da) that column stays empty.
     """
     workflow_dir = Path(workflow_dir)
     results = workflow_dir / "results"
@@ -123,7 +169,7 @@ def run_overview(workflow_dir, mzml_files) -> tuple[pd.DataFrame, dict]:
     all_psms = []
     for mzml in mzml_files:
         name = Path(mzml).name
-        ms2 = count_ms2_spectra(mzml)
+        ms2, profile = ms2_summary(mzml)
         psms = read_psms(filtered[name]) if name in filtered else None
         # astype(bool): an empty file gives an object column, and indexing with an
         # empty object Series selects columns instead of rows
@@ -143,10 +189,16 @@ def run_overview(workflow_dir, mzml_files) -> tuple[pd.DataFrame, dict]:
             ),
             "Percolator": name in rescored,
             "Search (s)": round(times[name]) if name in times else None,
+            "Profile MS2 (%)": profile,
+            "Contaminant PSMs (%)": _share(targets["contaminant"]) if targets is not None else None,
+            "At window edge (%)": (
+                _share(targets["ppm"].dropna().abs() >= EDGE_OF_WINDOW * precursor_ppm)
+                if targets is not None and precursor_ppm else None
+            ),
         })
-    per_file = pd.DataFrame(rows, columns=PER_FILE_COLUMNS)
+    per_file = pd.DataFrame(rows, columns=PER_FILE_COLUMNS + DIAGNOSIS_COLUMNS)
 
-    targets = pd.concat(all_psms) if all_psms else pd.DataFrame(columns=["sequence", "decoy", "ppm"])
+    targets = pd.concat(all_psms) if all_psms else pd.DataFrame(columns=PSM_COLUMNS)
     ms2_total = per_file["MS2 spectra"].dropna().sum() if per_file["MS2 spectra"].notna().any() else None
     key_figures = {
         "Target PSMs": len(targets),

@@ -33,6 +33,8 @@ page_intro(
 - **Identified proteins**: a protein's coverage, its peptides and their annotated spectra.
 - **Identification quality**, **Peptide-spectrum matches**, **Mass shifts**: whether the
   identifications can be trusted, down to single spectra.
+- **Diagnostics**: every file's identification rate against the rate its kind of search
+  usually reaches; files that fall short come first, with their likely causes.
 """,
     background_title="What the components show",
 )

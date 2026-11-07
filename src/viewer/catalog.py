@@ -14,6 +14,7 @@ _COMPONENTS = [
     ("run_summary", "Run summary: key figures and files", "Run", "overview"),
     ("sample_counts", "Per-sample counts", "Run", "samples"),
     ("id_quality", "Identification quality", "Run", "qc"),
+    ("id_diagnostics", "Diagnostics: files with few identifications", "Run", "diagnostics"),
     ("protein_explorer", "Identified proteins, peptides and spectra", "Identification", "proteins"),
     ("psms", "Peptide-spectrum matches (after FDR)", "Identification", "filtered"),
     ("psms_rescored", "Rescored hits (Percolator)", "Identification", "rescoring"),
@@ -33,6 +34,7 @@ NEEDS = {
     "run_summary": "identification",
     "sample_counts": "identification",
     "id_quality": "search",
+    "id_diagnostics": "identification",
     "protein_explorer": "identification",
     "psms": "identification",
     "psms_rescored": "rescoring",
@@ -77,7 +79,7 @@ PRESETS = [
     },
     {
         "name": "quality_control", "label": "Quality control",
-        "layout": [["sample_counts"], ["id_quality"], ["psms_search"], ["pca"]],
+        "layout": [["sample_counts"], ["id_diagnostics"], ["id_quality"], ["psms_search"], ["pca"]],
         "help": "Whether the samples and identifications can be trusted.",
     },
     {
