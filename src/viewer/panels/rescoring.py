@@ -20,6 +20,7 @@ def render(ctx) -> None:
     prediction_summary = run_dir / "results" / "prediction_features" / "summary.json"
     if prediction_summary.exists():
         with st.container(border=True):
+            st.markdown("**Rescored with predicted spectra and retention times.**")
             rows = [
                 "| File | Instrument | Collision energy | Matches predicted | Median spectral angle, targets | Median spectral angle, decoys |",
                 "|---|---|---|---|---|---|",
