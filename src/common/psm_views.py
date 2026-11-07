@@ -12,6 +12,7 @@ import polars as pl
 from openms_insight import Heatmap, LinePlot, SequenceView, Table
 
 from src.common.identified_spectra import has_spectra, spectra_sources
+from src.common.plot_style import spectrum_styling
 from src.common.results_helpers import (
     build_spectra_cache, extract_filename_from_idxml, parse_idxml, peaks_for_identifications, psm_table_columns,
     write_psm_exports,
@@ -91,11 +92,7 @@ def build_psm_views(idxml_path: Path, cache_dir: Path, spectra_df: pl.DataFrame 
         cache_id=f"lineplot_{prefix}",
         cache_path=str(cache_dir),
         title="Annotated Spectrum",
-        styling={
-            "unhighlightedColor": "#CCCCCC",
-            "highlightColor": "#E74C3C",
-            "selectedColor": "#F3A712",
-        },
+        styling=spectrum_styling(),
     )
     if export_dir is not None:
         # Downloadable exports: every PSM, and every PSM's matched fragment
