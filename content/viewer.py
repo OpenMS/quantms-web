@@ -77,7 +77,7 @@ view_bar(
              {"id": "add-files", "icon": "➕", "label": "Add files", "on_click": add_files,
               "help": "Process more files with the first run's settings and add them to its experiment"},
              {"id": "export", "icon": "📤" if result_export.is_local() else "⬇️",
-              "label": result_export.verb(), "on_click": export_run,
+              "on_click": export_run,
               "help": f"{result_export.verb()} the files of the first run"}],
     max_experiments=MAX_EXPERIMENTS, experiment_label="Run", target="the Viewer",
     help_text=(
