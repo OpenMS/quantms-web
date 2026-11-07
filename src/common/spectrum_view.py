@@ -18,6 +18,7 @@ from src.common.ms2_prediction import (
 from src.common.identified_spectra import spectra_sources
 from src.common.psm_features import features_by_id, features_frame
 from src.common.results_helpers import parse_idxml, search_tolerances
+from src.common.plot_style import spectrum_styling
 
 
 def fragment_tolerance(workflow_params: dict) -> tuple[float, bool]:
@@ -53,9 +54,9 @@ def _measured(parquet: str, mtime: float, file_index: int, scan: int) -> pl.Data
 
 @st.cache_data(show_spinner="Reading identifications...")
 def psm_lookup(idxml: str, mtime: float) -> pd.DataFrame:
-    """Peptide and charge of every hit in an idXML, by the id the run's viewers use."""
+    """Peptide, charge, precursor m/z and retention time of every hit in an idXML, by the id the run's viewers use."""
     id_df, _ = parse_idxml(Path(idxml))
-    return id_df.select("id_idx", "sequence", "charge").to_pandas().set_index("id_idx")
+    return id_df.select("id_idx", "sequence", "charge", "mz", "rt").to_pandas().set_index("id_idx")
 
 
 @st.cache_data(show_spinner="Predicting the spectrum...")
@@ -155,7 +156,7 @@ def show_spectrum(cache_dir: Path, run: str, state_manager, *, peptide: str, cha
         title_bottom=f"Predicted by AlphaPeptDeep ({instrument})",
         x_label="m/z",
         y_label="Relative intensity (%)",
-        styling={"unhighlightedColor": "#CCCCCC", "highlightColor": "#E74C3C", "selectedColor": "#F3A712"},
+        styling=spectrum_styling(),
         svg_filename=svg_name(peptide, charge, scan),
     )(key=f"{key}_mirror", state_manager=state_manager, height=height, sequence_view_top_key=seqview_key)
 
