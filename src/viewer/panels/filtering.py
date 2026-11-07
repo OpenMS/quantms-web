@@ -60,9 +60,6 @@ def render(ctx) -> None:
     # Render threshold sliders dynamically based on the selected filter method
     threshold = 0.0  # set by the slider of the selected method below
     if filter_method == "Low Abundance":
-        st.markdown(
-            "**Low Abundance Filter**: Keeps rows where at least one group's median is above the selected percentile threshold."
-        )
         threshold = st.slider(
             "Threshold Percentile (%)",
             min_value=0.0,
@@ -73,9 +70,6 @@ def render(ctx) -> None:
         )
 
     elif filter_method == "Low Repeatability":
-        st.markdown(
-            "**Low Repeatability Filter**: Keeps rows where at least one group has a missing value ratio within the allowed maximum."
-        )
         threshold = st.slider(
             "Max Missing Ratio (%)",
             min_value=0.0,
@@ -87,9 +81,6 @@ def render(ctx) -> None:
         )
 
     elif filter_method == "Low Variance":
-        st.markdown(
-            "**Low Variance Filter**: Keeps rows where at least one group's variance is above the selected percentile threshold."
-        )
         threshold = st.slider(
             "Threshold Percentile (%)",
             min_value=0.0,
@@ -126,10 +117,6 @@ def render(ctx) -> None:
         )
 
     with st.expander("📈 Help me choose a threshold", expanded=True):
-        st.caption(
-            "How many proteins the selected filter keeps at every threshold. Pick a "
-            "value before the curve drops steeply; flat stretches mean the exact value barely matters."
-        )
         show_fig(
             filter_threshold_curve(
                 lambda t: run_filter(t).select(pl.len()).collect().item(),

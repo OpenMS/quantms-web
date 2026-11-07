@@ -47,11 +47,6 @@ def edit_comparison_button(ctx: ViewerContext, button: bool = True) -> None:
 
     @st.dialog("Edit comparison", width="large", on_dismiss=_closed)
     def _dialog() -> None:
-        st.caption(
-            "The group comparison runs these four steps on the run's protein abundances, with "
-            "recommended settings until you change one. Apply a step to update the steps after it, "
-            "then press **Done** to see the result on Explore results."
-        )
         tabs = st.tabs([label for _, label in COMPARISON_STEPS])
         for tab, (module, _) in zip(tabs, COMPARISON_STEPS):
             with tab:

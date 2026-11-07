@@ -8,14 +8,7 @@ from src.viewer.panels import download, library
 
 
 def export_section(workspace: Path) -> None:
-    local = st.session_state.get("location") == "local"
     st.header("Export")
-    st.markdown(
-        "Every analysis you start is kept as its own run. 👁️ shows a run on Explore results, ✏️ renames it, "
-        "📦 packs its results, settings, logs and identified spectra into one ZIP, and 🗑️ deletes it. "
-        "Below the runs are the files of one run, singly or as one ZIP"
-        + (", or exported to a folder." if local else ".")
-    )
     with st.expander("📖 Which files most people need"):
         st.markdown(
             """

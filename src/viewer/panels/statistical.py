@@ -136,13 +136,8 @@ def render(ctx) -> None:
     if statistics_df is not None:
         # Display the finalized statistics table view
         st.subheader("Result")
-        st.caption("log2FC: log2 fold change between the groups; p-adj: p-value adjusted for testing many proteins.")
         show_insight_table(statistics_df, name="statistical-result")
     # --- SECTION 4: Test diagnostics ---
     if st.session_state.get("statistics_df") is not None:
         with st.expander("📈 Check the test result", expanded=True):
-            st.caption(
-                "Raw p-values of all proteins. A flat histogram with a peak near 0 means "
-                "the test fits and some proteins change; a peak near 1 or a U-shape points to non-log input or the wrong test, and no peak at all means few proteins differ."
-            )
             show_fig(pvalue_histogram(st.session_state["statistics_df"]), "statistics-pvalue-histogram")

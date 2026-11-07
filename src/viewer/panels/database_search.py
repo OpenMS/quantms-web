@@ -19,10 +19,6 @@ def render(ctx) -> None:
     if not search_files:
         st.warning("No identification output files found.")
         return
-    st.info(
-        "**Score: ln(hyperscore)**, how well the matched b and y fragment ions explain the spectrum "
-        "(their number and intensity). Higher is better; the table starts with the best matches."
-    )
     selected_file = st.selectbox(
         "Select identification result file", search_files, format_func=lambda x: x.name, key=scoped("search_file")
     )
@@ -45,11 +41,6 @@ def render(ctx) -> None:
     st.subheader("Peptide Sequence")
     seq_view(key=scoped(f"seqview_{cache_id_prefix}"), state_manager=state_manager, height=533)
     st.subheader("MS2 spectrum")
-    st.caption(
-        "Top: the measured spectrum, with peaks explained by the peptide's fragment ions coloured. Bottom, mirrored: "
-        "the spectrum a deep-learning model (AlphaPeptDeep) predicts for the peptide. A correct match shows the same "
-        "strong peaks on both sides."
-    )
     show_selected_psm_spectrum(
         cache_dir,
         selected_file,

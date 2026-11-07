@@ -11,10 +11,6 @@ from src.viewer.scope import needs_results, scoped, shared_state, PSM_PRIVATE
 
 
 def render(ctx) -> None:
-    st.info(
-        "**Score: PEP** (posterior error probability), the probability that this match is wrong. "
-        "0.01 means a 1 % chance; lower is more confident."
-    )
     run_dir = get_run_dir(ctx.workspace)
     run_params = get_run_params(ctx.workspace)
     perc_dir = run_dir / "results" / "percolator_results"
@@ -24,12 +20,6 @@ def render(ctx) -> None:
     prediction_summary = run_dir / "results" / "prediction_features" / "summary.json"
     if prediction_summary.exists():
         with st.container(border=True):
-            st.markdown(
-                "**Rescored with predicted spectra and retention times.** AlphaPeptDeep predicted every "
-                "match; Percolator also used how well the measured spectrum matches the predicted one "
-                "(spectral angle, 1 = identical) and the retention-time difference. Correct matches "
-                "score high, decoys low."
-            )
             rows = [
                 "| File | Instrument | Collision energy | Matches predicted | Median spectral angle, targets | Median spectral angle, decoys |",
                 "|---|---|---|---|---|---|",
@@ -68,11 +58,6 @@ def render(ctx) -> None:
     st.subheader("Peptide Sequence")
     seq_view(key=scoped(f"seqview_{cache_id_prefix}"), state_manager=state_manager, height=533)
     st.subheader("MS2 spectrum")
-    st.caption(
-        "Top: the measured spectrum, with peaks explained by the peptide's fragment ions coloured. Bottom, mirrored: "
-        "the spectrum a deep-learning model (AlphaPeptDeep) predicts for the peptide. A correct match shows the same "
-        "strong peaks on both sides."
-    )
     show_selected_psm_spectrum(
         cache_dir,
         selected_file,

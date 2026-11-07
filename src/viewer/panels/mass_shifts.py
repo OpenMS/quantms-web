@@ -34,11 +34,7 @@ def render(ctx) -> None:
     if units == "Da" and tolerance and float(tolerance) >= 100:
         st.caption(f"Open search: precursor tolerance ±{float(tolerance):g} Da.")
     else:
-        st.caption(
-            "This run used a closed search, so only shifts within the precursor tolerance appear "
-            "(0 Da and isotope picks). Apply the **Open Search** preset on the Describe experiment page to "
-            "look for unexpected modifications."
-        )
+        st.caption("Closed search: only shifts within the precursor tolerance.")
         page_link("configure")
     if psms.empty:
         st.info("No target PSMs in the filtered results.")

@@ -40,11 +40,7 @@ def render(ctx) -> None:
         }
         sources = sorted(filter_dir.glob("*.idXML")) + sorted((results_dir / "quant_results").glob("*.csv"))
         samples = _lfq_samples(str(run_dir), tuple(mzml_files), tuple(sorted(group_map.items())), _mtimes(sources))
-        st.caption(
-            f"PSMs, peptides and proteins are the targets identified at {fdr:g} % PSM FDR, from the "
-            "top hit of each spectrum. Quantified proteins and peptides have an intensity above 0 in "
-            "the sample's ProteomicsLFQ result."
-        )
+        st.caption(f"Counts at {fdr:g} % PSM FDR.")
     else:
         abundance = get_abundance_data(ctx.workspace)
         if abundance is None:
@@ -57,10 +53,6 @@ def render(ctx) -> None:
         sample_columns = [c for c in pivot_df.columns[4:] if c != "PeptideSequence"]
         samples = channel_samples(pivot_df, sample_columns, sample_group_map)
         sources = sorted((results_dir / "quant_results").glob("*.csv"))
-        st.caption(
-            "Each sample is an isobaric channel. Quantified proteins have an intensity above 0 in the "
-            "channel. Identifications are made per file, not per channel: see the Run summary."
-        )
     if samples.empty:
         st.info("No samples in the last run.")
         return
@@ -114,5 +106,5 @@ def render(ctx) -> None:
         layout="fitColumns",
     )
     if (samples["Condition"] == "Unassigned").any():
-        st.caption("Samples without a group are shown as Unassigned. Set groups on the Describe experiment page.")
+        st.caption("Samples without a group are shown as Unassigned.")
         page_link("configure")

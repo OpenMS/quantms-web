@@ -4,7 +4,7 @@ from pathlib import Path
 import streamlit as st
 
 from src.common.common import page_setup
-from src.common.guide import explain_empty_run, needs_results, page_intro
+from src.common.guide import explain_empty_run, needs_results
 from src.common.results_helpers import get_runs
 from src.layout_manager import (
     MAX_EXPERIMENTS, render_experiments, request_analysis, resolve_layout, selected_datasets, view_bar,
@@ -20,23 +20,6 @@ KEY = "viewer_run"
 
 params = page_setup()
 st.title("Explore results")
-page_intro(
-    "Every result of your analysis in one place. Each view shows the components for one question, "
-    "such as quality control or differential abundance; pick the run to show below the views. **+** "
-    "makes a view of your own, ✏️ orders the views and adds runs to compare side by side, ⚖️ "
-    "changes how the groups are compared. A protein, peptide or spectrum you pick stays picked "
-    "when you switch views. Files of every run are under **Export** at the bottom.",
-    background="""
-- **Run summary**: did the run work? Proteins, peptides, PSMs and the identification rate.
-- **Group comparison**, **Volcano plot**, **PCA**, **Heatmap**, **GO enrichment**: which
-  proteins differ between your groups, and what they have in common.
-- **Identified proteins**: a protein's coverage, its peptides and their annotated spectra.
-- **Identification quality**, **Peptide-spectrum matches**, **Mass shifts**: whether the
-  identifications can be trusted, down to single spectra.
-""",
-    background_title="What the components show",
-)
-
 workspace = Path(st.session_state["workspace"])
 runs = get_runs(workspace)
 finished = runs.list_runs(FINISHED)

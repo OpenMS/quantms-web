@@ -101,10 +101,6 @@ def render(ctx) -> None:
     # 5. Render the component
     state_manager = shared_state()
     pca_component(state_manager=state_manager, pc_x=pc_x, pc_y=pc_y, height=600, key=scoped("pca_plot"))
-    st.caption(
-        "Each point is a sample, placed by its overall protein profile. Samples of one group should "
-        "cluster together and groups should separate; an isolated sample is a candidate outlier worth checking before statistics."
-    )
     st.markdown(
         "**Explained variance:** "
         + ", ".join(f"{col} {ratio * 100:.1f}%" for col, ratio in zip(pc_columns, variance_ratio))

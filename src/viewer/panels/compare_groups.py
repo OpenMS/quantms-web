@@ -29,11 +29,7 @@ def render(ctx) -> None:
     for col, (group, members) in zip(cols, sorted(groups.items())):
         col.metric(group, f"{len(members)} sample{'' if len(members) == 1 else 's'}")
     if "Unassigned" in groups:
-        st.warning(
-            "Some samples have no group, so they are left out of the comparison. Give each a group on "
-            "the **Describe experiment** page (for TMT, type **skip** for channels you do not want "
-            "compared). The comparison updates without running the analysis again."
-        )
+        st.warning("Samples without a group are left out. Set their group on **Describe experiment**.")
         page_link("configure")
     statistics_df = ensure_group_comparison(params)
     if statistics_df is None:
@@ -53,10 +49,7 @@ def render(ctx) -> None:
                 " With more than two groups the p-value tests whether any group differs; the fold "
                 f"change still compares **{comp}** with **{ref}**."
             )
-        st.caption(
-            note
-            + " Counts use |log2 fold change| ≥ 1 and adjusted p-value ≤ 0.05; explore other cut-offs on the volcano plot."
-        )
+        st.caption(note + " Counts: |log2 fold change| ≥ 1, adjusted p-value ≤ 0.05.")
     show_comparison_settings()
     st.subheader("All compared proteins, most significant first")
     table = statistics_df.sort_values("p-adj", na_position="last")[[id_col, "log2FC", "p-adj", "p-value"]].copy()
@@ -90,4 +83,3 @@ def render(ctx) -> None:
             "accession": {"visible": False},
         },
     )
-    st.caption("The table's download button saves it as CSV, in the current sort and filter.")

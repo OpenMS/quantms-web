@@ -37,15 +37,6 @@ def render(ctx) -> None:
         """Common function to render the protein-level abundance table"""
         pivot_df = pivot_df.copy()
         if is_lfq:
-            st.caption("Each protein's intensity is the sum of its peptides' intensities in that sample.")
-        else:
-            st.caption(
-                "One column per label channel, named by its reporter ion. Each value is the protein's "
-                "reporter-ion intensity in that channel, from its most intense peptides; n_peptides "
-                "counts the peptides behind it."
-            )
-
-        if is_lfq:
             # Handle LFQ mode columns (Raw Intensity)
             id_col = "ProteinName"
             exclude_cols = [id_col, "PeptideSequence"]
@@ -109,10 +100,6 @@ def render(ctx) -> None:
                 render_protein_table(pivot_df, is_lfq=True)
 
             with psm_tab:
-                st.caption(
-                    "The peptide measurements behind the protein table: one row per peptide and charge "
-                    "state, with its protein, sequence and intensity in every sample."
-                )
                 psm_df = df.copy()
                 fractions = fraction_samples(run_dir / "results", workflow_params)
                 if fractions and "Reference" in psm_df.columns:

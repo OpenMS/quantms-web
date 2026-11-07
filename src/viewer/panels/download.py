@@ -20,10 +20,7 @@ def render(ctx) -> None:
         paths = qpx_paths(results_dir)
         st.markdown("#### Provenance (QPX)")
         if not all(p.is_file() for p in paths.values()):
-            st.caption(
-                "This run is older than the QPX export. Create it from the run's results and logs: "
-                "the filtered PSMs as `qpx/run.psm.parquet` and the provenance as `qpx/run.provenance.parquet`."
-            )
+            st.caption("This run is older than the QPX export.")
             if st.button("Create QPX files", key=scoped("build-qpx")):
                 run_dir = results_dir.parent
                 log = run_dir / "logs" / "commands-and-run-times.log"
@@ -46,11 +43,9 @@ def render(ctx) -> None:
         table = provenance_table(rows)
         tools = [r for r in rows if r["tool_name"].startswith("OpenMS/")]
         st.caption(
-            f"How this run was made: {len(tools)} OpenMS tools"
+            f"{len(tools)} OpenMS tools"
             + (f" (OpenMS {tools[0]['tool_version']})" if tools and tools[0].get("tool_version") else "")
-            + f", {len(table)} parameters. **set by** tells a value the workflow passed from one the tool "
-            "kept as its default. Paths are relative to the workflow folder. The same table is in "
-            "`qpx/run.provenance.parquet`."
+            + f", {len(table)} parameters."
         )
         show_insight_table(
             table,
