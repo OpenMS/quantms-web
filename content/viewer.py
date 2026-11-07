@@ -3,6 +3,7 @@ from pathlib import Path
 
 import streamlit as st
 
+from src.common import result_export
 from src.common.common import page_setup
 from src.common.guide import explain_empty_run, needs_results
 from src.common.results_helpers import get_runs
@@ -12,7 +13,6 @@ from src.layout_manager import (
 from src.viewer import analyses
 from src.viewer.catalog import CATALOG, DEFAULT_LAYOUT, LABELS, PRESETS, ViewerContext, member_picker, renderers
 from src.viewer.comparison import edit_comparison_button, open_comparison
-from src.viewer.export import export_section
 from src.workflow.RunManager import FINISHED
 from src.workflow.run_widgets import get_selected_run, run_label, set_selected_run
 
@@ -31,7 +31,7 @@ if not finished:
 
 # A run that processed more files for an earlier run is shown with it, as one experiment
 datasets = {r["id"]: run_label(r, len(runs.added_runs(r["id"]))) for r in runs.experiments(FINISHED)}
-# A run picked elsewhere (👁️ under Export, or a run that has just finished)
+# A run picked elsewhere (a run that has just finished, or imported from a ZIP)
 # becomes the first experiment's run
 selected = get_selected_run(runs)
 if st.session_state.get("_viewer_selected") != selected:
@@ -59,6 +59,10 @@ def add_files():
         analyses.add_files(run_id)
 
 
+def export_run():
+    result_export.open_dialog(runs, selected_datasets(KEY, 1)[0] if datasets else None)
+
+
 def add_missing(missing, component, run_id, index):
     st.session_state[MISSING_INDEX] = index
     request_analysis(VIEW_KEY, missing, component=component)
@@ -71,7 +75,10 @@ view_bar(
     actions=[{"id": "compare", "icon": "⚖️", "help": "Edit comparison: how the groups of the first run "
               "are compared", "on_click": open_comparison},
              {"id": "add-files", "icon": "➕", "label": "Add files", "on_click": add_files,
-              "help": "Process more files with the first run's settings and add them to its experiment"}],
+              "help": "Process more files with the first run's settings and add them to its experiment"},
+             {"id": "export", "icon": "📤" if result_export.is_local() else "⬇️",
+              "label": result_export.verb(), "on_click": export_run,
+              "help": f"{result_export.verb()} the files of the first run"}],
     max_experiments=MAX_EXPERIMENTS, experiment_label="Run", target="the Viewer",
     help_text=(
         "Drag a view to order the bar, untick it to keep it under More. Your own views take up to 3 "
@@ -105,5 +112,3 @@ if picked and picked[0] and picked[0] != selected:
     set_selected_run(runs, picked[0])
     st.session_state["_viewer_selected"] = picked[0]
 
-st.divider()
-export_section(workspace)

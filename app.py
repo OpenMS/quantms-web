@@ -20,6 +20,8 @@ if "settings" not in st.session_state:
 if __name__ == '__main__':
     # One section follows the path a user takes: describe the experiment, run
     # it, then read every result on Explore results.
+    online = st.session_state.settings["online_deployment"]
+    export, export_icon = ("Download results", "⬇️") if online else ("Export results", "📤")
     pages = {
         "Start here": [
             st.Page(Path("content", "quickstart.py"), title="Home", icon="🏠", default=True),
@@ -28,6 +30,8 @@ if __name__ == '__main__':
             st.Page(Path("content", "workflow_configure.py"), title="Describe experiment", icon="⚙️"),
             st.Page(Path("content", "workflow_run.py"), title="Run analysis", icon="🚀"),
             st.Page(Path("content", "viewer.py"), title="Explore results", icon="👁️"),
+            # A local install exports results to a folder instead of downloading them
+            st.Page(Path("content", "workflow_export.py"), title=export, icon=export_icon),
         ],
     }
 

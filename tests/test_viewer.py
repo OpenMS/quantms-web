@@ -39,7 +39,7 @@ def test_default_layout_uses_catalog_components():
 
 
 def test_every_panel_is_used():
-    used = set(MODULES.values()) | {m for m, _ in COMPARISON_STEPS} | {"download", "library"}
+    used = set(MODULES.values()) | {m for m, _ in COMPARISON_STEPS}
     on_disk = {p.stem for p in PANELS.glob("*.py") if p.stem != "__init__"}
     assert on_disk == used
 
