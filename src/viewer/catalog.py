@@ -26,6 +26,10 @@ _COMPONENTS = [
     ("heatmap", "Heatmap", "Group comparison", "heatmap"),
     ("clustered_heatmap", "Clustered heatmap", "Group comparison", "heatmap_clustered"),
     ("go_enrichment", "GO enrichment", "Group comparison", "enrichment"),
+    ("comparison_missing_values", "Missing values", "Group comparison", "comparison_missing_values"),
+    ("comparison_imputed_values", "Imputed values", "Group comparison", "comparison_imputed_values"),
+    ("comparison_normalization", "Normalization", "Group comparison", "comparison_normalization"),
+    ("comparison_pvalues", "p-value distribution", "Group comparison", "comparison_pvalues"),
 ]
 
 # Components that need more than every run has: the analysis each needs (src/viewer/analyses.py)
@@ -45,6 +49,10 @@ NEEDS = {
     "group_comparison": ["quantification", "groups"],
     "volcano": ["quantification", "groups"],
     "go_enrichment": ["quantification", "groups"],
+    "comparison_missing_values": ["quantification", "groups"],
+    "comparison_imputed_values": ["quantification", "groups"],
+    "comparison_normalization": ["quantification", "groups"],
+    "comparison_pvalues": ["quantification", "groups"],
 }
 
 # Components computed over the samples of every run of an experiment (a run and
@@ -52,7 +60,8 @@ NEEDS = {
 # run of it, picked above them.
 EXPERIMENT_WIDE = {
     "protein_abundance", "group_comparison", "volcano", "pca", "heatmap",
-    "clustered_heatmap", "go_enrichment",
+    "clustered_heatmap", "go_enrichment", "comparison_missing_values", "comparison_imputed_values",
+    "comparison_normalization", "comparison_pvalues",
 }
 
 CATALOG = [
@@ -84,6 +93,16 @@ PRESETS = [
         "name": "differential", "label": "Differential abundance",
         "layout": [["group_comparison"], ["volcano"], ["heatmap"]],
         "help": "Which proteins differ between your groups.",
+    },
+    {
+        "name": "comparison_checks", "label": "Comparison checks",
+        "layout": [
+            ["group_comparison"],
+            ["comparison_missing_values", "comparison_imputed_values"],
+            ["comparison_normalization", "comparison_pvalues"],
+        ],
+        "help": "Whether the group comparison's settings fit the data: missing values, the values filled in "
+                "for them, normalization and the p-values.",
     },
     {
         "name": "pathways", "label": "Pathways",
