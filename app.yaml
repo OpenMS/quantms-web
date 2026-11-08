@@ -129,7 +129,6 @@ deploy:
     hosts:
     - opendda.webapps.openms.de
     - opendda.webapps.openms.org
-    storage: 300Gi
     worker_tier: high
   docker_compose: true
   desktop:
