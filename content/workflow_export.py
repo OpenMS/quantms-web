@@ -38,7 +38,8 @@ for i, run in enumerate(all_runs):
     files = rx.run_files(runs, run_id)
     editing = f"_export-rename-{run_id}"
     with st.container(border=True):
-        name_col, button_col, delete_col = st.columns([3, 1.2, 0.5], vertical_alignment="center")
+        name_col, button_col, reuse_col, delete_col = st.columns(
+            [3, 1.2, 0.5, 0.5], vertical_alignment="center")
         with name_col:
             if st.session_state.get(editing):
                 with st.container(horizontal=True, vertical_alignment="bottom"):
@@ -67,6 +68,13 @@ for i, run in enumerate(all_runs):
             if status == FINISHED:
                 rx.run_button(runs, run_id, str(i), export_dir,
                               label=None if local else "Download ZIP", message_area=message_area)
+        with reuse_col:
+            if st.button("", key=f"export-reuse-{run_id}", icon=":material/replay:",
+                         width="stretch", disabled=status == RUNNING or not runs.params(run_id),
+                         help=f"Start a new run from the settings and files of {name}: opens "
+                              "Describe experiment with them, to change what needs changing"):
+                from src.WorkflowTest import WorkflowTest  # the page set up the workspace
+                WorkflowTest().reuse_settings(run_id)
         with delete_col:
             with st.popover("", icon=":material/delete:", help=f"Delete {name} and its files",
                             width="stretch", disabled=status == RUNNING):

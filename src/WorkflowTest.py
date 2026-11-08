@@ -226,6 +226,8 @@ class WorkflowTest(WorkflowManager):
     multi_run = True
     # Start analysis (settings adding files to an experiment) opens the Run page
     run_page = Path("content", "workflow_run.py")
+    # Start from these settings (Export page) opens Describe experiment
+    configure_page = Path("content", "workflow_configure.py")
 
     def __init__(self) -> None:
         super().__init__("TOPP Workflow", st.session_state["workspace"])
