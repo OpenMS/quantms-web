@@ -8,6 +8,7 @@ from pathlib import Path
 import pandas as pd
 import polars as pl
 import pyarrow.parquet as pq
+import pyopenms as poms
 import streamlit as st
 from openms_insight import LinePlot, MirrorPlot
 
@@ -75,6 +76,38 @@ def svg_name(peptide: str, charge: int, scan: int) -> str:
     return f"{name}_{int(charge)}+_scan{int(scan)}"
 
 
+@st.cache_data(show_spinner=False)
+def modified_residues(peptide: str) -> dict[str, float]:
+    """Monoisotopic residue masses of the peptide's modified residues, e.g. ``{"M(Oxidation)": 147.0354}``.
+
+    The spectrum's measure tool matches the m/z difference of two clicked peaks
+    to residue masses; with these it also recognises the modified residues of
+    the PSM shown. Terminal modifications (no residue of their own) and
+    sequences pyOpenMS cannot read give nothing.
+    """
+    try:
+        sequence = poms.AASequence.fromString(str(peptide))
+    except Exception:  # a sequence pyOpenMS cannot parse: no extra masses
+        return {}
+    masses: dict[str, float] = {}
+    for i in range(sequence.size()):
+        residue = sequence.getResidue(i)
+        if not residue.isModified():
+            continue
+        name = f"{residue.getOneLetterCode()}({residue.getModificationName()})"
+        masses[name] = round(residue.getMonoWeight(poms.Residue.ResidueType.Internal), 5)
+    return masses
+
+
+def measure_options(peptide: str, tolerance: float, ppm: bool) -> dict:
+    """Arguments of the spectrum plots' measure tool for a PSM: its modified residues and,
+    for a tolerance in Da, the search's fragment tolerance (a ppm tolerance keeps the plot's default)."""
+    options: dict = {"measure_residues": modified_residues(peptide)}
+    if not ppm and tolerance > 0:
+        options["measure_tolerance"] = float(tolerance)
+    return options
+
+
 def show_spectrum(cache_dir: Path, run: str, state_manager, *, peptide: str, charge: int, file_index: int,
                   scan: int, seqview_key: str, key: str, tolerance: float, ppm: bool,
                   mzml_path: Path | None = None, height: int = 450) -> None:
@@ -98,9 +131,10 @@ def show_spectrum(cache_dir: Path, run: str, state_manager, *, peptide: str, cha
         if predicted is None and reason is None:
             reason = "the peptide carries a modification or residue the model does not know"
 
+    measure = measure_options(peptide, tolerance, ppm)
     if predicted is None:
         st.caption(f"No predicted spectrum for comparison: {reason}.")
-        LinePlot(cache_id=f"lineplot_{run}", cache_path=str(cache_dir))(
+        LinePlot(cache_id=f"lineplot_{run}", cache_path=str(cache_dir), **measure)(
             key=f"{key}_lineplot", state_manager=state_manager, height=height, sequence_view_key=seqview_key,
         )
         return
@@ -158,6 +192,7 @@ def show_spectrum(cache_dir: Path, run: str, state_manager, *, peptide: str, cha
         y_label="Relative intensity (%)",
         styling=spectrum_styling(),
         svg_filename=svg_name(peptide, charge, scan),
+        **measure,
     )(key=f"{key}_mirror", state_manager=state_manager, height=height, sequence_view_top_key=seqview_key)
 
 
