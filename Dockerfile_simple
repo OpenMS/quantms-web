@@ -93,7 +93,12 @@ RUN if [ -f requirements-nodeps.txt ]; then python -m pip install --no-deps -r r
 # AlphaPeptDeep's pretrained models, fetched at build time so the spectrum
 # prediction works offline and for any user the container runs as.
 ENV PEPTDEEP_HOME=/opt/peptdeep
-RUN python -c "import os; from peptdeep.pretrained_models import download_models, get_model_zip_file_path; from peptdeep.settings import global_settings; global_settings['PEPTDEEP_HOME'] = os.environ['PEPTDEEP_HOME']; download_models(target_path=get_model_zip_file_path())" && chmod -R a+rX /opt/peptdeep
+# GitHub release downloads fail now and then; try a few times (each try
+# overwrites the partial zip of the one before).
+RUN for i in 1 2 3 4 5; do \
+      python -c "import os; from peptdeep.pretrained_models import download_models, get_model_zip_file_path; from peptdeep.settings import global_settings; global_settings['PEPTDEEP_HOME'] = os.environ['PEPTDEEP_HOME']; download_models(target_path=get_model_zip_file_path())" && break; \
+      if [ "$i" = 5 ]; then exit 1; fi; sleep $((i * 20)); \
+    done && chmod -R a+rX /opt/peptdeep
 
 # Pre-create bind-mount targets so apptainer/singularity has a real attach
 # point. Docker auto-creates missing `-v` targets, but singularity uses a
