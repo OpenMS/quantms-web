@@ -74,7 +74,7 @@ view_bar(
     analyses=analyses.ANALYSES, unavailable_options=missing_options,
     actions=[{"id": "compare", "icon": "⚖️", "help": "Edit comparison: how the groups of the first run "
               "are compared", "on_click": open_comparison},
-             {"id": "add-files", "icon": "➕", "label": "Add files", "on_click": add_files,
+             {"id": "add-files", "icon": "➕", "label": "Add analysis", "on_click": add_files,
               "help": "Process more files with the first run's settings and add them to its experiment"},
              {"id": "export", "icon": "📤" if result_export.is_local() else "⬇️",
               "on_click": export_run,
