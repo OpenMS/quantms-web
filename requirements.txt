@@ -140,10 +140,10 @@ xlsxwriter
 streamlit_plotly_events
 scipy
 scikit-learn
-# Development build of OpenMS-Insight (main 598bb81: image download format, measure tool,
-# keyboard stepping in tables, own peak labels).
+# Development build of OpenMS-Insight (main after #72: zoom kept in the shared state, image
+# download format, measure tool, keyboard stepping in tables, own peak labels).
 # Replace with the next PyPI release before an app release.
-openms-insight @ https://raw.githubusercontent.com/OpenMS/quantms-web/claude/insight-dev-wheels/openms_insight-0.6.1.dev20261108-py3-none-any.whl#sha256=9399d214870269b675dced8917785dbda30944c6f14c462be8ecedd5826d4809
+openms-insight @ https://raw.githubusercontent.com/OpenMS/quantms-web/claude/insight-dev-wheels/openms_insight-0.6.1.dev2026110809-py3-none-any.whl#sha256=89a2bb882f34a8f84ecaf5a19cd2b7e5da78931851b71d3f01bfa8e3e4c12929
 polars>=1.0.0
 # Forces polars to prefer its most CPU-compatible native runtime.
 # Without this, polars can select an AVX-optimized runtime (e.g. runtime-32)

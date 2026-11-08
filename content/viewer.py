@@ -8,7 +8,8 @@ from src.common.common import page_setup
 from src.common.guide import explain_empty_run, needs_results
 from src.common.results_helpers import get_runs
 from src.layout_manager import (
-    MAX_EXPERIMENTS, render_experiments, request_analysis, resolve_layout, selected_datasets, view_bar,
+    MAX_EXPERIMENTS, experiment_state, render_experiments, request_analysis, resolve_layout, selected_datasets,
+    view_bar,
 )
 from src.viewer import analyses
 from src.viewer.catalog import CATALOG, DEFAULT_LAYOUT, LABELS, PRESETS, ViewerContext, member_picker, renderers
@@ -53,6 +54,10 @@ def missing_options(missing, view):
     return analyses.options(workspace, run_id, missing)
 
 
+def run_of(index: int):
+    return selected_datasets(KEY, index + 1)[index]
+
+
 def add_files():
     run_id = selected_datasets(KEY, 1)[0]
     if run_id is not None:
@@ -80,6 +85,9 @@ view_bar(
               "on_click": export_run,
               "help": f"{result_export.verb()} the files of the first run"}],
     max_experiments=MAX_EXPERIMENTS, experiment_label="Run", target="the Viewer",
+    # A view of the user's own keeps each run's selection and zoom (📌, ↺)
+    states=lambda i: experiment_state("viewer", i, run_of(i)),
+    datasets=run_of,
     help_text=(
         "Drag a view to order the bar, untick it to keep it under More. Your own views take up to 3 "
         "components per row; ready-made views can be duplicated. Add runs to compare them side by side."

@@ -51,6 +51,22 @@ def shared_state(owner: str = "", private: tuple = ()):
     return experiment_state("viewer", index, st.session_state.get(RUN_KEY), private=private, owner=owner)
 
 
+def zoom(cls, name: str) -> dict:
+    """``zoom_identifier`` for an Insight plot, so a view can keep its zoom.
+
+    The plot then keeps its zoom in the experiment's state as ``zoom@<name>``
+    (name: the catalog component), which 📌 stores with the view and ↺ applies.
+    Empty with an openms-insight release whose plot has no such argument.
+    """
+    import inspect
+
+    from src.layout_manager import zoom_identifier
+
+    if "zoom_identifier" not in inspect.signature(cls.__init__).parameters:
+        return {}
+    return {"zoom_identifier": zoom_identifier(name)}
+
+
 def shown_run() -> str | None:
     """The run of the experiment being drawn, None outside the Viewer."""
     return st.session_state.get(RUN_KEY)
