@@ -6,7 +6,7 @@ from .ParameterManager import ParameterManager
 from .CommandExecutor import CommandExecutor
 from .StreamlitUI import StreamlitUI
 from .FileManager import FileManager
-from .RunManager import RunManager, FINISHED, FAILED, CANCELLED, RUNNING, FOLLOW_UP_KEY, FOLLOW_UP_FILE, apply_settings
+from .RunManager import RunManager, FINISHED, FAILED, CANCELLED, RUNNING, FOLLOW_UP_KEY, FOLLOW_UP_FILE, apply_settings, same_files_info
 import multiprocessing
 import streamlit as st
 import shutil
@@ -133,6 +133,8 @@ class WorkflowManager:
         page=None,
         note: str = "",
         add_files: Optional[str] = None,
+        same_files: Optional[str] = None,
+        keep: Optional[list] = None,
     ) -> bool:
         """Set up the next run from the settings ``run_id`` was started with.
 
@@ -149,8 +151,16 @@ class WorkflowManager:
         files: that key starts empty, and the next run adds the files picked
         then to ``run_id``'s experiment, which the results pages show as one
         (``RunManager.experiment``), so the earlier files are not processed again.
+
+        ``same_files`` (that key) is for an analysis added to ``run_id`` itself
+        (identification of a run deconvolved only): the next run takes exactly
+        its files, shown locked on the configure page, and ``keep`` names the
+        tools whose results it reuses, shown as kept there in place of their
+        settings. ``execution()`` finds the run in ``follow_up_info()["reuses"]``
+        and takes those tools' results from it instead of running them.
         """
-        if not self.multi_run or not self.runs.restore_settings(run_id, changes, note, add_files):
+        if not self.multi_run or not self.runs.restore_settings(
+                run_id, changes, note, add_files, same_files=same_files, keep=keep):
             return False
         self._reload_settings(page)
         return True
@@ -165,6 +175,9 @@ class WorkflowManager:
         adds_to: Optional[list] = None,
         files: Optional[list] = None,
         files_key: Optional[str] = None,
+        same_files: Optional[str] = None,
+        keep: Optional[list] = None,
+        reuses: Optional[list] = None,
     ) -> None:
         """``follow_up`` for an app without run folders: start from ``params``.
 
@@ -175,9 +188,16 @@ class WorkflowManager:
         ``execution()`` reads them with ``self.follow_up_info()``. ``files_key``
         (the params.json key of the input files) shows those files apart on the
         configure page, so only the files to add can be picked there.
+
+        ``same_files`` (that key) instead keeps the input ``files`` of the
+        results ``reuses`` (the app's ids), shown locked on the configure page,
+        and ``keep`` names the tools whose results are reused (see ``follow_up``).
         """
         info = {"name": name, "note": note}
-        if adds_to:
+        if same_files:
+            info.update(same_files_info(same_files, files or [], keep, reuses))
+            changes = {**(changes or {}), same_files: list(files or [])}
+        elif adds_to:
             info.update(adds_to=list(adds_to), files=list(files or []))
             if files_key:
                 info["files_key"] = files_key
@@ -188,8 +208,12 @@ class WorkflowManager:
         """What the running start follows (``start_from``), for ``execution()``.
 
         Without run folders the start keeps it apart from params.json (so the
-        next settings start fresh); empty when the start followed nothing.
+        next settings start fresh), a run keeps it in its own parameters;
+        empty when the start followed nothing.
         """
+        if self.multi_run and getattr(self, "run_id", None):
+            info = (self.runs.params(self.run_id) or {}).get(FOLLOW_UP_KEY)
+            return info if isinstance(info, dict) else {}
         try:
             info = json.loads(Path(self.workflow_dir, FOLLOW_UP_FILE).read_text(encoding="utf-8"))
         except (OSError, ValueError):
@@ -456,38 +480,31 @@ class WorkflowManager:
         """
         Shows the parameter section of the UI with content defined in self.configure().
         """
-        self.ui.parameter_section(self.configure, after_parameters=self._add_files_start)
+        self.ui.parameter_section(self.configure)
 
-    def _add_files_start(self) -> None:
-        """While the settings follow an earlier run (``follow_up``, ``start_from``),
-        such as adding files to its experiment: a button that starts the run here."""
+    def _follow_up(self) -> Optional[dict]:
+        """What the settings follow (``follow_up``, ``start_from``), else None."""
         info = self.parameter_manager.get_parameters_from_json().get(FOLLOW_UP_KEY)
-        if not isinstance(info, dict):
-            return
-        running = self.get_workflow_status()["running"]
+        return info if isinstance(info, dict) else None
+
+    @staticmethod
+    def _follow_up_summary(info: dict) -> str:
+        """One line on what a start with the settings of an earlier run does."""
         name = info.get("name") or info.get("run") or "the earlier run"
-        with st.container(border=True):
-            if info.get("adds_to"):
-                st.markdown(f"**:material/library_add: Add files to {name}**")
-                text = ("Processes the files picked above with these settings; the results then "
-                        "show them together with the experiment's files.")
-            else:
-                st.markdown(f"**:material/history: Start from the settings of {name}**")
-                text = "Processes the files picked above with these settings."
-            st.caption("A run is still going: start once it has finished." if running else text)
-            if st.button("Start analysis", type="primary", icon=":material/play_arrow:",
-                         key=f"{self.workflow_dir.name}-add-files-start", disabled=running):
-                key = info.get("files_key")
-                if key:
-                    picked = st.session_state.get(f"{self.parameter_manager.param_prefix}{key}",
-                                                  self.params.get(key))
-                    if not picked:
-                        st.warning("Pick the files to add first.")
-                        return
-                self.start_workflow()
-                if self.run_page is not None:
-                    st.switch_page(self.run_page)
-                st.rerun()
+        if info.get("same_files"):
+            return f"Adds to {name}: its files with these settings, the new run kept next to it."
+        if info.get("adds_to"):
+            return f"Adds the files picked above to {name}."
+        return f"Starts from the settings of {name}."
+
+    def _follow_up_files_missing(self, info: Optional[dict]) -> bool:
+        """True while settings that add files to an experiment have none picked."""
+        key = (info or {}).get("files_key")
+        if not key or not (info or {}).get("adds_to"):
+            return False
+        picked = st.session_state.get(f"{self.parameter_manager.param_prefix}{key}",
+                                      self.params.get(key))
+        return not picked
 
     def _autostart_key(self) -> str:
         """Session-state flag set by ``show_run_button``: start on the Run page."""
@@ -522,6 +539,12 @@ class WorkflowManager:
         else:
             icon = ":material/play_arrow:"
             help = help or "Save these settings, open the Run page and start the analysis."
+        info = None if running else self._follow_up()
+        if info:
+            # Settings of an earlier run (adding files, an analysis, a re-run):
+            # this button starts with them; say so beside it.
+            line = self._follow_up_summary(info)
+            summary = f"{line} {summary}" if summary else line
         key = key or f"{self.workflow_dir.name}-run-button"
         if sticky:
             bar = st.container(key=f"{key}-bar", horizontal=True,
@@ -534,6 +557,9 @@ class WorkflowManager:
                 st.caption(summary, width="stretch")
             clicked = st.button(label, type="primary", icon=icon, help=help, key=key)
         if clicked:
+            if not running and self._follow_up_files_missing(info):
+                st.toast("Pick the files to add first.", icon=":material/warning:")
+                return
             if not running:
                 self.parameter_manager.save_parameters()
                 st.session_state[self._autostart_key()] = True
