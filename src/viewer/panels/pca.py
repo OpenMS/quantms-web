@@ -13,7 +13,7 @@ from src.common.results_helpers import (
     sample_columns,
 )
 from openms_insight import PCAPlot
-from src.viewer.scope import needs_results, scoped, shared_state
+from src.viewer.scope import needs_results, scoped, shared_state, zoom
 
 
 def render(ctx) -> None:
@@ -77,6 +77,7 @@ def render(ctx) -> None:
     try:
         pca_component = PCAPlot(
             **plot_cache("quantms_pca_plot", expr_df_pca),
+            **zoom(PCAPlot, "pca"),
             data=pca_lazy,
             metadata=metadata_pl,
             sample_id_field="sample_id",

@@ -19,6 +19,7 @@ from src.common.identified_spectra import spectra_sources
 from src.common.psm_features import features_by_id, features_frame
 from src.common.results_helpers import parse_idxml, search_tolerances
 from src.common.plot_style import spectrum_styling
+from src.viewer.scope import zoom
 
 
 def fragment_tolerance(workflow_params: dict) -> tuple[float, bool]:
@@ -100,7 +101,7 @@ def show_spectrum(cache_dir: Path, run: str, state_manager, *, peptide: str, cha
 
     if predicted is None:
         st.caption(f"No predicted spectrum for comparison: {reason}.")
-        LinePlot(cache_id=f"lineplot_{run}", cache_path=str(cache_dir))(
+        LinePlot(cache_id=f"lineplot_{run}", cache_path=str(cache_dir), **zoom(LinePlot, key))(
             key=f"{key}_lineplot", state_manager=state_manager, height=height, sequence_view_key=seqview_key,
         )
         return
@@ -158,6 +159,7 @@ def show_spectrum(cache_dir: Path, run: str, state_manager, *, peptide: str, cha
         y_label="Relative intensity (%)",
         styling=spectrum_styling(),
         svg_filename=svg_name(peptide, charge, scan),
+        **zoom(MirrorPlot, f"{key}_mirror"),
     )(key=f"{key}_mirror", state_manager=state_manager, height=height, sequence_view_top_key=seqview_key)
 
 

@@ -142,7 +142,7 @@ scipy
 scikit-learn
 # Development build of OpenMS-Insight (#54: image downloads in a chosen format).
 # Replace with the next PyPI release before an app release.
-openms-insight @ https://raw.githubusercontent.com/OpenMS/quantms-web/claude/insight-dev-wheels/openms_insight-0.6.1.dev2026110702-py3-none-any.whl#sha256=668d75028507a5c26277bcdc1d97d17fcb90c32c289986850e7e1432b317ab26
+openms-insight @ https://raw.githubusercontent.com/OpenMS/quantms-web/claude/insight-dev-wheels/openms_insight-0.6.1.dev2026110809-py3-none-any.whl#sha256=89a2bb882f34a8f84ecaf5a19cd2b7e5da78931851b71d3f01bfa8e3e4c12929
 polars>=1.0.0
 # Forces polars to prefer its most CPU-compatible native runtime.
 # Without this, polars can select an AVX-optimized runtime (e.g. runtime-32)

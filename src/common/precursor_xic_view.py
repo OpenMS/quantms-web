@@ -10,6 +10,7 @@ from openms_insight import SeriesPlot
 
 from src.common import precursor_xic as xic
 from src.common.spectrum_view import psm_lookup
+from src.viewer.scope import zoom
 
 KEEP_CACHES = 30  # XIC plots kept on disk per run; older ones are removed
 ISOTOPE_COLORS = {"M": "#1f77b4", "M+1": "#ff7f0e", "M+2": "#2ca02c", xic.MS2_SERIES: "#d62728"}
@@ -26,8 +27,9 @@ def _run_traces(mzmls: tuple, mtimes: tuple, mz: float, charge: int, rt: float) 
     return xic.xic_across_runs({Path(p).stem: p for p in mzmls}, mz, charge, rt)
 
 
-def _plot(cache_dir: Path, cache_id: str, data, series_colors: dict, title: str):
+def _plot(cache_dir: Path, cache_id: str, data, series_colors: dict, title: str, zoom_name: str = ""):
     """The SeriesPlot of ``data``, cached under ``cache_dir/xic``; the oldest caches beyond KEEP_CACHES go."""
+    zoomed = zoom(SeriesPlot, zoom_name) if zoom_name else {}
     root = cache_dir / "xic"
     root.mkdir(parents=True, exist_ok=True)
     if not (root / cache_id).is_dir():
@@ -40,9 +42,9 @@ def _plot(cache_dir: Path, cache_id: str, data, series_colors: dict, title: str)
             series_names={name: name for name in series_colors},
             series_colors=series_colors, mode="lines+markers", title=title,
             x_label="Retention time (s)", y_label="Intensity", y_range_mode="nonnegative",
-            svg_filename=cache_id,
+            svg_filename=cache_id, **zoomed,
         )
-    return SeriesPlot(cache_id=cache_id, cache_path=str(root))
+    return SeriesPlot(cache_id=cache_id, cache_path=str(root), **zoomed)
 
 
 def show_precursor_xic(cache_dir: Path, idxml: Path, state_manager, *, mzml_files: list, key: str) -> None:
@@ -78,7 +80,7 @@ def show_precursor_xic(cache_dir: Path, idxml: Path, state_manager, *, mzml_file
         colors = {xic.isotope_label(k): ISOTOPE_COLORS[xic.isotope_label(k)] for k in range(xic.ISOTOPES)}
         colors[xic.MS2_SERIES] = ISOTOPE_COLORS[xic.MS2_SERIES]
         _plot(cache_dir, f"xic_{idxml.stem}_{int(psm_id)}", xic.with_ms2_marker(traces, ms2_rt), colors,
-              f"Precursor ion chromatogram: {label}")(
+              f"Precursor ion chromatogram: {label}", f"{key}_xic")(
             key=f"{key}_xic_plot", state_manager=state_manager, height=380
         )
 
@@ -95,6 +97,6 @@ def show_precursor_xic(cache_dir: Path, idxml: Path, state_manager, *, mzml_file
     colors = {p.stem: palette[i % len(palette)] for i, p in enumerate(present)}
     colors[xic.MS2_SERIES] = "#d62728"
     _plot(cache_dir, f"xic_runs_{idxml.stem}_{int(psm_id)}", xic.with_ms2_marker(traces, ms2_rt), colors,
-          f"Monoisotopic precursor peak in every run: {label}")(
+          f"Monoisotopic precursor peak in every run: {label}", f"{key}_xic_runs")(
         key=f"{key}_xic_runs_plot", state_manager=state_manager, height=380
     )

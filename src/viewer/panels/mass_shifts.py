@@ -9,7 +9,7 @@ from openms_insight import LinePlot, Table
 from src.common.guide import page_link
 from src.common.mass_shifts import MIN_PSMS, mass_shift_summary, psm_mass_shifts
 from src.common.results_helpers import get_run_dir, get_run_params, search_tolerances
-from src.viewer.scope import needs_results, scoped, shared_state
+from src.viewer.scope import needs_results, scoped, shared_state, zoom
 
 
 def render(ctx) -> None:
@@ -126,7 +126,7 @@ def render(ctx) -> None:
             ],
         )
     state_manager = shared_state()
-    LinePlot(cache_id=ids["histogram"], cache_path=str(cache_dir))(
+    LinePlot(cache_id=ids["histogram"], cache_path=str(cache_dir), **zoom(LinePlot, "mass_shifts"))(
         key=scoped("mass_shift_histogram"), state_manager=state_manager, height=400
     )
     st.subheader("Shifts")
