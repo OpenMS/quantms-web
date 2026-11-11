@@ -5,6 +5,7 @@ from src.common.results_helpers import get_run_dir, get_run_params
 from src.common.spectrum_view import ensure_psm_views, fragment_tolerance, psm_mzml_files, show_selected_psm_spectrum
 from src.common.fragment_plots import fragment_error_plot, ion_table, ion_table_html, load_psm_fragments
 from src.common.precursor_xic_view import show_precursor_xic
+from src.common.psm_curation_ui import verdict_controls, verdict_list
 from src.common.result_filters import q_suggestions
 from src.common.sequence_display import filtered_psm_table, sequence_mode_selector
 from openms_insight import Heatmap, SequenceView
@@ -49,6 +50,8 @@ def render(ctx) -> None:
         selected_file,
         q_suggestions=q_suggestions(run_fdr if run_fdr < 100.0 else None),
     )
+    verdict_list(run_dir / "results", selected_file, state_manager, scoped(f"verdicts_{cache_id_prefix}"),
+                 run_name=run_dir.name)
     st.subheader("Peptide Sequence")
     seq_view(key=scoped(f"seqview_{cache_id_prefix}"), state_manager=state_manager, height=533)
     st.subheader("MS2 spectrum")
@@ -60,6 +63,7 @@ def render(ctx) -> None:
         workflow_params=run_params,
         mzml_files=psm_mzml_files(run_params, run_dir / "results"),
     )
+    verdict_controls(run_dir / "results", selected_file, state_manager, scoped(f"verdict_{cache_id_prefix}"))
     show_precursor_xic(
         cache_dir,
         selected_file,

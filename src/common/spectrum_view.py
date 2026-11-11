@@ -56,9 +56,10 @@ def _measured(parquet: str, mtime: float, file_index: int, scan: int) -> pl.Data
 
 @st.cache_data(show_spinner="Reading identifications...")
 def psm_lookup(idxml: str, mtime: float) -> pd.DataFrame:
-    """Peptide, charge, precursor m/z and retention time of every hit in an idXML, by the id the run's viewers use."""
+    """Peptide, charge, precursor m/z, retention time, scan and file of every hit in an idXML,
+    by the id the run's viewers use."""
     id_df, _ = parse_idxml(Path(idxml))
-    return id_df.select("id_idx", "sequence", "charge", "mz", "rt").to_pandas().set_index("id_idx")
+    return id_df.select("id_idx", "sequence", "charge", "mz", "rt", "scan_id", "file_index", "filename").to_pandas().set_index("id_idx")
 
 
 @st.cache_data(show_spinner="Predicting the spectrum...")
