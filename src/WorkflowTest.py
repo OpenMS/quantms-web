@@ -1433,7 +1433,9 @@ class WorkflowTest(WorkflowManager):
             st.error("No FASTA file selected.")
             return False
 
-        in_mzML = self.file_manager.get_files(self.params["mzML-files"])
+        # The files as selected; a step that goes on without a file drops it here too
+        selected_inputs = list(self.params["mzML-files"])
+        in_mzML = self.file_manager.get_files(selected_inputs)
         fasta_file = self.file_manager.get_files([self.params["fasta-file"]])[0]
 
         # Thermo .raw files and Bruker .d folders are converted to mzML first
@@ -1549,6 +1551,9 @@ class WorkflowTest(WorkflowManager):
             # --- PercolatorAdapter ---
             self.logger.log("📊 Running rescoring...")
             with st.spinner(f"PercolatorAdapter ({stem})"):
+                # A file Percolator cannot rescore (a blank, a run with too few
+                # matches to learn from) is left out; the others go on to
+                # filtering and quantification. The Run page names it.
                 if not self.executor.run_topp(
                     "PercolatorAdapter",
                     {
@@ -1556,9 +1561,17 @@ class WorkflowTest(WorkflowManager):
                         "out": percolator_results,
                     },
                     {"decoy_pattern": decoy_string},  # Always propagated from upstream
+                    allow_failed=True,
                 ):
                     self.logger.log("Workflow stopped due to error")
                     return False
+                if self.executor.failed:
+                    keep = self.executor.keep_succeeded
+                    selected_inputs = keep(selected_inputs)
+                    in_mzML = keep(in_mzML)
+                    search_results = keep(search_results)
+                    percolator_results = keep(percolator_results)
+                    filter_results = keep(filter_results)
 
             if not self._has_identifications(percolator_results, "rescoring"):
                 return False
@@ -1694,9 +1707,9 @@ class WorkflowTest(WorkflowManager):
 
             # A fractionated experiment needs the design, so ProteomicsLFQ combines
             # the fractions of each sample; otherwise every file is its own sample.
-            design = load_design(self.workflow_dir, self.params["mzML-files"])
+            design = load_design(self.workflow_dir, selected_inputs)
             # Converted vendor runs are named by their mzML in the design for ProteomicsLFQ
-            names = {Path(a).name: Path(b).name for a, b in zip(self.params["mzML-files"], in_mzML)}
+            names = {Path(a).name: Path(b).name for a, b in zip(selected_inputs, in_mzML)}
             design["file"] = design["file"].map(lambda f: names.get(f, f))
             lfq_design = {}
             if is_fractionated(design):
