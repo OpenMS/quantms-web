@@ -29,6 +29,7 @@ from src.common.qpx_export import app_version, export_run
 from src.workflow.ExperimentalDesign import design_path, load_design, save_design, to_openms_design
 from src.common import instrument
 from src.pride_ui import pride_import_section
+from src.search_memory import fasta_counts, search_memory
 
 # Accession prefixes that mark decoy entries in a FASTA database.
 DECOY_PREFIXES = ("DECOY_", "decoy_", "rev_", "REV_", "XXX_", "reversed_")
@@ -199,6 +200,23 @@ def _instrument_recommendation(paths: tuple, converted_dir: str, mtimes: tuple):
 # processes at 16-32 threads, each searching a share of the files, finish
 # sooner than one process with all of them (ProSE's documentation).
 SEARCH_THREADS_PER_PROCESS = 16
+
+
+# The cRAP proteins appended to the database (src/common/contaminants.py)
+CONTAMINANT_PROTEINS = 116
+
+
+def _input_bytes(path) -> int:
+    """Size of an input as mzML: a Bruker .d folder summed, a Thermo .raw
+    counted twice (its mzML is about that much larger)."""
+    p = Path(path)
+    try:
+        if p.is_dir():
+            return sum(f.stat().st_size for f in p.rglob("*") if f.is_file())
+        size = p.stat().st_size
+    except OSError:
+        return 0
+    return 2 * size if p.suffix.lower() == ".raw" else size
 
 
 def search_batches(n_files: int, max_threads: int) -> list[list[int]]:
@@ -690,6 +708,46 @@ class WorkflowTest(WorkflowManager):
             {"database": str(database_fasta), "Search:decoys": "auto"},
             tool_instance_name=instance,
         )
+
+    def memory_estimate(self, params: dict):
+        """Peak memory of the database search (src/search_memory.py): its
+        processes run side by side, each with its own fragment index."""
+        files = params.get("mzML-files") or []
+        fasta = params.get("fasta-file")
+        if not files or not fasta or not Path(fasta).is_file():
+            return None
+        sizes = [_input_bytes(f) for f in files]
+        proteins, residues = fasta_counts(fasta)
+        if params.get("add-contaminants", True):
+            proteins += CONTAMINANT_PROTEINS
+        threads = self.executor._get_max_threads()
+        values = self._search_settings(params)
+        estimate = search_memory(
+            sizes, search_batches(len(sizes), threads), Path(fasta).stat().st_size,
+            proteins, residues, values, threads,
+        )
+        self._memory_cause = estimate["cause"]
+        return estimate["bytes"]
+
+    def _search_settings(self, params: dict) -> dict:
+        """The search settings of ``params`` (defaults and stored values)."""
+        mode = params.get("analysis-mode", "LFQ")
+        values = dict(SEARCH_DEFAULTS_TMT if mode == "TMT" else SEARCH_DEFAULTS)
+        values.update(params.get(self.search_instance(mode), {}) or {})
+        return values
+
+    def memory_advice(self, params: dict) -> str:
+        if getattr(self, "_memory_cause", "files") == "database":
+            return (
+                "Most of it is the index of the database: set a database chunk size "
+                "(All parameters of the database search, Search:database:chunk_size), "
+                "or search with fewer variable modifications."
+            )
+        from src.workflow.settings_io import load_settings
+
+        if not load_settings().get("online_deployment"):
+            return "Fewer Threads (on Describe experiment) run fewer searches side by side."
+        return "Process the files in two or more runs."
 
     def render_lfq_tabs(self):
         st.subheader("Label-free experiment")
