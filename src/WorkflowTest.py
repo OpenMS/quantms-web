@@ -28,6 +28,7 @@ from src.common.lfq_design import groups_from_design, initial_groups, is_fractio
 from src.common.qpx_export import app_version, export_run
 from src.workflow.ExperimentalDesign import design_path, load_design, save_design, to_openms_design
 from src.common import instrument
+from src.common import search_checks
 from src.pride_ui import pride_import_section
 
 # Accession prefixes that mark decoy entries in a FASTA database.
@@ -192,6 +193,18 @@ def _no_preset_buttons(*args, **kwargs):
 def _instrument_recommendation(paths: tuple, converted_dir: str, mtimes: tuple):
     """Cached per file set; `mtimes` makes a replaced file count again."""
     return instrument.recommend(list(paths), converted_dir)
+
+
+@st.cache_data(show_spinner="Checking the selected runs...", max_entries=64)
+def _run_details(paths: tuple, converted_dir: str, mtimes: tuple) -> list:
+    """Cached per file set; `mtimes` makes a replaced file count again."""
+    details = [search_checks.read_run(p, converted_dir) for p in paths]
+    return [d for d in details if d is not None]
+
+
+@st.cache_data(show_spinner="Reading the protein database...", max_entries=16)
+def _database_summary(path: str, mtime: float) -> search_checks.DatabaseSummary:
+    return search_checks.summarize_database(path)
 
 
 # params = page_setup()
@@ -366,9 +379,95 @@ class WorkflowTest(WorkflowManager):
         selected = self.current_params().get("mzML-files") or []
         return [selected] if isinstance(selected, str) else list(selected)
 
-    def _recommend_instrument(self, current: str | None) -> None:
+    def _accepted_checks_file(self) -> Path:
+        return Path(self.workflow_dir, "accepted-checks.json")
+
+    def _accepted_checks(self) -> dict:
+        try:
+            with open(self._accepted_checks_file(), encoding="utf-8") as f:
+                accepted = json.load(f)
+            return accepted if isinstance(accepted, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    def _accept_check(self, notice_id: str, fingerprint: str) -> None:
+        accepted = self._accepted_checks()
+        accepted[notice_id] = fingerprint
+        self._accepted_checks_file().write_text(json.dumps(accepted, indent=2), encoding="utf-8")
+
+    def _show_accepted_checks(self) -> None:
+        self._accepted_checks_file().unlink(missing_ok=True)
+
+    def _database_path(self) -> Path | None:
+        database = self.current_params().get("fasta-file")
+        if not isinstance(database, str) or not database:
+            return None
+        try:
+            path = Path(self.file_manager.get_files([database])[0])
+        except (ValueError, IndexError):
+            return None
+        return path if path.is_file() else None
+
+    def search_notices(self, mode: str, current_search: str) -> tuple[list, list, object]:
+        """The readable runs, the database summary and the notices of the current setup."""
+        selected = self._selected_runs()
+        converted_dir = Path(self.workflow_dir, "converted-mzML")
+        mtimes = tuple(
+            Path(p).stat().st_mtime if Path(p).exists() else None for p in selected
+        ) + ((converted_dir.stat().st_mtime,) if converted_dir.exists() else ())
+        runs = _run_details(tuple(selected), str(converted_dir), mtimes) if selected else []
+        path = self._database_path()
+        database = _database_summary(str(path), path.stat().st_mtime) if path else None
+        notices = search_checks.check(runs, self._search_values(mode), database,
+                                      open_search=current_search == OPEN_SEARCH)
+        return runs, notices, database
+
+    def _search_checks(self, mode: str, runs: list, notices: list, database) -> None:
+        """What the runs and the database hold, and each setting that does not fit them,
+        with the preset that fixes it and a way to keep the settings as they are."""
+        lines = []
+        if runs:
+            lines.append("**Runs**: " + search_checks.run_summary(runs) + ".")
+        if database is not None and database.readable and database.proteins:
+            lines.append("**Database**: " + database.text().replace(f"**{database.name}**: ", "", 1))
+        if lines:
+            st.caption("  \n".join(lines))
+        accepted = self._accepted_checks()
+        hidden = 0
+        for notice in notices:
+            if accepted.get(notice.id) == notice.fingerprint:
+                hidden += 1
+                continue
+            show = st.warning if notice.level == "warning" else st.info
+            icon = "⚠️" if notice.level == "warning" else "💡"
+            c1, c2 = st.columns([4, 1], vertical_alignment="center")
+            with c1:
+                show(notice.text, icon=icon)
+            with c2:
+                if notice.preset:
+                    st.button(
+                        f"Use {INSTRUMENT_LABELS[notice.preset]} settings", key=f"check_fix_{notice.id}",
+                        on_click=self._use_instrument, args=(notice.preset, mode), type="primary",
+                        use_container_width=True,
+                    )
+                st.button(
+                    "Keep my settings" if notice.preset else "OK, search anyway",
+                    key=f"check_accept_{notice.id}", on_click=self._accept_check,
+                    args=(notice.id, notice.fingerprint), use_container_width=True,
+                    help="Hide this notice. It comes back when the runs, the database or the "
+                         "settings it is about change.",
+                )
+        if hidden:
+            c1, c2 = st.columns([4, 1], vertical_alignment="center")
+            c1.caption(f"{hidden} {'notice' if hidden == 1 else 'notices'} about these settings "
+                       f"{'is' if hidden == 1 else 'are'} hidden, as you asked.")
+            c2.button("Show", key="check_show_accepted", on_click=self._show_accepted_checks,
+                      use_container_width=True)
+
+    def _recommend_instrument(self, current: str | None, offer: bool = True) -> None:
         """Recommend the instrument preset the selected runs were measured with,
-        and offer to apply it when the current settings differ."""
+        and offer to apply it when the current settings differ (unless a notice
+        about the tolerances already offers it)."""
         selected = self._selected_runs()
         if not selected:
             return
@@ -386,6 +485,8 @@ class WorkflowTest(WorkflowManager):
             text += " Thermo .raw files are read once they are converted, when the analysis starts."
         if current == recommendation.preset:
             st.success(text, icon="✅")
+            return
+        if not offer:
             return
         c1, c2 = st.columns([4, 1], vertical_alignment="center")
         c1.info(text, icon="💡")
@@ -437,7 +538,11 @@ class WorkflowTest(WorkflowManager):
                     "The mass tolerances fit none of the instruments: they are your own "
                     "(Database search tab), or pick your instrument to set them."
                 )
-            self._recommend_instrument(current_instrument)
+            runs, notices, database = self.search_notices(mode, current_search)
+            accepted = self._accepted_checks()
+            fixes_tolerance = any(n.preset and accepted.get(n.id) != n.fingerprint for n in notices)
+            self._recommend_instrument(current_instrument, offer=not fixes_tolerance)
+            self._search_checks(mode, runs, notices, database)
 
             with st.expander("🧬 Reanalyse a PRIDE dataset, set up from its sample metadata (SDRF)"):
                 pride_import_section(self, {"mzML-files": list(EXAMPLE_MZML), "fasta-file": EXAMPLE_FASTA})
