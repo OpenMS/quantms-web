@@ -197,3 +197,20 @@ def condition_summary(samples: pd.DataFrame) -> pd.DataFrame:
         Samples=("Condition", "size"), **{f"Mean {c}": (c, "mean") for c in counts}
     )
     return summary.round(1).reset_index()
+
+
+def short_sample_names(names) -> dict:
+    """Sample name -> the parts that tell it apart from the others.
+
+    Names are split at ``_``; parts every name shares are left out, so
+    ``B000248_Ap_6883_DIA_ratio01_DDA`` and ``B000272_Ap_6883_DIA_ratio10_DDA``
+    become ``B000248_ratio01`` and ``B000272_ratio10``. A name left empty, or
+    two names left the same, keep their full names.
+    """
+    names = [str(n) for n in names]
+    parts = [n.split("_") for n in names]
+    shared = set(parts[0]).intersection(*parts[1:]) if len(parts) > 1 else set()
+    short = {n: "_".join(p for p in ps if p not in shared) or n for n, ps in zip(names, parts)}
+    if len(set(short.values())) < len(set(names)):
+        return {n: n for n in names}
+    return short

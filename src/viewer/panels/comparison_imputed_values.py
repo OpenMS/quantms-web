@@ -1,8 +1,6 @@
 """The values filled in for missing ones, as a Viewer component."""
 
-from src.common.postprocessing_plots import imputed_value_preview
-from src.viewer.comparison_plots import comparison
-from src.viewer.scope import show_fig
+from src.viewer.comparison_plots import comparison, draw_imputed
 
 
 def render(ctx) -> None:
@@ -10,6 +8,4 @@ def render(ctx) -> None:
     if got is None:
         return
     steps, samples, _ = got
-    show_fig(
-        imputed_value_preview(steps["filtered_df"], steps["imputed_df"], samples), "comparison-imputed-values",
-    )
+    draw_imputed(steps["filtered_df"], steps["imputed_df"], samples, "comparison-imputed-values")

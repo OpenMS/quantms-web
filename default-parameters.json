@@ -17,5 +17,7 @@
     "postproc-normalization": "median",
     "postproc-scaling": "None",
     "postproc-stat-test": "limma_like",
-    "postproc-fdr": "BH"
+    "postproc-fdr": "BH",
+    "postproc-change-fc": 1.0,
+    "postproc-change-padj": 0.05
 }

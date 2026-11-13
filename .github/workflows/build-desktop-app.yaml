@@ -177,6 +177,16 @@ jobs:
         if [[ $RUNNER_OS == Linux ]]; then run="xvfb-run -a"; fi
         $run node electron/scripts/smoke-app.js "$APP_EXE" "$APP_LOG" --timeout 300
 
+    - name: Keep crash dumps of the app server (diagnostic)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $key = "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\python.exe"
+        New-Item -Path $key -Force | Out-Null
+        New-ItemProperty -Path $key -Name DumpFolder -PropertyType ExpandString -Value "$env:RUNNER_TEMP\dumps" -Force | Out-Null
+        New-ItemProperty -Path $key -Name DumpType -PropertyType DWord -Value 1 -Force | Out-Null
+        New-ItemProperty -Path $key -Name DumpCount -PropertyType DWord -Value 5 -Force | Out-Null
+
     - name: End-to-end test in the app window
       timeout-minutes: 120
       env:
@@ -205,6 +215,26 @@ jobs:
             echo "=== $f"; tail -n 150 "$f"
           done
         done
+
+    - name: Analyse crash dumps of the app server (diagnostic)
+      if: (failure() || cancelled()) && runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        Get-WinEvent -FilterHashtable @{LogName='Application'; Id=1000,1001} -MaxEvents 10 -ErrorAction SilentlyContinue |
+          ForEach-Object { "=== $($_.TimeCreated) $($_.Id)"; $_.Message }
+        $cdb = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\Debuggers\x64\cdb.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+        Get-ChildItem "$env:RUNNER_TEMP\dumps" -Filter *.dmp -ErrorAction SilentlyContinue | ForEach-Object {
+          "=== dump $($_.FullName)"
+          if ($cdb) { & $cdb.FullName -z $_.FullName -c ".symfix; .reload; .ecxr; kn 60; ~*kn 30; lm; q" | Select-Object -Last 400 }
+        }
+
+    - name: Archive crash dumps (diagnostic)
+      if: (failure() || cancelled()) && runner.os == 'Windows'
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-server-crash-dumps
+        path: ${{ runner.temp }}/dumps
+        if-no-files-found: ignore
 
     - name: Archive end-to-end screenshots
       if: always()

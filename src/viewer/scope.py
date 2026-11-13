@@ -36,6 +36,11 @@ def scoped(key: str) -> str:
 # so they mean another PSM in each (database search, rescored, filtered)
 PSM_PRIVATE = ("identification", "peak")
 
+# The proteins picked for the GO enrichment: the volcano plot (box, lasso, its
+# All changed / Higher / Lower buttons) and the check boxes of the group
+# comparison table set them, the GO enrichment component tests them
+GO_SET = "go_proteins"
+
 
 def shared_state(owner: str = "", private: tuple = ()):
     """The Insight state every component of the experiment being drawn shares.
@@ -65,6 +70,17 @@ def zoom(cls, name: str) -> dict:
     if "zoom_identifier" not in inspect.signature(cls.__init__).parameters:
         return {}
     return {"zoom_identifier": zoom_identifier(name)}
+
+
+def change_cutoffs(params: dict) -> tuple[float, float]:
+    """The cut-offs of a changed protein (Edit comparison, step 4), as now set.
+
+    The values set in this session win over the saved ones, so the plots
+    follow the dialog's inputs at once.
+    """
+    from src.common.differential import CHANGE_KEYS, change_cutoffs as saved
+
+    return saved({**params, **{k: st.session_state[k] for k in CHANGE_KEYS if k in st.session_state}})
 
 
 def shown_run() -> str | None:

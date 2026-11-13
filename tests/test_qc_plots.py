@@ -91,8 +91,8 @@ def test_figures_build(tmp_path):
     assert len(err.data[0].x) == 3  # decoys left out
 
     bars = psms_per_file(df)
-    assert list(bars.data[0].y) == ["a.mzML", "b.mzML"]
-    assert list(bars.data[0].x) == [1, 2]
+    assert bars["file"].tolist() == ["a.mzML", "b.mzML"]
+    assert bars["PSMs"].tolist() == [1, 2]
 
 
 def test_score_distribution_falls_back_to_evalue():
@@ -104,3 +104,20 @@ def test_score_distribution_falls_back_to_evalue():
     fig = score_distribution(df)
     assert fig.layout.xaxis.title.text == "-log10(E-value)"
     assert list(fig.data[0].x) == pytest.approx([5.0])
+
+
+def test_histogram_tables():
+    from src.common.qc_plots import fdr_cutoff, mass_error_histogram, score_histogram
+
+    df = pd.DataFrame({
+        "file": ["a.mzML"] * 4, "decoy": [False, True, False, False], "score": [0.01, 0.9, 0.02, 0.03],
+        "score_type": ["pep"] * 4, "percolator_score": [2.0, -1.0, 1.5, 0.5],
+        "q_value": [0.001, 0.5, 0.005, 0.02], "charge": [2, 2, 3, 2],
+        "precursor_error_ppm": [1.0, 5.0, -2.0, 0.5],
+    })
+    table, label, _ = score_histogram(df, bins=10)
+    assert label == "Percolator score"
+    assert table.groupby("kind")["y"].sum().to_dict() == {"decoy": 1.0, "target": 3.0}
+    assert fdr_cutoff(df, 0.01) == 1.5
+    errors, median = mass_error_histogram(df, bins=10)
+    assert errors["y"].sum() == 3.0 and median == 0.5

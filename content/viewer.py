@@ -8,19 +8,21 @@ from src.common.common import page_setup
 from src.common.guide import explain_empty_run, needs_results
 from src.common.results_helpers import get_runs
 from src.layout_manager import (
-    MAX_EXPERIMENTS, experiment_state, render_experiments, request_analysis, resolve_layout, selected_datasets,
-    view_bar,
+    MAX_EXPERIMENTS, experiment_selector, experiment_state, load_layout, render_experiments, request_analysis,
+    resolve_layout, selected_datasets, view_bar,
 )
 from src.viewer import analyses
-from src.viewer.catalog import CATALOG, DEFAULT_LAYOUT, LABELS, PRESETS, ViewerContext, member_picker, renderers
-from src.viewer.comparison import edit_comparison_button, open_comparison
+from src.viewer.catalog import (
+    CATALOG, DEFAULT_LAYOUT, LABELS, PRESETS, ViewerContext, default_view, member_picker, migrate_views, renderers,
+)
+from src.viewer.comparison import edit_comparison_button
+from src.viewer.history_ui import history_button
 from src.workflow.RunManager import FINISHED
 from src.workflow.run_widgets import get_selected_run, run_label, set_selected_run
 
 KEY = "viewer_run"
 
 params = page_setup()
-st.title("Explore results")
 workspace = Path(st.session_state["workspace"])
 runs = get_runs(workspace)
 finished = runs.list_runs(FINISHED)
@@ -40,6 +42,8 @@ if st.session_state.get("_viewer_selected") != selected:
     st.session_state["_viewer_selected"] = selected
 
 layout_path = workspace / "layouts" / "viewer.json"
+# Views saved before the current ready-made views open on the default view
+migrate_views(layout_path)
 VIEW_KEY = "viewer_view"
 # The experiment whose component asked for a missing analysis (its note's button)
 MISSING_INDEX = "_viewer_missing_experiment"
@@ -58,14 +62,13 @@ def run_of(index: int):
     return selected_datasets(KEY, index + 1)[index]
 
 
-def add_files():
-    run_id = selected_datasets(KEY, 1)[0]
-    if run_id is not None:
-        analyses.add_files(run_id)
-
-
-def export_run():
-    result_export.open_dialog(runs, selected_datasets(KEY, 1)[0] if datasets else None)
+def add_files_menu(run_id):
+    """Add analysis: process more files with the settings of the run shown."""
+    with st.popover("Add analysis", icon=":material/library_add:", width="content"):
+        if st.button("Process more files", icon=":material/play_circle:", key="viewer_add_files",
+                     width="stretch",
+                     help="Process more files with these settings and add them to this experiment"):
+            analyses.add_files(run_id)
 
 
 def add_missing(missing, component, run_id, index):
@@ -73,17 +76,29 @@ def add_missing(missing, component, run_id, index):
     request_analysis(VIEW_KEY, missing, component=component)
 
 
+def top_buttons(index: int) -> None:
+    """What can be done with the experiment shown: beside its selector, above the views."""
+    run_id = run_of(index)
+    if not run_id:
+        return
+    st.session_state[analyses.INDEX_KEY] = index
+    member_picker(workspace, run_id, index)
+    edit_comparison_button(ViewerContext(workspace=workspace, run_id=run_id, index=index, params=params))
+    history_button(runs, run_id)
+    add_files_menu(run_id)
+    result_export.viewer_button(runs, run_id)
+
+
+# The experiment first, then the views of what it shows below it
+experiment_selector(datasets, key=KEY, label="choose experiment", buttons=top_buttons)
+
+first_available = analyses.available(workspace, selected_datasets(KEY, 1)[0] if datasets else None, 0)
+# Quantification for samples in groups, else Identification, until a view is picked
+opening_view = default_view(first_available)
 view_bar(
-    layout_path, CATALOG, PRESETS, DEFAULT_LAYOUT, key=VIEW_KEY,
-    available=analyses.available(workspace, selected_datasets(KEY, 1)[0] if datasets else None, 0),
+    layout_path, CATALOG, PRESETS, DEFAULT_LAYOUT, key=VIEW_KEY, default_view=opening_view,
+    available=first_available,
     analyses=analyses.ANALYSES, unavailable_options=missing_options,
-    actions=[{"id": "compare", "icon": "⚖️", "help": "Edit comparison: how the groups of the first run "
-              "are compared", "on_click": open_comparison},
-             {"id": "add-files", "icon": "➕", "label": "Add analysis", "on_click": add_files,
-              "help": "Process more files with the first run's settings and add them to its experiment"},
-             {"id": "export", "icon": "📤" if result_export.is_local() else "⬇️",
-              "on_click": export_run,
-              "help": f"{result_export.verb()} the files of the first run"}],
     max_experiments=MAX_EXPERIMENTS, experiment_label="Run", target="the Viewer",
     # A view of the user's own keeps each run's selection and zoom (📌, ↺)
     states=lambda i: experiment_state("viewer", i, run_of(i)),
@@ -94,6 +109,8 @@ view_bar(
     ),
 )
 layout, side_by_side = resolve_layout(layout_path, CATALOG, DEFAULT_LAYOUT)
+if load_layout(layout_path) is None:
+    layout = [next(p["layout"] for p in PRESETS if p["name"] == opening_view)]
 
 
 def experiment_renderers(run_id: str, index: int):
@@ -105,16 +122,14 @@ def buttons(index: int) -> None:
     if run_id:
         st.session_state[analyses.INDEX_KEY] = index  # what the run has is asked next, for this experiment
         member_picker(workspace, run_id, index)
-        # The first run's comparison opens from ⚖️ in the view bar
-        edit_comparison_button(ViewerContext(workspace=workspace, run_id=run_id, index=index, params=params),
-                               button=index > 0)
+        edit_comparison_button(ViewerContext(workspace=workspace, run_id=run_id, index=index, params=params))
 
 
 picked = render_experiments(
     layout, side_by_side, datasets, experiment_renderers, key=KEY,
     labels=LABELS, experiment_label="Run", buttons=buttons,
     components=CATALOG, available=lambda run_id: analyses.available(workspace, run_id),
-    analyses=analyses.ANALYSES, on_missing=add_missing,
+    analyses=analyses.ANALYSES, on_missing=add_missing, first_selector=False,
 )
 if picked and picked[0] and picked[0] != selected:
     set_selected_run(runs, picked[0])
