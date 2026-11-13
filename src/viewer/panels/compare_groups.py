@@ -5,7 +5,7 @@ from src.common.differential import comparison_groups, lead_accession
 from src.common.guide import ensure_group_comparison, page_link
 from src.common.insight_tables import show_insight_table
 from src.common.results_helpers import get_abundance_data, get_id_column, get_sample_group_map
-from src.viewer.scope import needs_results, shared_state
+from src.viewer.scope import GO_SET, change_cutoffs, needs_results, shared_state
 
 
 def render(ctx) -> None:
@@ -24,11 +24,10 @@ def render(ctx) -> None:
     if statistics_df is None:
         return
     direction = comparison_groups(sample_group_map, sample_cols)
-    if direction:
-        st.caption(f"log2 fold change: {direction[1]} over {direction[0]}. Most significant first.")
+    fc, padj = change_cutoffs(params)
     table = statistics_df.sort_values("p-adj", na_position="last")[[id_col, "log2FC", "p-adj", "p-value"]].copy()
     if direction:
-        sig = (table["p-adj"] <= 0.05) & (table["log2FC"].abs() >= 1)
+        sig = (table["p-adj"] <= padj) & (table["log2FC"].abs() >= fc)
         table.insert(1, "Change", "–")
         table.loc[sig & (table["log2FC"] > 0), "Change"] = f"higher in {direction[1]}"
         table.loc[sig & (table["log2FC"] < 0), "Change"] = f"lower in {direction[1]}"
@@ -49,11 +48,23 @@ def render(ctx) -> None:
     show_insight_table(
         table,
         name="compare-groups",
+        # Rebuilt for the check boxes, which earlier caches of the same rows lack
+        extra_key="multi-select",
+        title=f"{direction[1]} vs. {direction[0]}" if direction else "Group comparison",
+        height=560,
         layout="fitColumns",
         state_manager=shared_state(),
         interactivity={"protein": "accession"},
+        # The check boxes pick proteins for the GO enrichment, like the volcano plot
+        multi_select={GO_SET: "accession"},
         column_overrides={
             "log2 fold change": {"formatter": "money", "formatterParams": {"thousand": False, "precision": 2}},
             "accession": {"visible": False},
         },
     )
+    if direction:
+        st.caption(
+            f"log2 fold change: {direction[1]} over {direction[0]}; most significant first. Changed: "
+            f"|log2 fold change| ≥ {fc:g} and adjusted p ≤ {padj:g}. The check mark button above the "
+            "table turns on check boxes that pick proteins for the GO enrichment."
+        )

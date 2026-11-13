@@ -3,7 +3,7 @@
 import polars as pl
 import streamlit as st
 from src.common.common import save_params
-from src.common.postprocessing_plots import pvalue_histogram
+from src.common.differential import CHANGE_DEFAULTS, CHANGE_KEYS, change_cutoffs
 from src.common.insight_tables import show_insight_table
 from src.common.results_helpers import (
     get_abundance_data,
@@ -14,7 +14,7 @@ from src.common.results_helpers import (
     postprocessing_param,
 )
 from openms_insight.analysis.statistics import calculate_statistical_tests, adjust_fdr_lazy
-from src.viewer.scope import needs_results, show_fig
+from src.viewer.scope import needs_results
 
 
 def render(ctx) -> None:
@@ -99,6 +99,35 @@ def render(ctx) -> None:
             key="postproc-fdr",
             help="'BH' (Benjamini-Hochberg) controls False Discovery Rate. 'Bonferroni' is strict Family-Wise Error Rate control.",
         )
+    st.markdown("**3. What counts as changed**")
+    st.caption(
+        "Proteins past both cut-offs are coloured in the volcano plot, marked in the comparison table "
+        "and counted as up or down. Changing them does not run the test again."
+    )
+    for key in CHANGE_KEYS:
+        params.setdefault(key, CHANGE_DEFAULTS[key])  # workspaces from before the cut-offs were kept
+    fc_default, padj_default = change_cutoffs(params)
+    col3, col4 = st.columns(2)
+    col3.number_input(
+        "Minimum change (|log2 fold change|)",
+        min_value=0.0,
+        max_value=10.0,
+        value=fc_default,
+        step=0.1,
+        format="%.2f",
+        key="postproc-change-fc",
+        help="1 = at least twice (or half) as abundant.",
+    )
+    col4.number_input(
+        "Maximum adjusted p-value",
+        min_value=0.0001,
+        max_value=1.0,
+        value=padj_default,
+        step=0.01,
+        format="%.4f",
+        key="postproc-change-padj",
+        help="0.05 means about 5 % of the proteins called changed are expected to be false positives.",
+    )
     save_params(params)
     # --- SECTION 3: Statistical Query Execution ---
     st.markdown("<br>", unsafe_allow_html=True)
@@ -140,4 +169,6 @@ def render(ctx) -> None:
     # --- SECTION 4: Test diagnostics ---
     if st.session_state.get("statistics_df") is not None:
         with st.expander("📈 Check the test result", expanded=True):
-            show_fig(pvalue_histogram(st.session_state["statistics_df"]), "statistics-pvalue-histogram")
+            from src.viewer.comparison_plots import draw_pvalues
+
+            draw_pvalues(st.session_state["statistics_df"], "statistics-pvalue-histogram")

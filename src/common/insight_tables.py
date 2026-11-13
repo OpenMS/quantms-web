@@ -161,8 +161,28 @@ def show_insight_table(
             **table_kwargs,
         )
 
-    table = Table(cache_id=cache_id, cache_path=str(cache_dir))
+    # Every column stays; a table narrower than its columns scrolls sideways
+    table = Table(cache_id=cache_id, cache_path=str(cache_dir), collapse_columns=False)
     from src.viewer.scope import scoped
 
     table(key=scoped(f"insight_table_{name}"), height=height, state_manager=state_manager)
     return table
+
+
+def show_series(df: pd.DataFrame, name: str, height: int = 360, state_manager=None, **plot_kwargs):
+    """Draw ``df`` as an openms-insight ``SeriesPlot`` (lines, markers, bars or boxes).
+
+    Cached like ``plot_cache``, on the table's content and the plot's settings,
+    so a rerun reuses it and a new table or setting builds it again.
+    ``plot_kwargs`` go to ``SeriesPlot`` (``x_column``, ``y_column``, ``mode``,
+    ``orientation``, ``series_column``, labels, ...).
+    """
+    from openms_insight import SeriesPlot
+
+    from src.viewer.scope import scoped
+
+    settings = hashlib.sha1(repr(sorted(plot_kwargs.items())).encode()).hexdigest()[:8]
+    cache = plot_cache(f"{name}_{settings}", df)
+    plot = SeriesPlot(**cache, data=pl.from_pandas(df).lazy(), **plot_kwargs)
+    plot(key=scoped(f"series_{name}"), state_manager=state_manager, height=height)
+    return plot

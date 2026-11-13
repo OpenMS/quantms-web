@@ -156,13 +156,6 @@ def protein_peptides(data: ProteinData) -> None:
     """Coverage and peptides of the picked protein; picking a peptide narrows the PSMs."""
     state_manager = shared_state()
     selected = state_manager.get_selection("protein")
-    if selected in data.coverage and selected in data.fasta_entries:
-        description, sequence = data.fasta_entries[selected]
-        mask = data.coverage[selected]
-        st.caption(f"{selected} · {description} · {len(sequence)} residues · {100 * mask.mean():.1f} % covered")
-        st.html(coverage_html(sequence, mask))
-    elif not selected:
-        st.caption("Pick a protein to see its coverage and only its peptides.")
     show_insight_table(
         data.peptides,
         name="protein_peptides",
@@ -170,12 +163,20 @@ def protein_peptides(data: ProteinData) -> None:
         source_files=data.source_files,
         extra_key="per-sample" if data.sample_of else "",
         title="peptides",
-        height=320,
+        height=420,
         state_manager=state_manager,
         filters={"protein": "accession"},
         interactivity={"peptide": "peptide"},
         column_overrides={"accession": HIDDEN},
     )
+    # The coverage below the table, so the table starts level with the protein table
+    if selected in data.coverage and selected in data.fasta_entries:
+        description, sequence = data.fasta_entries[selected]
+        mask = data.coverage[selected]
+        st.caption(f"{selected} · {description} · {len(sequence)} residues · {100 * mask.mean():.1f} % covered")
+        st.html(coverage_html(sequence, mask))
+    elif not selected:
+        st.caption("Pick a protein to see its coverage and only its peptides.")
 
 
 def protein_psms(data: ProteinData) -> None:
@@ -186,12 +187,11 @@ def protein_psms(data: ProteinData) -> None:
         cache_dir=data.cache_dir,
         source_files=data.source_files,
         title="psms",
-        height=320,
+        height=860,
         state_manager=shared_state(),
         filters={"protein": "accession", "peptide": "peptide"},
         interactivity={"psm": "psm"},
-        layout="fitColumns",
-        extra_key="with-psm-id-v2",  # the cache follows the source files; name the newer psm column and layout
+        extra_key="with-psm-id-v3",  # the cache follows the source files; name the newer psm column and layout
         column_overrides={
             "accession": HIDDEN,
             "peptide": HIDDEN,
@@ -220,7 +220,6 @@ def psm_spectrum(data: ProteinData) -> None:
         return
     psm = match.iloc[0]
     run, psm_id = str(selected_psm).rsplit(":", 1)
-    st.caption(f"{psm['peptide']} · scan {psm['scan']} · {Path(psm['file']).stem}")
     mzml_names = data.mzml_names
     has_views = psm["file"] in mzml_names and ensure_psm_views(
         data.run_dir / "results", data.filter_dir / f"{run}.idXML", data.run_params
@@ -244,6 +243,7 @@ def psm_spectrum(data: ProteinData) -> None:
         scan=int(psm["scan"]), seqview_key=scoped("proteins_seqview"), key=scoped("proteins"),
         tolerance=tolerance, ppm=ppm, mzml_path=mzml_path, height=420,
     )
+    st.caption(f"{psm['peptide']} · scan {psm['scan']} · {Path(psm['file']).stem}")
 
 
 __all__ = [

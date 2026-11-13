@@ -10,7 +10,7 @@ from src.common.qc_plots import (
     DECOY_COLOR, TARGET_COLOR, fdr_cutoff, mass_error_histogram, psm_qc_table, psms_per_file, score_histogram,
 )
 from src.common.results_helpers import get_run_dir, get_run_params, search_results_dir
-from src.viewer.scope import needs_results, scoped, shared_state, show_fig, zoom
+from src.viewer.scope import needs_results, scoped, shared_state, zoom
 
 
 @st.cache_data(show_spinner="Reading identifications...")
@@ -97,4 +97,11 @@ def render(ctx) -> None:
     mass_error(ctx)
     filtered = loaded[1]
     if filtered is not None and not filtered.empty:
-        show_fig(psms_per_file(filtered), "qc-psms-per-file")
+        from src.common.insight_tables import show_series
+
+        per_file = psms_per_file(filtered).assign(kind="target")
+        show_series(
+            per_file, "qc-psms-per-file", height=max(250, 36 * len(per_file) + 120), x_column="file",
+            y_column="PSMs", series_column="kind", mode="bars", orientation="h", series_colors={"target": TARGET_COLOR}, x_label="File",
+            y_label="Target PSMs", show_legend=False, y_range_mode="nonnegative",
+        )

@@ -38,7 +38,9 @@ def render(ctx) -> None:
         return
     sample_cols = expr_df.columns.tolist()
     # UI settings (number of top variance proteins)
-    top_n = st.slider("Number of proteins (Highest Variance)", 20, 200, 50, key=scoped("heatmap_top_n"))
+    top_n = st.popover("⚙️ Settings").slider(
+        "Proteins shown (most variable first)", 20, 200, 50, key=scoped("heatmap_top_n")
+    )
     # Process data (variance selection -> Z-score normalization)
     var_series = expr_df.var(axis=1)
     top_proteins = var_series.sort_values(ascending=False).head(top_n).index
@@ -83,7 +85,7 @@ def render(ctx) -> None:
 
         # Render the component
         state_manager = shared_state()
-        heatmap_component(state_manager=state_manager, key=scoped("heatmap"))
+        heatmap_component(state_manager=state_manager, key=scoped("heatmap"), height=520)
     else:
         st.warning("Insufficient data to generate the heatmap.")
     show_comparison_settings()

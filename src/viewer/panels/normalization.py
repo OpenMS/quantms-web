@@ -4,7 +4,6 @@ import pandas as pd
 import polars as pl
 import streamlit as st
 from src.common.common import save_params
-from src.common.postprocessing_plots import sample_distributions
 from src.common.insight_tables import show_insight_table
 from src.common.results_helpers import (
     clear_downstream_steps,
@@ -20,7 +19,7 @@ from openms_insight.analysis.normalization import (
     scale_data,
     transform_data,
 )
-from src.viewer.scope import needs_results, show_fig
+from src.viewer.scope import needs_results
 
 
 def render(ctx) -> None:
@@ -174,15 +173,11 @@ def render(ctx) -> None:
         else:
             try:
                 preview_df = run_normalization().collect().to_pandas()
-                show_fig(
-                    sample_distributions(
-                        base_df,
-                        preview_df,
-                        grouped_samples,
-                        sample_group_map,
-                        after_is_log=transform_strategy in ("log2", "log10"),
-                    ),
-                    "normalization-preview",
+                from src.viewer.comparison_plots import draw_distributions
+
+                draw_distributions(
+                    base_df, preview_df, grouped_samples,
+                    after_is_log=transform_strategy in ("log2", "log10"), name="normalization-preview",
                 )
             except ValueError as preview_err:
                 st.info(f"Preview unavailable: {preview_err}")

@@ -139,22 +139,11 @@ def precursor_error_histogram(df: pd.DataFrame) -> go.Figure:
     return fig
 
 
-def psms_per_file(df: pd.DataFrame) -> go.Figure:
-    """Target PSMs per run, so a failed or weak run stands out."""
-    counts = df.loc[~df["decoy"]].groupby("file").size()
+def psms_per_file(df: pd.DataFrame) -> pd.DataFrame:
+    """Target PSMs per run (file, PSMs), so a failed or weak run stands out."""
     files = sorted(df["file"].unique())
-    counts = counts.reindex(files, fill_value=0)
-    fig = go.Figure(go.Bar(
-        x=counts.values, y=counts.index, orientation="h", marker_color=TARGET_COLOR,
-        text=[f"{v:,}" for v in counts.values], textposition="auto",
-    ))
-    fig.update_layout(
-        title="Target PSMs per file",
-        xaxis_title="Target PSMs",
-        yaxis=dict(autorange="reversed"),
-        height=max(250, 40 * len(files) + 120),
-    )
-    return fig
+    counts = df.loc[~df["decoy"]].groupby("file").size().reindex(files, fill_value=0)
+    return pd.DataFrame({"file": files, "PSMs": counts.to_numpy()})
 
 
 def _binned(values: pd.Series, edges: np.ndarray) -> np.ndarray:

@@ -5,11 +5,7 @@ import streamlit as st
 from src.common.differential import comparison_groups, count_significant
 from src.common.guide import ensure_group_comparison
 from src.common.results_helpers import get_abundance_data, get_sample_group_map
-from src.viewer.scope import needs_results
-
-# The cut-offs the up and down tiles count at (as the group comparison table marks them)
-FOLD_CHANGE = 1.0
-ADJUSTED_P = 0.05
+from src.viewer.scope import change_cutoffs, needs_results
 
 
 def render(ctx) -> None:
@@ -28,13 +24,14 @@ def render(ctx) -> None:
         missing = round(100 * float(((values != values) | (values == 0)).mean()), 1)
     up = down = None
     direction = comparison_groups(sample_group_map, sample_cols) if len(groups) >= 2 else None
+    fc, padj = change_cutoffs(ctx.params)
     if direction:
         statistics_df = ensure_group_comparison(ctx.params, show_errors=False)
         if statistics_df is not None and not statistics_df.empty:
-            up, down = count_significant(statistics_df, FOLD_CHANGE, ADJUSTED_P)
+            up, down = count_significant(statistics_df, fc, padj)
         st.caption(
             f"Up and down: higher or lower in {direction[1]} than in {direction[0]}, "
-            f"|log2 fold change| ≥ {FOLD_CHANGE:g} and adjusted p-value ≤ {ADJUSTED_P:g}."
+            f"|log2 fold change| ≥ {fc:g} and adjusted p-value ≤ {padj:g} (Edit comparison, step 4)."
         )
 
     def show(value, unit: str = "") -> str:

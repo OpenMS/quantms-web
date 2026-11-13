@@ -40,17 +40,14 @@ def render(ctx) -> None:
             "Only one biological group was detected - points will still be plotted, "
             "but group-based coloring requires 2 or more groups."
         )
-    with st.expander(
-        f"Data used: {base_df.shape[0]:,} proteins in {len(sample_cols)} samples from {len(unique_groups)} groups"
-    ):
-        show_insight_table(base_df, name="pca-input")
+    settings = st.popover("⚙️ Settings")
     expr_df_wide = base_df.set_index(id_col)[sample_cols]
     max_available = expr_df_wide.shape[0]
     if max_available <= 20:
         top_n = max_available
-        st.caption(f"Using all {top_n} proteins for PCA (dataset too small for variance filtering).")
+        settings.caption(f"Using all {top_n} proteins for PCA (dataset too small for variance filtering).")
     else:
-        top_n = st.slider(
+        top_n = settings.slider(
             "Proteins used (most variable first)",
             min_value=20,
             max_value=min(5000, max_available),
@@ -91,7 +88,7 @@ def render(ctx) -> None:
     variance_ratio = pca_component.get_variance_ratio()
     pc_columns = pca_component.get_pc_columns()
     # 4. Let the user pick which component pair to view (no recomputation needed)
-    col1, col2 = st.columns(2)
+    col1, col2 = settings.columns(2)
     with col1:
         pc_x_label = st.selectbox("X-axis component", pc_columns, index=0, key=scoped("pca_pc_x"))
     with col2:
@@ -101,10 +98,13 @@ def render(ctx) -> None:
     pc_y = int(pc_y_label.replace("PC", ""))
     # 5. Render the component
     state_manager = shared_state()
-    pca_component(state_manager=state_manager, pc_x=pc_x, pc_y=pc_y, height=600, key=scoped("pca_plot"))
-    st.markdown(
-        "**Explained variance:** "
+    pca_component(state_manager=state_manager, pc_x=pc_x, pc_y=pc_y, height=520, key=scoped("pca_plot"))
+    st.caption(
+        f"{expr_df_pca.shape[0]:,} most variable proteins. Explained variance: "
         + ", ".join(f"{col} {ratio * 100:.1f}%" for col, ratio in zip(pc_columns, variance_ratio))
     )
-    st.markdown(f"**Proteins used:** {expr_df_pca.shape[0]} (top {top_n} by variance)")
+    with st.expander(
+        f"Data used: {base_df.shape[0]:,} proteins in {len(sample_cols)} samples from {len(unique_groups)} groups"
+    ):
+        show_insight_table(base_df, name="pca-input")
     show_comparison_settings()

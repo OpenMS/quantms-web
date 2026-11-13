@@ -8,6 +8,7 @@ from openms_insight import SeriesPlot
 from src.common.differential import lead_accession
 from src.common.insight_tables import plot_cache
 from src.common.results_helpers import get_abundance_data, get_id_column, get_sample_group_map
+from src.common.samples import short_sample_names
 from src.viewer.scope import needs_results, scoped, shared_state, zoom
 
 
@@ -39,10 +40,6 @@ def render(ctx) -> None:
         st.info("No abundances in this run.")
         return
     state_manager = shared_state()
-    if not state_manager.get_selection("protein"):
-        st.caption("Pick a protein in the volcano plot or a table to see its abundance in each sample.")
-    samples = table.drop_duplicates("x").sort_values("x")
-    st.caption("Samples: " + " · ".join(f"{int(x)} {s}" for x, s in zip(samples["x"], samples["sample"])))
     SeriesPlot(
         **plot_cache("quantms_abundance_profile", table),
         **zoom(SeriesPlot, "abundance_profile"),
@@ -58,4 +55,10 @@ def render(ctx) -> None:
         x_label="Sample",
         y_label="log2 abundance",
         y_range_mode="normal",
-    )(key=scoped("abundance_profile"), state_manager=state_manager, height=360)
+    )(key=scoped("abundance_profile"), state_manager=state_manager, height=560)
+    # Notes below the plot, so it starts level with its neighbours
+    if not state_manager.get_selection("protein"):
+        st.caption("Pick a protein in the volcano plot or a table to see its abundance in each sample.")
+    samples = table.drop_duplicates("x").sort_values("x")
+    short = short_sample_names(samples["sample"])
+    st.caption("Samples: " + " · ".join(f"{int(x)} {short[str(s)]}" for x, s in zip(samples["x"], samples["sample"])))

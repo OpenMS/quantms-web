@@ -91,8 +91,8 @@ def test_figures_build(tmp_path):
     assert len(err.data[0].x) == 3  # decoys left out
 
     bars = psms_per_file(df)
-    assert list(bars.data[0].y) == ["a.mzML", "b.mzML"]
-    assert list(bars.data[0].x) == [1, 2]
+    assert bars["file"].tolist() == ["a.mzML", "b.mzML"]
+    assert bars["PSMs"].tolist() == [1, 2]
 
 
 def test_score_distribution_falls_back_to_evalue():

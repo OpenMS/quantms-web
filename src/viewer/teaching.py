@@ -47,8 +47,8 @@ COMPONENTS = {
     "quant_summary": (
         "Key figures of the quantification: proteins with an abundance, samples, groups, the proteins "
         "significantly higher (up) or lower (down) in the compared group, and the share of abundances "
-        "that were not measured. Up and down count proteins at |log2 fold change| ≥ 1 (at least twice "
-        "or half as abundant) and an adjusted p-value ≤ 0.05."
+        "that were not measured. Up and down count proteins past the cut-offs of Edit comparison, by "
+        "default |log2 fold change| ≥ 1 (at least twice or half as abundant) and an adjusted p-value ≤ 0.05."
     ),
     "files_table": (
         "One row per file: its MS2 spectra, target and decoy PSMs, the identification rate (target "
@@ -115,8 +115,9 @@ COMPONENTS = {
     ),
     "volcano": (
         "Each protein's log2 fold change (x) against its significance, -log10 p-value (y). Proteins far "
-        "to the right or left and high up differ most reliably. The sliders set the cut-offs the colours "
-        "and counts follow; picking a point picks the protein everywhere."
+        "to the right or left and high up differ most reliably. The colours follow the cut-offs set in "
+        "Edit comparison (what counts as changed). Clicking a point picks the protein everywhere; the "
+        "buttons above the plot, or box and lasso select, pick a set of proteins for GO enrichment."
     ),
     "pca": (
         "Principal component analysis places each sample by its protein abundances, so that similar "
@@ -126,10 +127,11 @@ COMPONENTS = {
     "heatmap": "The abundance of the most variable proteins in every sample, scaled per protein.",
     "clustered_heatmap": "The heatmap with proteins and samples ordered by similarity, so groups of proteins that behave alike stand out.",
     "go_enrichment": (
-        "Gene Ontology (GO) terms over-represented among the proteins that differ between the groups, "
-        "compared with all quantified proteins: biological processes, molecular functions and cellular "
-        "components. A term with a small adjusted p-value is shared by more changed proteins than chance "
-        "would give."
+        "Gene Ontology (GO) terms over-represented among the proteins you pick, compared with all "
+        "compared proteins: biological processes, molecular functions and cellular components. Pick "
+        "proteins with the buttons or box select of the volcano plot, or tick them in the group "
+        "comparison table. A term with a small adjusted p-value is shared by more picked proteins than "
+        "chance would give. With nothing picked, it counts the terms of all compared proteins."
     ),
     "comparison_missing_values": (
         "How many abundances are missing per sample and protein. Missing values are common in "

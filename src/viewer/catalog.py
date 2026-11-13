@@ -112,8 +112,8 @@ PRESETS = [
         "name": "identification", "label": "Identification",
         "layout": [
             ["dda_summary"],
-            ["protein_table", "protein_peptides", "protein_psms"],
-            ["psm_spectrum"],
+            ["protein_table", "protein_peptides"],
+            ["protein_psms", "psm_spectrum"],
             ["mass_shifts"],
         ],
         "help": "Which proteins and peptides were found, down to the annotated spectrum of each match.",
@@ -126,7 +126,8 @@ PRESETS = [
     {
         "name": "quality_control", "label": "Quality control",
         "layout": [
-            ["files_table", "sample_counts", "id_diagnostics"],
+            ["files_table"],
+            ["sample_counts", "id_diagnostics"],
             ["qc_scores", "qc_mass_error"],
             ["comparison_missing_values", "comparison_normalization"],
             ["comparison_imputed_values", "comparison_pvalues"],
