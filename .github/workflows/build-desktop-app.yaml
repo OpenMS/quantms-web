@@ -22,9 +22,8 @@ env:
   # Name of the app and its installers
   APP_NAME: OpenDDA
   # Define needed TOPP tools here. FileConverter converts Thermo .raw input
-  # (CommandExecutor.convert_to_mzml): on Windows with
-  # share/OpenMS/THIRDPARTY/ThermoRawFileParser, on macOS and Linux with OpenMS's
-  # built-in reader on the bundled .NET runtime (electron/scripts/stage-dotnet.sh).
+  # (CommandExecutor.convert_to_mzml) with OpenMS's built-in reader on the
+  # bundled .NET runtime (electron/scripts/stage-dotnet.sh), on every platform.
   TOPP_TOOLS: "DecoyDatabase ProSE PercolatorAdapter IDFilter ProteomicsLFQ IsobaricAnalyzer IDMapper FileMerger ProteinInference IDConflictResolver ProteinQuantifier FileConverter"
 
 jobs:

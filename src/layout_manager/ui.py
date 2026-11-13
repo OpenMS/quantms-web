@@ -863,9 +863,14 @@ def experiment_selector(
     index: int = 0,
     label: str = "Experiment",
     buttons: Optional[Callable[[int], Any]] = None,
+    pick: Optional[str] = None,
 ) -> Optional[str]:
     """The dataset selector of experiment ``index`` with ``buttons(index)`` to
     its right, drawn where the page calls it; returns the picked id.
+
+    ``pick`` selects that dataset before the selector is drawn, for a page
+    opened with a link to it (``linked_datasets``); an id not in
+    ``datasets`` is ignored.
 
     A Viewer draws the first experiment's selector above its ``view_bar``,
     with the buttons that act on what it shows (edit, history, add, export),
@@ -876,6 +881,8 @@ def experiment_selector(
     """
     if not datasets:
         return None
+    if pick in datasets:
+        st.session_state[_selection_key(key, index)] = pick
     return _selector(key, index, datasets, label, buttons)
 
 
