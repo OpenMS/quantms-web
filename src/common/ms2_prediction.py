@@ -4,9 +4,7 @@ Streamlit-free: the page caches the model and renders the result.
 """
 from __future__ import annotations
 
-import importlib.util
 import os
-import sys
 import time
 import numpy as np
 import pandas as pd
@@ -43,19 +41,11 @@ _INSTRUMENT_HINTS = [
 
 
 def peptdeep_available() -> bool:
-    """Whether peptdeep is installed, without importing it.
-
-    Importing peptdeep loads torch, which must stay out of the app server: on
-    Windows, polars' parquet scan crashed the server (access violation) once
-    torch was loaded in the same process. Predictions run in their own process
-    (``prediction_worker``).
-    """
-    if "peptdeep" in sys.modules:
-        return True
     try:
-        return importlib.util.find_spec("peptdeep") is not None
-    except (ImportError, ValueError):
+        import peptdeep  # noqa: F401
+    except ImportError:
         return False
+    return True
 
 
 def load_model():

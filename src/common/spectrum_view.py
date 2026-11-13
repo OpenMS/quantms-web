@@ -13,11 +13,10 @@ import streamlit as st
 from openms_insight import LinePlot, MirrorPlot
 
 from src.common.ms2_prediction import (
-    cosine_similarity, instrument_of, match_peaks, mirror_frame, peptdeep_available,
+    cosine_similarity, instrument_of, load_model, match_peaks, mirror_frame, peptdeep_available, predict_fragments,
     spectral_angle,
 )
 from src.common.identified_spectra import spectra_sources
-from src.common.prediction_worker import PredictionWorker
 from src.common.psm_features import features_by_id, features_frame
 from src.common.results_helpers import parse_idxml, search_tolerances
 from src.common.plot_style import spectrum_styling
@@ -33,10 +32,9 @@ def fragment_tolerance(workflow_params: dict) -> tuple[float, bool]:
     return tolerances["fragment"], tolerances["fragment_ppm"]
 
 
-@st.cache_resource(show_spinner=False)
-def _worker() -> PredictionWorker:
-    # The model runs in a process of its own: torch must not be loaded in the app server.
-    return PredictionWorker()
+@st.cache_resource(show_spinner="Loading the spectrum prediction model (first time only)...")
+def _model():
+    return load_model()
 
 
 @st.cache_data(show_spinner=False)
@@ -65,7 +63,7 @@ def psm_lookup(idxml: str, mtime: float) -> pd.DataFrame:
 
 @st.cache_data(show_spinner="Predicting the spectrum...")
 def _predict(peptide: str, charge: int, instrument: str) -> pd.DataFrame | None:
-    return _worker().predict(peptide, charge, instrument)
+    return predict_fragments(_model(), peptide, charge, instrument)
 
 
 def svg_name(peptide: str, charge: int, scan: int) -> str:
