@@ -7,6 +7,8 @@ from .CommandExecutor import CommandExecutor
 from .StreamlitUI import StreamlitUI
 from .FileManager import FileManager
 from .input_check import clash_message, selection_clashes
+from .pid_files import reap
+from ._log_status import classify_log_outcome
 from .RunManager import RunManager, FINISHED, FAILED, CANCELLED, RUNNING, FOLLOW_UP_KEY, FOLLOW_UP_FILE, RUN_NAME_KEY, RUN_NAME_FILE, MAX_NAME_LENGTH, apply_settings, same_files_info
 import multiprocessing
 import streamlit as st
@@ -42,6 +44,9 @@ class WorkflowManager:
     # (show_run_button). Run folders always offer it; a workflow without them
     # sets this to True and reads the name in execution() with run_name().
     name_runs = False
+    # How the notification at the end of a run names it ("<label> finished.");
+    # None: the workflow's name.
+    run_label = None
 
     # Core workflow logic using the above classes
     def __init__(self, name: str, workspace: str):
@@ -447,6 +452,12 @@ class WorkflowManager:
 
         # Fallback: check PID files (local mode)
         pid_dir = self.executor.pid_dir
+        if not self._is_online_mode() and pid_dir.exists():
+            # A run whose process was killed (the app force-closed) left its
+            # pid files behind and showed as running forever.
+            running, removed = reap(pid_dir)
+            if removed and not running:
+                self._record_interrupted_run()
         if pid_dir.exists() and list(pid_dir.iterdir()):
             return {
                 "running": True,
@@ -467,6 +478,19 @@ class WorkflowManager:
             "queue_position": None,
             "queue_length": None,
         }
+
+    def _record_interrupted_run(self) -> None:
+        """Say in the log why a run whose processes are gone ended."""
+        log = Path(self.workflow_dir, "logs", "minimal.log")
+        try:
+            content = log.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            content = ""
+        if classify_log_outcome(content) == "error":
+            self.logger.log(
+                "ERROR: The workflow was interrupted: its process ended without "
+                "finishing (the app was closed or the process was killed)."
+            )
 
     def stop_workflow(self) -> bool:
         """
@@ -698,6 +722,7 @@ class WorkflowManager:
             results_page=results_page,
             results_label=results_label,
             on_open_results=self._select_newest_run if self.multi_run else None,
+            name=self.run_label or getattr(self, "name", "The workflow"),
         )
 
     def _select_newest_run(self) -> None:
