@@ -15,7 +15,6 @@ def render(ctx) -> None:
     cache_dir = results_dir / "insight_cache"
     workflow_params = get_run_params(ctx.workspace)
     analysis_mode = workflow_params.get("analysis-mode", "LFQ")
-    fdr = float(workflow_params.get("psm-fdr-percent", 1.0))
 
     def _mtimes(paths) -> tuple:
         return tuple(Path(p).stat().st_mtime if Path(p).exists() else 0.0 for p in paths)
@@ -39,7 +38,6 @@ def render(ctx) -> None:
         }
         sources = sorted(filter_dir.glob("*.idXML")) + sorted((results_dir / "quant_results").glob("*.csv"))
         samples = _lfq_samples(str(run_dir), tuple(mzml_files), tuple(sorted(group_map.items())), _mtimes(sources))
-        st.caption(f"Counts at {fdr:g} % PSM FDR.")
     else:
         abundance = get_abundance_data(ctx.workspace)
         if abundance is None:

@@ -51,7 +51,7 @@ def render(ctx) -> None:
         # Rebuilt for the check boxes, which earlier caches of the same rows lack
         extra_key="multi-select",
         title=f"{direction[1]} vs. {direction[0]}" if direction else "Group comparison",
-        height=560,
+        height=534,
         layout="fitColumns",
         state_manager=shared_state(),
         interactivity={"protein": "accession"},
@@ -62,9 +62,3 @@ def render(ctx) -> None:
             "accession": {"visible": False},
         },
     )
-    if direction:
-        st.caption(
-            f"log2 fold change: {direction[1]} over {direction[0]}; most significant first. Changed: "
-            f"|log2 fold change| ≥ {fc:g} and adjusted p ≤ {padj:g}. The check mark button above the "
-            "table turns on check boxes that pick proteins for the GO enrichment."
-        )

@@ -171,12 +171,8 @@ def protein_peptides(data: ProteinData) -> None:
     )
     # The coverage below the table, so the table starts level with the protein table
     if selected in data.coverage and selected in data.fasta_entries:
-        description, sequence = data.fasta_entries[selected]
-        mask = data.coverage[selected]
-        st.caption(f"{selected} · {description} · {len(sequence)} residues · {100 * mask.mean():.1f} % covered")
-        st.html(coverage_html(sequence, mask))
-    elif not selected:
-        st.caption("Pick a protein to see its coverage and only its peptides.")
+        _, sequence = data.fasta_entries[selected]
+        st.html(coverage_html(sequence, data.coverage[selected]))
 
 
 def protein_psms(data: ProteinData) -> None:
@@ -243,7 +239,6 @@ def psm_spectrum(data: ProteinData) -> None:
         scan=int(psm["scan"]), seqview_key=scoped("proteins_seqview"), key=scoped("proteins"),
         tolerance=tolerance, ppm=ppm, mzml_path=mzml_path, height=420,
     )
-    st.caption(f"{psm['peptide']} · scan {psm['scan']} · {Path(psm['file']).stem}")
 
 
 __all__ = [

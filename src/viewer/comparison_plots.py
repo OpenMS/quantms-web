@@ -40,13 +40,12 @@ def draw_missingness(table, samples: list[str], name: str) -> None:
     from src.common.insight_tables import show_series
     from src.common.postprocessing_plots import MISSING_COLORS, MISSING_SERIES, missingness_vs_intensity
 
-    data, gaps = missingness_vs_intensity(table, samples)
+    data, _ = missingness_vs_intensity(table, samples)
     show_series(
         data, name, x_column="x", y_column="y", series_column="series", series_names=MISSING_SERIES,
         series_colors=MISSING_COLORS, x_label="Mean log2 abundance", y_label="Density",
         y_range_mode="nonnegative",
     )
-    st.caption(f"{gaps:,} of {len(table):,} proteins have missing values.")
 
 
 def draw_imputed(before, after, samples: list[str], name: str) -> None:
@@ -80,9 +79,8 @@ def draw_pvalues(statistics_df, name: str) -> None:
     from src.common.insight_tables import show_series
     from src.common.postprocessing_plots import pvalue_histogram
 
-    data, expected = pvalue_histogram(statistics_df)
+    data, _ = pvalue_histogram(statistics_df)
     show_series(
         data, name, x_column="p-value", y_column="Proteins", mode="bars", x_label="p-value", y_label="Proteins",
         show_legend=False, y_range_mode="nonnegative",
     )
-    st.caption(f"Proteins per p-value bin of 0.05; about {expected:,.0f} per bin if no protein differs.")

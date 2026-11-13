@@ -3,8 +3,8 @@
 import polars as pl
 import streamlit as st
 
-from src.common.guide import ensure_group_comparison, show_comparison_settings
-from src.common.insight_tables import plot_cache, show_insight_table
+from src.common.guide import ensure_group_comparison
+from src.common.insight_tables import plot_cache
 from src.common.results_helpers import (
     get_abundance_data,
     get_active_table,
@@ -85,7 +85,6 @@ def render(ctx) -> None:
     except ValueError as e:
         st.error(f"PCA computation failed: {e}")
         return
-    variance_ratio = pca_component.get_variance_ratio()
     pc_columns = pca_component.get_pc_columns()
     # 4. Let the user pick which component pair to view (no recomputation needed)
     col1, col2 = settings.columns(2)
@@ -99,12 +98,4 @@ def render(ctx) -> None:
     # 5. Render the component
     state_manager = shared_state()
     pca_component(state_manager=state_manager, pc_x=pc_x, pc_y=pc_y, height=520, key=scoped("pca_plot"))
-    st.caption(
-        f"{expr_df_pca.shape[0]:,} most variable proteins. Explained variance: "
-        + ", ".join(f"{col} {ratio * 100:.1f}%" for col, ratio in zip(pc_columns, variance_ratio))
-    )
-    with st.expander(
-        f"Data used: {base_df.shape[0]:,} proteins in {len(sample_cols)} samples from {len(unique_groups)} groups"
-    ):
-        show_insight_table(base_df, name="pca-input")
-    show_comparison_settings()
+

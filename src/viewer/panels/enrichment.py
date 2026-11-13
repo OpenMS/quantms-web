@@ -9,7 +9,7 @@ from pathlib import Path
 import streamlit as st
 
 from src.common.differential import lead_accession
-from src.common.guide import ensure_group_comparison, show_comparison_settings
+from src.common.guide import ensure_group_comparison
 from src.common.insight_tables import show_insight_table, show_series
 from src.common.results_helpers import get_abundance_data, get_id_column
 from src.viewer import go_terms
@@ -113,13 +113,8 @@ def render(ctx) -> None:
         show_insight_table(
             go_terms.count_table(table, labels, annotated), name=f"go-counts-table-{category}",
             title=f"GO terms of all tested proteins ({table.height})", height=360, layout="fitColumns",
-            column_overrides={"% of annotated": {"formatter": "money", "formatterParams": {"thousand": False, "precision": 1}}},
+            extra_key="formatted", column_overrides={"% of annotated": {"formatter": "money", "formatterParams": {"thousand": False, "precision": 1}}},
         )
-        st.caption(
-            f"GO annotations of all {len(background)} tested proteins: {annotated} have GO terms "
-            "(MyGene.info, by UniProt accession)."
-        )
-        show_comparison_settings()
         return
 
     result = _cached(_digest(selected, background), lambda: go_terms.enrichment(index, selected, background))
@@ -141,11 +136,5 @@ def render(ctx) -> None:
         terms = go_terms.term_table(table, labels)
         show_insight_table(
             terms, name=f"go-terms-{category}", title=f"GO terms ({len(terms)})", height=360, layout="fitColumns",
-            column_overrides={"Fold": {"formatter": "money", "formatterParams": {"thousand": False, "precision": 2}}},
+            extra_key="formatted", column_overrides={"Fold": {"formatter": "money", "formatterParams": {"thousand": False, "precision": 2}}},
         )
-    st.caption(
-        f"{result['fg_count']} of {result['fg_total']} picked and {result['bg_count']} of {result['bg_total']} "
-        "tested proteins have GO terms (MyGene.info, by UniProt accession). One-sided Fisher's exact test, "
-        "Benjamini-Hochberg adjusted per category."
-    )
-    show_comparison_settings()

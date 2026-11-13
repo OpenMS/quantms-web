@@ -5,7 +5,7 @@ import streamlit as st
 from openms_insight import VolcanoPlot
 
 from src.common.differential import comparison_groups, lead_accession, raw_p_cutoff
-from src.common.guide import ensure_group_comparison, show_comparison_settings
+from src.common.guide import ensure_group_comparison
 from src.common.insight_tables import plot_cache
 from src.common.results_helpers import get_abundance_data, get_id_column, get_sample_group_map
 from src.viewer.scope import GO_SET, change_cutoffs, needs_results, scoped, shared_state, zoom
@@ -69,11 +69,4 @@ def render(ctx) -> None:
         height=560,
         key=scoped("volcano_plot"),
     )
-    up = int(((volcano_df["p-adj"] <= padj) & (volcano_df["log2FC"] >= fc)).sum())
-    down = int(((volcano_df["p-adj"] <= padj) & (volcano_df["log2FC"] <= -fc)).sum())
-    cut = f"|log2 fold change| ≥ {fc:g}, adjusted p ≤ {padj:g}"
-    if direction:
-        st.caption(f"Higher in {direction[1]}: **{up}** · lower: **{down}** ({cut}; set in Edit comparison, step 4).")
-    else:
-        st.caption(f"Up: **{up}** · down: **{down}** ({cut}).")
-    show_comparison_settings()
+
