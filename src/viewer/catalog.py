@@ -21,6 +21,7 @@ _COMPONENTS = [
     ("psms_search", "Raw search hits", "Identification", "database_search"),
     ("mass_shifts", "Mass shifts", "Identification", "mass_shifts"),
     ("protein_abundance", "Protein and peptide abundances", "Quantification", "abundance"),
+    ("sample_correlation", "Sample correlation", "Quantification", "sample_correlation"),
     ("group_comparison", "Group comparison: groups, counts and table", "Group comparison", "compare_groups"),
     ("volcano", "Volcano plot", "Group comparison", "volcano"),
     ("pca", "Sample similarity (PCA)", "Group comparison", "pca"),
@@ -46,6 +47,7 @@ NEEDS = {
     "mass_shifts": "identification",
     "protein_abundance": "quantification",
     "pca": "quantification",
+    "sample_correlation": ["quantification", "samples"],
     "heatmap": ["quantification", "samples"],
     "clustered_heatmap": ["quantification", "samples"],
     "group_comparison": ["quantification", "groups"],
@@ -61,7 +63,7 @@ NEEDS = {
 # the runs that processed more files for it). The others show the files of one
 # run of it, picked above them.
 EXPERIMENT_WIDE = {
-    "protein_abundance", "group_comparison", "volcano", "pca", "heatmap",
+    "protein_abundance", "sample_correlation", "group_comparison", "volcano", "pca", "heatmap",
     "clustered_heatmap", "go_enrichment", "comparison_missing_values", "comparison_imputed_values",
     "comparison_normalization", "comparison_pvalues",
 }
@@ -88,7 +90,7 @@ PRESETS = [
     },
     {
         "name": "quality_control", "label": "Quality control",
-        "layout": [["sample_counts"], ["id_diagnostics"], ["id_quality"], ["psms_search"], ["pca"]],
+        "layout": [["sample_counts"], ["id_diagnostics"], ["id_quality"], ["psms_search"], ["pca"], ["sample_correlation"]],
         "help": "Whether the samples and identifications can be trusted.",
     },
     {
