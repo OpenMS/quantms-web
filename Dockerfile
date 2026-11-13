@@ -200,6 +200,8 @@ RUN pip install /pyopenms-wheel/*.whl && rm -rf /pyopenms-wheel
 # Install other dependencies (excluding pyopenms)
 COPY requirements.txt requirements-nodeps.tx[t] ./
 RUN grep -Ev '^pyopenms([=<>!~].*)?$' requirements.txt > requirements_cleaned.txt && mv requirements_cleaned.txt requirements.txt
+# TEMPORARY: the openms-insight development build requirements.txt names; remove before release.
+COPY dev-wheels/ ./dev-wheels/
 RUN pip install -r requirements.txt
 # Packages whose own pins conflict with the app's (numpy<2 next to pyOpenMS
 # 3.6, for example), one per line in the app's optional requirements-nodeps.txt,
