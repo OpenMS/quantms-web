@@ -7,12 +7,10 @@ import sys
 import pandas as pd
 import plotly.express as px
 from streamlit_plotly_events import plotly_events
-from scipy.stats import ttest_ind
 import numpy as np
 import mygene
 
 from collections import defaultdict        
-from scipy.stats import fisher_exact         
 from src.workflow.WorkflowManager import WorkflowManager
 from src.common.common import page_setup
 from src.common.results_helpers import get_abundance_data
@@ -2329,6 +2327,8 @@ class WorkflowTest(WorkflowManager):
                         if len(g1_vals) < 2 or len(g2_vals) < 2:
                             pval = np.nan
                         else:
+                            from scipy.stats import ttest_ind
+
                             _, pval = ttest_ind(g1_vals, g2_vals, equal_var=False)
 
                         mean_g1 = np.mean(g1_vals) if len(g1_vals) > 0 else np.nan
