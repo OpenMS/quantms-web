@@ -679,6 +679,7 @@ class WorkflowManager:
             results_page=results_page,
             results_label=results_label,
             on_open_results=self._select_newest_run if self.multi_run else None,
+            name=getattr(self, "name", "The workflow"),
         )
 
     def _select_newest_run(self) -> None:
