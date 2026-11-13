@@ -26,7 +26,9 @@ from src.common.common import (
     tk_file_dialog,
 )
 from src.workflow._log_status import classify_log_outcome
+from src.workflow import run_notice
 from src.workflow.report_ui import report_buttons
+from src.workflow.input_check import clash_message, name_clashes
 from src.workflow.RunManager import FOLLOW_UP_KEY
 from src.workflow.progress import (
     DONE,
@@ -1133,7 +1135,18 @@ class StreamlitUI:
             save_folders(self.workflow_dir, key, {**folders, **missing})
 
     def _select_input_file_impl(self, key, name, multiple, display_file_path, reactive, upload=None):
-        """Internal implementation of select_input_file - contains all the widget logic."""
+        """Internal implementation of select_input_file: the widgets, then a
+        warning when selected files would write to the same results."""
+        self._select_input_file_widgets(key, name, multiple, display_file_path, reactive, upload)
+        if multiple:
+            groups = name_clashes(st.session_state.get(
+                f"{self.parameter_manager.param_prefix}{key}", self.params.get(key)
+            ))
+            if groups:
+                st.warning(clash_message(groups), icon=":material/content_copy:")
+
+    def _select_input_file_widgets(self, key, name, multiple, display_file_path, reactive, upload=None):
+        """The widgets of select_input_file."""
         if not name:
             name = f"**{key}**"
         if upload is not None:
@@ -3019,14 +3032,22 @@ class StreamlitUI:
         results_page=None,
         results_label: str = "Open results",
         on_open_results=None,
+        blocked: str = "",
+        name: str = "The workflow",
     ) -> None:
         """Start/Stop, progress and log of the workflow.
 
         ``autostart`` starts the workflow on this render unless one is running
         (the Run button of the configure page). ``results_page`` is linked
         below the success message of a finished run; ``on_open_results`` runs
-        before that button switches to it.
+        before that button switches to it. ``blocked`` says why the workflow
+        cannot start: it is shown, and Start is disabled. While a run is going
+        the page offers browser notifications; when a run this session saw
+        running ends, a hidden tab gets the outcome in its title and, if
+        allowed, a notification naming ``name`` (``run_notice``).
         """
+        if blocked:
+            st.error(blocked, icon=":material/block:")
         with st.expander("**Summary**"):
             st.markdown(self.export_parameters_markdown())
 
@@ -3070,7 +3091,7 @@ class StreamlitUI:
             self._show_queue_status(status)
 
         # Started from the configure page's Run button
-        if autostart and not is_running:
+        if autostart and not is_running and not blocked:
             start_workflow_function()
             with st.spinner("**Workflow starting...**"):
                 time.sleep(1)
@@ -3084,7 +3105,8 @@ class StreamlitUI:
                 else:
                     self.executor.stop()
                 st.rerun()
-        elif c1.button("Start Workflow", type="primary", use_container_width=True):
+        elif c1.button("Start Workflow", type="primary", use_container_width=True,
+                       disabled=bool(blocked)):
             start_workflow_function()
             with st.spinner("**Workflow starting...**"):
                 time.sleep(1)
@@ -3094,9 +3116,12 @@ class StreamlitUI:
         # running view replaces the finished one completely: st.rerun()
         # below ends the script early, which otherwise leaves the earlier
         # view's trailing elements on the page.
+        watched_key = f"run-watched::{self.workflow_dir}"
         status_area = st.empty()
         with status_area.container():
             if is_running:
+                st.session_state[watched_key] = True
+                st.html(run_notice.ask_html(), unsafe_allow_javascript=True)
                 # Real-time display during execution
                 spinner_text = "**Workflow running...**"
                 if job_status == "queued":
@@ -3134,6 +3159,12 @@ class StreamlitUI:
                     lines = f.readlines()
                 content = "".join(lines)
                 outcome = classify_log_outcome(content)
+                if st.session_state.pop(watched_key, False):
+                    # A queued job that failed before it cleared the logs
+                    # leaves the previous run's FINISHED marker in them.
+                    notice = "error" if job_status == "failed" else outcome
+                    st.html(run_notice.notice_html(notice, name),
+                            unsafe_allow_javascript=True)
                 if outcome == "finished":
                     st.success("**Workflow completed successfully.**")
                     if results_page is not None:
@@ -3337,6 +3368,8 @@ class StreamlitUI:
             return
         if show_failures:
             self._show_failures(state)
+        else:
+            self._show_left_out(failures(state, left_out=True))
         # The per-sample lines are for following a run; afterwards the
         # failures above and the totals say what happened
         if len(state.get("samples") or []) > 1:
@@ -3383,6 +3416,29 @@ class StreamlitUI:
                     failure = with_output[picked]
                     st.caption(f"Exit code {failure['returncode']}")
                     st.code("\n".join(failure["output"]), language="neon")
+
+    @staticmethod
+    def _show_left_out(left: list) -> None:
+        """A finished run that went on without some files: which, and why."""
+        if not left:
+            return
+        n = len(left)
+        st.warning(
+            f"**{n} file{'s were' if n > 1 else ' was'} left out after an error.** "
+            "The run went on without "
+            + ("them" if n > 1 else "it")
+            + ", so the results do not include "
+            + ("these files" if n > 1 else "this file")
+            + ".  \n"
+            + "  \n".join(
+                f"{f['context']}" + (f": {f['message']}" if f["message"] else "")
+                for f in left
+            )
+        )
+        with st.expander("Tool output of the files left out"):
+            for f in left:
+                st.markdown(f"**{f['context']}** (exit code {f['returncode']})")
+                st.code("\n".join(f["output"]) or "(no output)", language="neon")
 
     @staticmethod
     def _tool_totals(steps: list) -> str:

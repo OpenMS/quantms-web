@@ -19,6 +19,38 @@ Production apps built from this template: **quantms-web** (quantitative proteomi
 - **Proteomics** = peptide/protein ID + quantification (`MSGFPlusAdapter`, `FidoAdapter`, `ProteinQuantifier`); **metabolomics** = feature detection + annotation (`FeatureFinderMetabo`, `MetaboliteAdductDecharger`, `SiriusAdapter`)
 - **MS visualizations**: mass spectra (m/z vs intensity), chromatograms (RT vs intensity), peak maps (RT vs m/z heatmaps), isotope patterns, fragment ion annotations, volcano plots
 
+## Agent operating rules
+
+Standing rules for an agent (Claude Code or another) working on the template or on an app made from it: which repository a change goes to, what to build it with, and what every pull request needs. What the user asks for in the session wins over these.
+
+### Which repository gets the change
+
+- **Template first.** A change goes as a PR to `OpenMS/streamlit-template` when it touches a template-owned file (anything not listed in `sync.app_owned` of the app's `app.yaml`: `src/workflow/`, `src/common/`, `src/layout_manager/`, `src/data_import/`, `src/sync/`, `docker/`, the Dockerfiles, `k8s/base`, `k8s/components`, `.github/`, `electron/`, `.claude/`, this file), when a second app would want it, or when it fixes a bug the template has too. It reaches the apps through the template sync (`template-sync.yml`, or a merge of the template's `main` into the app), never by editing the template-owned file in the app. App-specific behaviour in template-owned code becomes a template option (a parameter whose default keeps the old behaviour, a `settings.json` key, a method the app overrides), not a fork of the file. Skill `upstream-to-template` splits such a change out of app work; `sync-from-template` brings it back.
+- **App repository** for what the app owns: its workflow and python tools, its result pages and viewer components, its presets and parameter names, its identity (`settings.json`, hosts, overlay patches), its own dependencies in `requirements.txt` (most apps list it in `sync.app_owned`; where one does not, `sync-from-template` resolves the conflict) and its `CLAUDE.app.md`.
+- **openms-insight** (`t0mdavid-m/OpenMS-Insight`) for visualization components and for component features any app could use: a new plot or component, an option of an existing one, a rendering or linking bug. The app then only configures the component. Until openms-insight releases the change, an app PR may depend on its branch or a dev build (see *Releases*).
+- **One PR per repository** when a change spans several, each naming the PRs it needs, merged in dependency order: openms-insight, then the template, then the app's template sync, then the app.
+- Merge template-sync PRs with a merge commit, never squash, or the next sync conflicts again.
+
+### What to build with
+
+- **Visualizations: OpenMS-Insight first** (`Table`, `LinePlot`, `Heatmap`, `VolcanoPlot`, `SequenceView`, the spectrum components), linked through one shared `StateManager` and arranged with the layout manager's view bar. pyopenms-viz or plotly only where no Insight component fits; when a generic component is missing, add it to openms-insight rather than writing a one-off plot in the app.
+- **Data processing: TOPP tools** through `executor.run_topp()`, so the run gets progress, cancellation and the processing report. **pyOpenMS for glue code**: reading and converting results, small steps between tools. A Python reimplementation of something a TOPP tool does needs a stated reason; a missing algorithm or option belongs in OpenMS.
+- **Template features before new code**: run folders and follow-up runs, the view bar, experimental design, upload and import widgets, presets, `parameter-names.json`. Extend one of them (in the template) before building a parallel mechanism in an app.
+
+### Pull requests
+
+- **Show every visual change.** Attach screenshots, and a short video for an interaction, of what the change looks like in the running app (before and after when it changes something existing; light and dark theme when colors are involved). Upload them to the PR; skill `verify-webapp-usability` drives a headless browser.
+- **Describe the change on its own terms**: what it does for users and why. Do not name competing or third-party tools, or "parity", in a PR title or description.
+- Run the repository's tests and pylint (*Commands*) on what you changed before pushing, and add a test when you fix a bug.
+
+### Releases
+
+- **Every openms-insight change a release depends on must be in a published openms-insight version on PyPI**, and the app's `requirements.txt` pins that version (`openms-insight==X.Y.Z`, as `upgrade-openms-insight` does). No git branches, dev builds, wheels from elsewhere or unreleased versions in a release; if the needed change is not on PyPI yet, release openms-insight first. Skills `release-app` and `upgrade-openms-insight`.
+
+### Secrets
+
+- **Never put a password, token or other credential in plaintext anywhere on GitHub**: code, commits, PR and issue text, CI logs. Store only a hash in a repository (as `developer_mode.password_sha256` does) or inject the value through a Kubernetes secret or a GitHub Actions secret. `.streamlit/secrets.toml` stays untracked.
+
 ## Commands
 
 All commands run **from the repo root** — tests and the app resolve paths relative to CWD (`settings.json`, `content/…`, `example-data/…`).
@@ -161,7 +193,7 @@ Each workflow gets four thin content pages calling `wf.show_file_upload_section(
 The workflow directory is `<workspace>/<workflow-name-lowercased-hyphenated>/`, containing `params.json`, `ini/`, `logs/`, `pids/`.
 
 - **`file_manager.get_files(files, set_file_type=, set_results_dir=, collect=True)`** derives output paths from input paths. `collect=True` folds a list into a single nested list for tools that accept many inputs at once. It **raises `ValueError` on an empty list**, so guard the user's selection first. `set_results_dir="auto"` generates a random 4-char dir — fine for intermediates, but use a named subdir for anything `results()` has to find.
-- **`executor.run_topp(tool, input_output={...})`** pairs the n-th input with the n-th output; every list in `input_output` must be length 1 or the same length, else `ValueError`. Length-1 entries are reused for every command. It parallelises across files up to `max_threads` and splits threads per command.
+- **`executor.run_topp(tool, input_output={...})`** pairs the n-th input with the n-th output; every list in `input_output` must be length 1 or the same length, else `ValueError`. Length-1 entries are reused for every command. It parallelises across files up to `max_threads` and splits threads per command. `run_topp(..., allow_failed=True)` goes on without the files the tool fails on: it returns True while any command succeeded, `executor.failed` holds the indices of the others and `executor.keep_succeeded(list)` drops them from the next step's lists; the log and the finished run's Run page name each file left out and its error. False still means it failed on every file.
 - **Cancellation** is PID-file based: `run_command()` touches `pids/<pid>`; `stop_workflow()` SIGTERMs each PID (`executor.stop()` is a SIGKILL fallback used only when no stop function is wired in). Workflow status is "running" if `pids/` is non-empty (local) or taken from the RQ job (online).
 - **Logging**: `self.logger.log(msg, level)` writes to `logs/minimal.log` (level 0), `commands-and-run-times.log` (≤1), `all.log` (≤2). Terminal state is parsed from the markers `WORKFLOW FINISHED` / `WORKFLOW CANCELLED` by `_log_status.classify_log_outcome()` — cancellation wins over error, because a TOPP subprocess often dies noisily during teardown.
 - **Run progress**: `run_topp()` records each call as a step with one entry per command in `logs/progress.json` (`src/workflow/progress.py`, Streamlit-free); the Run page shows the running tool, "file n of N", the tool's own TOPP progress (parsed from the end of `all.log`), and after a failure the tool, file and error line. A workflow that runs its tools sample by sample calls `self.executor.progress.start_samples(names)` and wraps each sample in `with self.executor.progress.sample(i):`; the Run page then lists the samples (waiting, running with its tool, done, failed) instead.

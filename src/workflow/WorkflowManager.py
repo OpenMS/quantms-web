@@ -6,6 +6,9 @@ from .ParameterManager import InvalidParameterFileError, ParameterManager
 from .CommandExecutor import CommandExecutor
 from .StreamlitUI import StreamlitUI
 from .FileManager import FileManager
+from .input_check import clash_message, selection_clashes
+from .pid_files import reap
+from ._log_status import classify_log_outcome
 from .RunManager import RunManager, FINISHED, FAILED, CANCELLED, RUNNING, FOLLOW_UP_KEY, FOLLOW_UP_FILE, RUN_NAME_KEY, RUN_NAME_FILE, MAX_NAME_LENGTH, apply_settings, same_files_info
 import multiprocessing
 import streamlit as st
@@ -41,6 +44,9 @@ class WorkflowManager:
     # (show_run_button). Run folders always offer it; a workflow without them
     # sets this to True and reads the name in execution() with run_name().
     name_runs = False
+    # How the notification at the end of a run names it ("<label> finished.");
+    # None: the workflow's name.
+    run_label = None
 
     # Core workflow logic using the above classes
     def __init__(self, name: str, workspace: str):
@@ -94,6 +100,10 @@ class WorkflowManager:
         # (queued) or the workflow process (local) sees the values the user
         # just selected, not stale disk state from a previous fragment run.
         self.parameter_manager.save_parameters()
+        problems = self.input_problems()
+        if problems:
+            st.error(problems, icon=":material/block:")
+            return
         if self.multi_run:
             self._new_run()
         else:
@@ -102,6 +112,18 @@ class WorkflowManager:
             self._start_workflow_queued()
         else:
             self._start_workflow_local()
+
+    def input_problems(self) -> str:
+        """Why the selected input files cannot be run as they are ("" when they can).
+
+        Two selected files whose names differ only in folder, extension or
+        case would write to the same result files (outputs are named after
+        the inputs), so one would replace the other's results. A subclass may
+        add checks of its own.
+        """
+        params = self.parameter_manager.get_parameters_from_json()
+        found = selection_clashes(self.workflow_dir, params)
+        return " ".join(clash_message(groups) for groups in found.values())
 
     def _settle_follow_up(self) -> None:
         """Without run folders: the start keeps which result it follows (for the
@@ -430,6 +452,12 @@ class WorkflowManager:
 
         # Fallback: check PID files (local mode)
         pid_dir = self.executor.pid_dir
+        if not self._is_online_mode() and pid_dir.exists():
+            # A run whose process was killed (the app force-closed) left its
+            # pid files behind and showed as running forever.
+            running, removed = reap(pid_dir)
+            if removed and not running:
+                self._record_interrupted_run()
         if pid_dir.exists() and list(pid_dir.iterdir()):
             return {
                 "running": True,
@@ -450,6 +478,19 @@ class WorkflowManager:
             "queue_position": None,
             "queue_length": None,
         }
+
+    def _record_interrupted_run(self) -> None:
+        """Say in the log why a run whose processes are gone ended."""
+        log = Path(self.workflow_dir, "logs", "minimal.log")
+        try:
+            content = log.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            content = ""
+        if classify_log_outcome(content) == "error":
+            self.logger.log(
+                "ERROR: The workflow was interrupted: its process ended without "
+                "finishing (the app was closed or the process was killed)."
+            )
 
     def stop_workflow(self) -> bool:
         """
@@ -671,7 +712,9 @@ class WorkflowManager:
             name_key = run_name_key(self.runs)
         if self._run_online(name_key):
             return
+        blocked = "" if self.get_workflow_status().get("running") else self.input_problems()
         self.ui.execution_section(
+            blocked=blocked,
             start_workflow_function=self.start_workflow,
             get_status_function=self.get_workflow_status,
             stop_workflow_function=self.stop_workflow,
@@ -679,6 +722,7 @@ class WorkflowManager:
             results_page=results_page,
             results_label=results_label,
             on_open_results=self._select_newest_run if self.multi_run else None,
+            name=self.run_label or getattr(self, "name", "The workflow"),
         )
 
     def _select_newest_run(self) -> None:
