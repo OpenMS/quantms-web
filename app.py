@@ -32,6 +32,7 @@ if __name__ == '__main__':
             st.Page(Path("content", "viewer.py"), title="Explore results", icon="👀"),
             # A local install exports results to a folder instead of downloading them
             st.Page(Path("content", "workflow_export.py"), title=export, icon=export_icon),
+            st.Page(Path("content", "understand_results.py"), title="Understand your Results", icon="📖"),
         ],
     }
 

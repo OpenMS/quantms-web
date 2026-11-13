@@ -28,7 +28,7 @@ def render(ctx) -> None:
     sample_group_map = get_sample_group_map(ctx.workspace, pivot_df, group_map)
     direction = comparison_groups(sample_group_map, [c for c in pivot_df.columns if c in sample_group_map])
     if direction:
-        st.markdown(f"Right: higher in **{direction[1]}**. Left: higher in **{direction[0]}**.")
+        st.caption(f"Right: higher in {direction[1]}. Left: higher in {direction[0]}.")
     # 2. Clean data and convert to Polars for component input
     volcano_df = statistics_df.dropna(subset=["log2FC", "p-value", "p-adj"]).copy()
     # Short labels: "sp|P05161|ISG15_HUMAN" -> "ISG15_HUMAN", so neighbouring labels overlap less
@@ -85,7 +85,7 @@ def render(ctx) -> None:
     up_count = ((volcano_df["p-adj"] <= p_thresh) & (volcano_df["log2FC"] >= fc_thresh)).sum()
     down_count = ((volcano_df["p-adj"] <= p_thresh) & (volcano_df["log2FC"] <= -fc_thresh)).sum()
     if direction:
-        st.markdown(f"**Higher in {direction[1]}:** {up_count} | **Lower in {direction[1]}:** {down_count}")
+        st.caption(f"Higher in {direction[1]}: {up_count} · lower in {direction[1]}: {down_count}")
     else:
-        st.markdown(f"**Up-regulated:** {up_count} | **Down-regulated:** {down_count}")
+        st.caption(f"Up: {up_count} · down: {down_count}")
     show_comparison_settings()

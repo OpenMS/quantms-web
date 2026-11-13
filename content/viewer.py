@@ -8,11 +8,13 @@ from src.common.common import page_setup
 from src.common.guide import explain_empty_run, needs_results
 from src.common.results_helpers import get_runs
 from src.layout_manager import (
-    MAX_EXPERIMENTS, experiment_selector, experiment_state, render_experiments, request_analysis, resolve_layout,
-    selected_datasets, view_bar,
+    MAX_EXPERIMENTS, experiment_selector, experiment_state, load_layout, render_experiments, request_analysis,
+    resolve_layout, selected_datasets, view_bar,
 )
 from src.viewer import analyses
-from src.viewer.catalog import CATALOG, DEFAULT_LAYOUT, LABELS, PRESETS, ViewerContext, member_picker, renderers
+from src.viewer.catalog import (
+    CATALOG, DEFAULT_LAYOUT, LABELS, PRESETS, ViewerContext, default_view, member_picker, migrate_views, renderers,
+)
 from src.viewer.comparison import edit_comparison_button
 from src.viewer.history_ui import history_button
 from src.workflow.RunManager import FINISHED
@@ -40,6 +42,8 @@ if st.session_state.get("_viewer_selected") != selected:
     st.session_state["_viewer_selected"] = selected
 
 layout_path = workspace / "layouts" / "viewer.json"
+# Views saved before the current ready-made views open on the default view
+migrate_views(layout_path)
 VIEW_KEY = "viewer_view"
 # The experiment whose component asked for a missing analysis (its note's button)
 MISSING_INDEX = "_viewer_missing_experiment"
@@ -88,9 +92,12 @@ def top_buttons(index: int) -> None:
 # The experiment first, then the views of what it shows below it
 experiment_selector(datasets, key=KEY, label="choose experiment", buttons=top_buttons)
 
+first_available = analyses.available(workspace, selected_datasets(KEY, 1)[0] if datasets else None, 0)
+# Quantification for samples in groups, else Identification, until a view is picked
+opening_view = default_view(first_available)
 view_bar(
-    layout_path, CATALOG, PRESETS, DEFAULT_LAYOUT, key=VIEW_KEY,
-    available=analyses.available(workspace, selected_datasets(KEY, 1)[0] if datasets else None, 0),
+    layout_path, CATALOG, PRESETS, DEFAULT_LAYOUT, key=VIEW_KEY, default_view=opening_view,
+    available=first_available,
     analyses=analyses.ANALYSES, unavailable_options=missing_options,
     max_experiments=MAX_EXPERIMENTS, experiment_label="Run", target="the Viewer",
     # A view of the user's own keeps each run's selection and zoom (📌, ↺)
@@ -102,6 +109,8 @@ view_bar(
     ),
 )
 layout, side_by_side = resolve_layout(layout_path, CATALOG, DEFAULT_LAYOUT)
+if load_layout(layout_path) is None:
+    layout = [next(p["layout"] for p in PRESETS if p["name"] == opening_view)]
 
 
 def experiment_renderers(run_id: str, index: int):
