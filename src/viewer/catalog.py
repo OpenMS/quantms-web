@@ -198,6 +198,8 @@ class ViewerContext:
     run_id: str
     index: int = 0
     params: dict = field(default_factory=dict)
+    # The run of the experiment picked under **Files of** (None: the first)
+    member: str | None = None
 
 
 def panel(module: str) -> Callable:
@@ -229,49 +231,31 @@ def _title(name: str) -> None:
     st.markdown(f"**{LABELS[name]}**", help=tooltip(name))
 
 
-def _member_key(run_id: str, index: int) -> str:
-    return f"viewer-member-{run_id}-e{index}"
-
-
 def experiment_member(ctx: ViewerContext, name: str = "") -> str:
     """The run of ``ctx.run_id``'s experiment whose files the components that
-    show one run's files show (picked with ``member_picker``, else the first)."""
-    import streamlit as st
-
+    show one run's files show: the one picked under **Files of** (the Viewer's
+    ``ctx.member``), else the first."""
     from src.common.results_helpers import get_runs
 
     members = get_runs(ctx.workspace).experiment(ctx.run_id)
-    picked = st.session_state.get(_member_key(ctx.run_id, ctx.index))
-    return picked if picked in members else ctx.run_id
+    return ctx.member if ctx.member in members else ctx.run_id
 
 
-def member_picker(workspace, run_id: str, index: int) -> None:
-    """**Files of**: which run of an experiment of several runs the components
-    that show one run's files (PSMs, identified proteins, QC) show. Drawn once
-    per experiment, next to its run selector; nothing for a run alone."""
-    import streamlit as st
-
+def member_label(workspace, member: str) -> str:
+    """A run of an experiment under **Files of**: its name and how many files it processed."""
     from src.common.results_helpers import get_runs
 
     runs = get_runs(workspace)
-    members = runs.experiment(run_id)
-    if len(members) < 2:
-        return
+    files = runs.params(member).get("mzML-files") or []
+    count = 1 if isinstance(files, str) else len(files)
+    return f"{(runs.get(member) or {}).get('name') or member} ({count} {'file' if count == 1 else 'files'})"
 
-    def label(member: str) -> str:
-        files = runs.params(member).get("mzML-files") or []
-        count = 1 if isinstance(files, str) else len(files)
-        return f"{(runs.get(member) or {}).get('name') or member} ({count} {'file' if count == 1 else 'files'})"
 
-    key = _member_key(run_id, index)
-    if st.session_state.get(key) not in members:
-        st.session_state[key] = members[0]
-    st.segmented_control(
-        "Files of", members, key=key, format_func=label,
-        help="This experiment's files were processed in several runs (Process more files). "
-             "Abundances, the group comparison, PCA and the heatmaps cover all of them; "
-             "identifications and quality control show the files of the run picked here.",
-    )
+MEMBER_HELP = (
+    "This experiment's files were processed in several runs (Process more files). "
+    "Abundances, the group comparison, PCA and the heatmaps cover all of them; "
+    "identifications and quality control show the files of the run picked here."
+)
 
 
 def renderers(ctx: ViewerContext) -> Dict[str, Callable[[], None]]:

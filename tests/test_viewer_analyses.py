@@ -68,11 +68,7 @@ def test_results_lock_what_the_picked_files_lack(tmp_path):
     added = _added_run(tmp_path, first, "Added", {"mzML-files": ["/in/b.mzML"]})
     _results(tmp_path, added, "quant_results", "q.csv")
     assert analyses.QUANTIFICATION in analyses.available(tmp_path, first)
-    st.session_state["viewer-member-" + first + "-e0"] = added
-    try:
-        has = analyses.available(tmp_path, first, 0)
-    finally:
-        st.session_state.pop("viewer-member-" + first + "-e0")
+    has = analyses.available(tmp_path, first, member=added)
     assert analyses.IDENTIFICATION not in has and analyses.QUANTIFICATION in has
 
 
