@@ -20,6 +20,7 @@ _COMPONENTS = [
     ("psms_rescored", "Rescored hits (Percolator)", "Identification", "rescoring"),
     ("psms_search", "Raw search hits", "Identification", "database_search"),
     ("mass_shifts", "Mass shifts", "Identification", "mass_shifts"),
+    ("peak_map", "MS1 peak map and chromatograms", "Identification", "peak_map"),
     ("protein_abundance", "Protein and peptide abundances", "Quantification", "abundance"),
     ("group_comparison", "Group comparison: groups, counts and table", "Group comparison", "compare_groups"),
     ("volcano", "Volcano plot", "Group comparison", "volcano"),
@@ -44,6 +45,7 @@ NEEDS = {
     "psms_rescored": "rescoring",
     "psms_search": "search",
     "mass_shifts": "identification",
+    "peak_map": "identification",
     "protein_abundance": "quantification",
     "pca": "quantification",
     "heatmap": ["quantification", "samples"],
@@ -88,7 +90,7 @@ PRESETS = [
     },
     {
         "name": "quality_control", "label": "Quality control",
-        "layout": [["sample_counts"], ["id_diagnostics"], ["id_quality"], ["psms_search"], ["pca"]],
+        "layout": [["sample_counts"], ["id_diagnostics"], ["id_quality"], ["peak_map"], ["psms_search"], ["pca"]],
         "help": "Whether the samples and identifications can be trusted.",
     },
     {
