@@ -16,16 +16,16 @@ VIEWS = {
         "every sample appears beside the volcano plot, and it stays picked in every other view. "
         "PCA and the heatmap show whether the samples of one group resemble each other."
     ),
+    "pathways": (
+        "What the proteins that differ between your groups have in common. The volcano plot and the "
+        "group comparison table show the differing proteins; GO enrichment tests which biological "
+        "processes, molecular functions and cellular components are over-represented among them."
+    ),
     "identification": (
         "Which proteins and peptides were identified, down to the spectrum behind each match. Read "
         "from left to right: picking a protein narrows the peptides to that protein, picking a peptide "
         "narrows the peptide-spectrum matches (PSMs), and picking a PSM shows its annotated spectrum "
         "below. Mass shifts show modifications the search did not look for."
-    ),
-    "pathways": (
-        "What the proteins that differ between your groups have in common. The volcano plot and the "
-        "group comparison table show the differing proteins; GO enrichment tests which biological "
-        "processes, molecular functions and cellular components are over-represented among them."
     ),
     "quality_control": (
         "Whether the identifications and the group comparison can be trusted. The first row checks the "

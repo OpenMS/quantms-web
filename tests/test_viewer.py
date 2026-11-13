@@ -73,7 +73,7 @@ def test_presets_are_valid_layouts():
     for preset in PRESETS:
         assert validate_layout([preset["layout"]], CATALOG) == "", preset["name"]
         assert preset.get("help")
-    assert [p["label"] for p in PRESETS] == ["Quantification", "Identification", "Pathways", "Quality control"]
+    assert [p["label"] for p in PRESETS] == ["Quantification", "Pathways", "Identification", "Quality control"]
     # Components no ready-made view shows: offered for views of the user's own
     shown = {n for p in PRESETS for row in p["layout"] for n in row}
     assert {c["name"] for c in CATALOG} - shown == {
@@ -120,7 +120,7 @@ def test_earlier_views_are_moved_to_the_current_ones(tmp_path):
     }))
     migrate_views(path)
     saved = json.loads(path.read_text())
-    assert [v["name"] for v in saved["views"]] == ["identification", "pathways", "custom-1"]
+    assert [v["name"] for v in saved["views"]] == ["pathways", "identification", "custom-1"]
     assert "current" not in saved and "layout" not in saved
     before = path.read_text()
     migrate_views(path)  # once only

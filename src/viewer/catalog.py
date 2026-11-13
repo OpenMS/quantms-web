@@ -109,6 +109,11 @@ PRESETS = [
         "help": "Which proteins differ between your groups, and how each one varies across the samples.",
     },
     {
+        "name": "pathways", "label": "Pathways",
+        "layout": [["volcano", "group_comparison"], ["go_enrichment"]],
+        "help": "What the differing proteins have in common (GO enrichment).",
+    },
+    {
         "name": "identification", "label": "Identification",
         "layout": [
             ["dda_summary"],
@@ -117,11 +122,6 @@ PRESETS = [
             ["mass_shifts"],
         ],
         "help": "Which proteins and peptides were found, down to the annotated spectrum of each match.",
-    },
-    {
-        "name": "pathways", "label": "Pathways",
-        "layout": [["volcano", "group_comparison"], ["go_enrichment"]],
-        "help": "What the differing proteins have in common (GO enrichment).",
     },
     {
         "name": "quality_control", "label": "Quality control",
