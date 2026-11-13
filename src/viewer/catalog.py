@@ -118,7 +118,9 @@ PRESETS = [
         "layout": [
             ["dda_summary"],
             ["protein_table", "protein_peptides"],
-            ["protein_psms", "psm_spectrum"],
+            # The PSM's sequence view and spectrum need the full width
+            ["protein_psms"],
+            ["psm_spectrum"],
             ["mass_shifts"],
         ],
         "help": "Which proteins and peptides were found, down to the annotated spectrum of each match.",
