@@ -28,8 +28,8 @@ VIEWS = {
         "below. Mass shifts show modifications the search did not look for."
     ),
     "quality_control": (
-        "Whether the identifications and the group comparison can be trusted. The first row checks the "
-        "files: how many spectra each identified, and which fall short. The second checks the search: "
+        "Whether the identifications and the group comparison can be trusted. The first rows check the "
+        "files: how many spectra each identified, and which fall short. The next checks the search: "
         "target and decoy scores should separate, and precursor errors should centre near zero. The "
         "last rows check the steps of the group comparison: missing values, normalization, the values "
         "filled in for missing ones and the p-values."

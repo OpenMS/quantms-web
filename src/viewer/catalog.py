@@ -129,7 +129,10 @@ PRESETS = [
         "name": "quality_control", "label": "Quality control",
         "layout": [
             ["files_table"],
-            ["sample_counts", "id_diagnostics"],
+            # Both need the full width: the counts put their plot beside their tables, and
+            # the likely causes of a file falling short are sentences
+            ["sample_counts"],
+            ["id_diagnostics"],
             ["qc_scores", "qc_mass_error"],
             ["comparison_missing_values", "comparison_normalization"],
             ["comparison_imputed_values", "comparison_pvalues"],
