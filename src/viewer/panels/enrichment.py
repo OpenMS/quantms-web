@@ -13,18 +13,12 @@ from src.common.guide import ensure_group_comparison
 from src.common.insight_tables import show_insight_table, show_series
 from src.common.results_helpers import get_abundance_data, get_id_column
 from src.viewer import go_terms
+from openms_insight.core.settings import setting_value
 from src.viewer.scope import GO_SET, needs_results, scoped, shared_state
 
 TERM_COUNTS = [10, 15, 20, 30, 50]
 # Results kept per session (one per selection)
 _RESULTS_KEPT = 8
-
-HINT = (
-    "Pick proteins to test which GO terms are over-represented in them: use **All changed**, "
-    "**Higher** or **Lower** above the volcano plot, box or lasso select in its mode bar (Shift "
-    "adds), or the check boxes of the group comparison table (its check mark button turns them on)."
-)
-
 
 def _digest(*parts) -> str:
     return hashlib.sha1(repr(parts).encode()).hexdigest()[:12]
@@ -45,18 +39,29 @@ def _clear(state_manager) -> None:
     state_manager.set_selection(GO_SET, None)
 
 
-def _pick_terms():
-    pick, size = st.columns([4, 1], vertical_alignment="bottom")
-    with pick:
-        category = st.segmented_control(
-            "GO category", list(go_terms.CATEGORIES), default="BP", key=scoped("go_category"),
-            format_func=go_terms.CATEGORIES.get, label_visibility="collapsed",
-        ) or "BP"
-    count = size.selectbox(
-        "Terms in the chart", TERM_COUNTS, index=1, key=scoped("go_term_count"),
-        help="How many terms the bar chart shows. The table lists all of them.",
-    )
-    return category, count
+def _settings(state_manager, available=None):
+    """The GO category and the number of terms in the chart: settings in the chart's toolbar (⚙).
+
+    ``available`` limits the categories to those with terms, so the chart that
+    holds the settings is always drawn.
+    """
+    categories = [k for k in go_terms.CATEGORIES if available is None or k in available] or list(go_terms.CATEGORIES)
+    category_setting = {
+        "identifier": "go_category", "label": "GO category", "kind": "choice", "default": categories[0],
+        "options": [{"value": k, "label": go_terms.CATEGORIES[k]} for k in categories],
+    }
+    count_setting = {
+        "identifier": "go_term_count", "label": "Terms in the chart", "kind": "choice", "default": 15,
+        "options": TERM_COUNTS,
+    }
+    category = setting_value(state_manager, category_setting)
+    if category not in categories:
+        category = categories[0]
+    try:
+        count = int(setting_value(state_manager, count_setting))
+    except (TypeError, ValueError):
+        count = 15
+    return category, count, [category_setting, count_setting]
 
 
 def render(ctx) -> None:
@@ -76,12 +81,7 @@ def render(ctx) -> None:
     selected = sorted({a for a in (state.get_selection(GO_SET) or []) if a})
     folder = Path(ctx.workspace, "insight_tables", "go")
 
-    if selected:
-        head, clear = st.columns([5, 1], vertical_alignment="center")
-        head.markdown(f"**{len(selected)} of {len(background)} tested proteins picked.**")
-        clear.button("Clear selection", key=scoped("go_clear"), on_click=_clear, args=(state,), use_container_width=True)
-    else:
-        st.info(HINT)
+    picked = f"{len(selected)} of {len(background)} tested proteins picked" if selected else None
 
     message = (
         "Testing GO terms…" if go_terms.index_ready(folder, background)
@@ -99,7 +99,7 @@ def render(ctx) -> None:
         if not annotated:
             st.info("None of the tested proteins has a GO annotation at MyGene.info.")
             return
-        category, count = _pick_terms()
+        category, count, settings = _settings(state, [k for k, t in tables.items() if t.height])
         table = tables[category]
         if not table.height:
             st.info(f"No tested protein has {go_terms.CATEGORIES[category].lower()} terms.")
@@ -108,7 +108,9 @@ def render(ctx) -> None:
             go_terms.count_bars(table, count), name=f"go-counts-{category}",
             x_column="term", y_column="proteins", mode="bars", orientation="h", show_legend=False,
             title=f"{go_terms.CATEGORIES[category]}: the most frequent terms", x_label="GO term", y_label="Proteins",
+            detail=f"{go_terms.CATEGORIES[category]}, most frequent terms",
             height=max(300, 60 + 24 * min(count, table.height)),
+            state_manager=state, toolbar_settings=settings,
         )
         show_insight_table(
             go_terms.count_table(table, labels, annotated), name=f"go-counts-table-{category}",
@@ -121,7 +123,9 @@ def render(ctx) -> None:
     if not result["fg_count"]:
         st.info("None of the picked proteins has a GO annotation at MyGene.info.")
         return
-    category, count = _pick_terms()
+    category, count, settings = _settings(
+        state, [k for k, t in result["categories"].items() if t is not None and len(t)]
+    )
     table = result["categories"].get(category)
     if table is None or not len(table):
         st.info(f"The picked proteins have no {go_terms.CATEGORIES[category].lower()} terms.")
@@ -132,7 +136,10 @@ def render(ctx) -> None:
             x_column="term", y_column="score", mode="bars", orientation="h", show_legend=False,
             hover_column="hover", title=f"{go_terms.CATEGORIES[category]}: the most significant terms",
             x_label="GO term", y_label="-log10(adjusted p-value)", height=max(300, 60 + 24 * len(bars)),
+            detail=f"{go_terms.CATEGORIES[category]}, {picked}",
+            state_manager=state, toolbar_settings=settings,
         )
+        st.button("Clear selection", key=scoped("go_clear"), on_click=_clear, args=(state,))
         terms = go_terms.term_table(table, labels)
         show_insight_table(
             terms, name=f"go-terms-{category}", title=f"GO terms ({len(terms)})", height=360, layout="fitColumns",

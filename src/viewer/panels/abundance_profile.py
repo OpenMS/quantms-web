@@ -8,7 +8,7 @@ from openms_insight import SeriesPlot
 from src.common.differential import lead_accession
 from src.common.insight_tables import plot_cache
 from src.common.results_helpers import get_abundance_data, get_id_column, get_sample_group_map
-from src.viewer.scope import needs_results, scoped, shared_state, zoom
+from src.viewer.scope import heading, needs_results, scoped, shared_state, zoom
 
 
 def profile_table(pivot_df: pd.DataFrame, id_col: str, sample_group_map: dict) -> pd.DataFrame:
@@ -42,6 +42,7 @@ def render(ctx) -> None:
     SeriesPlot(
         **plot_cache("quantms_abundance_profile", table),
         **zoom(SeriesPlot, "abundance_profile"),
+        **heading(),
         data=pl.from_pandas(table).lazy(),
         filters={"protein": "accession"},
         # Nothing until a protein is picked, rather than every protein at once

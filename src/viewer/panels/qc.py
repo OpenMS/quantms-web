@@ -10,7 +10,7 @@ from src.common.qc_plots import (
     DECOY_COLOR, TARGET_COLOR, fdr_cutoff, mass_error_histogram, psm_qc_table, psms_per_file, score_histogram,
 )
 from src.common.results_helpers import get_run_dir, get_run_params, search_results_dir
-from src.viewer.scope import needs_results, scoped, shared_state, zoom
+from src.viewer.scope import heading, needs_results, scoped, shared_state, zoom
 
 
 @st.cache_data(show_spinner="Reading identifications...")
@@ -42,9 +42,9 @@ def load_qc(ctx):
     return all_psms, filtered, fdr
 
 
-def _series(name: str, data: pd.DataFrame, **kwargs) -> None:
+def _series(name: str, data: pd.DataFrame, detail=None, note=None, **kwargs) -> None:
     SeriesPlot(
-        **plot_cache(f"quantms_{name}", data), **zoom(SeriesPlot, name),
+        **plot_cache(f"quantms_{name}", data), **zoom(SeriesPlot, name), **heading(detail=detail, note=note),
         data=pl.from_pandas(data).lazy(), x_column="x", y_column="y", mode="lines", **kwargs,
     )(key=scoped(name), state_manager=shared_state(), height=340)
 
@@ -58,14 +58,12 @@ def scores(ctx) -> None:
     data, label, _ = score_histogram(all_psms)
     cutoff = fdr_cutoff(all_psms, fdr)
     targets, decoys = int((~all_psms["decoy"]).sum()), int(all_psms["decoy"].sum())
-    line = f"{targets:,} target and {decoys:,} decoy PSMs"
-    if cutoff is not None:
-        line += f" · PSM FDR {fdr * 100:.3g} % passes {label} ≥ {cutoff:.3g}"
-    st.caption(line + ".")
+    note = f"This run: {targets:,} target and {decoys:,} decoy PSMs."
+    detail = f"{fdr * 100:.3g} % PSM FDR at {label} ≥ {cutoff:.3g}" if cutoff is not None else None
     if not decoys:
         st.warning("No decoy PSMs found, so the score distribution cannot show the incorrect matches.")
     _series(
-        "qc_scores", data, series_column="kind",
+        "qc_scores", data, detail=detail, note=note, series_column="kind",
         series_names={"target": "Targets", "decoy": "Decoys"},
         series_colors={"target": TARGET_COLOR, "decoy": DECOY_COLOR},
         x_label=label, y_label="PSMs",
@@ -81,9 +79,9 @@ def mass_error(ctx) -> None:
     data, median = mass_error_histogram(filtered)
     if median is None:
         return needs_results("No precursor errors in this run.")
-    st.caption(f"Target PSMs at {fdr * 100:.3g} % PSM FDR · median {median:+.2f} ppm, isotope errors removed.")
     _series(
-        "qc_mass_error", data, series_colors=None, x_label="Precursor error (ppm)", y_label="PSMs",
+        "qc_mass_error", data, detail=f"median {median:+.2f} ppm",
+        note=f"Target PSMs at {fdr * 100:.3g} % PSM FDR, isotope errors removed.", series_colors=None, x_label="Precursor error (ppm)", y_label="PSMs",
         show_legend=False, y_range_mode="nonnegative",
     )
 

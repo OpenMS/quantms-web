@@ -14,7 +14,8 @@ from src.common.results_helpers import (
     log2_matrix,
 )
 from openms_insight import ClusteredHeatmap
-from src.viewer.scope import needs_results, scoped, shared_state
+from openms_insight.core.settings import setting_value
+from src.viewer.scope import heading, needs_results, scoped, shared_state
 
 
 def render(ctx) -> None:
@@ -36,7 +37,12 @@ def render(ctx) -> None:
     if expr_df.empty:
         st.info("No data available for heatmap.")
         return
-    top_n = st.slider("Number of proteins (Highest Variance)", 10, 200, 30, key=scoped("clustered_heatmap_top_n"))
+    state_manager = shared_state()
+    top_setting = {
+        "identifier": "clustered_heatmap_top_n", "label": "Proteins shown (most variable first)", "kind": "range",
+        "min": 10, "max": 200, "step": 10, "default": 30,
+    }
+    top_n = int(setting_value(state_manager, top_setting))
     var_series = expr_df.var(axis=1)
     top_proteins = var_series.sort_values(ascending=False).head(top_n).index
     heatmap_df = expr_df.loc[top_proteins]
@@ -75,13 +81,13 @@ def render(ctx) -> None:
         metadata=metadata_pl,
         row_cluster=True,
         col_cluster=True,
-        title="Protein Abundance Heatmap (Z-score, clustered)",
+        **heading("Protein Abundance Heatmap (Z-score, clustered)"),
+        toolbar_settings=[top_setting],
         x_label="Samples",
         y_label="Proteins",
         intensity_label="Z-score",
         group_colors=group_colors,
     )
-    state_manager = shared_state()
     # Scale height with the number of proteins so row labels stay readable -
     # BaseComponent otherwise defaults to a flat 400px, too short for a
     # dendrogram+heatmap composite with more than a handful of rows.

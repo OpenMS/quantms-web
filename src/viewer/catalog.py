@@ -213,22 +213,35 @@ def draw(module: str, ctx: ViewerContext, name: str = "") -> None:
     A component that shows one run's files, in an experiment of several runs,
     shows the run picked above it (the first run unless picked).
     """
-    if name in LABELS:
-        _title(name)
+    import streamlit as st
+
+    from src.viewer.scope import COMPONENT_KEY
+
+    # The component's main Insight view takes its title and help (scope.heading);
+    # a component that has none gets its title above it
+    slot = st.empty() if name in LABELS else None
+    if slot is not None:
+        st.session_state[COMPONENT_KEY] = name
     run_id = ctx.run_id
     if name and name not in EXPERIMENT_WIDE:
         run_id = experiment_member(ctx, name)
-    with experiment(run_id, ctx.index):
-        panel(module)(replace(ctx, run_id=run_id) if run_id != ctx.run_id else ctx)
+    try:
+        with experiment(run_id, ctx.index):
+            panel(module)(replace(ctx, run_id=run_id) if run_id != ctx.run_id else ctx)
+    finally:
+        if slot is not None and st.session_state.pop(COMPONENT_KEY, None) == name:
+            with slot.container():
+                _title(name)
 
 
 def _title(name: str) -> None:
     """The component's title, with a tooltip linking to its section on Understand your Results."""
     import streamlit as st
 
-    from src.viewer.teaching import tooltip
+    from src.viewer.scope import tutorial
+    from src.viewer.teaching import help_text
 
-    st.markdown(f"**{LABELS[name]}**", help=tooltip(name))
+    st.markdown(f"**{LABELS[name]}**", help=help_text(name) if tutorial() else None)
 
 
 def experiment_member(ctx: ViewerContext, name: str = "") -> str:

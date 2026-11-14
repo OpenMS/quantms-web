@@ -14,6 +14,7 @@ from src.viewer.catalog import (
     migrate_views, renderers,
 )
 from src.viewer.comparison import edit_comparison_button
+from src.viewer.scope import TUTORIAL_KEY, tutorial
 from src.viewer.history_ui import history_button
 from src.workflow.RunManager import FINISHED
 from src.workflow.run_widgets import get_selected_run, run_label, set_selected_run
@@ -59,6 +60,22 @@ def top_buttons(ctx) -> None:
     history_button(runs, ctx.dataset)
     add_files_menu(ctx.dataset)
     result_export.viewer_button(runs, ctx.dataset)
+    tutorial_button()
+
+
+def _flip_tutorial() -> None:
+    st.session_state[TUTORIAL_KEY] = not tutorial()
+
+
+def tutorial_button() -> None:
+    """Tutorial mode: a ? beside each component's title says what it shows and how to use it."""
+    on = tutorial()
+    st.button(
+        "🎓", key="viewer_tutorial_button", on_click=_flip_tutorial, type="primary" if on else "secondary",
+        help=("Tutorial mode is on: the ? beside a component's title says what it shows and how to use it. "
+              "Click to hide them.") if on else "Tutorial mode: show a ? beside each component's title "
+        "that says what it shows and how to use it.",
+    )
 
 
 def show_picked(ctx) -> None:

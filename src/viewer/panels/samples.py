@@ -6,7 +6,8 @@ from src.common.guide import page_link
 from src.common.insight_tables import show_insight_table, show_series
 from src.common.results_helpers import get_abundance_data, get_sample_group_map, get_run_dir, get_run_params
 from src.common.samples import COUNT_COLUMNS, channel_samples, condition_summary, lfq_samples, short_sample_names
-from src.viewer.scope import scoped
+from openms_insight.core.settings import setting_value
+from src.viewer.scope import scoped, shared_state
 
 
 def render(ctx) -> None:
@@ -60,13 +61,22 @@ def render(ctx) -> None:
 
     counts = [c for c in COUNT_COLUMNS if samples[c].notna().any()]
     group_key = "|".join(f"{s}={c}" for s, c in zip(samples["Sample"], samples["Condition"]))
-    metric = st.popover("⚙️ Count shown").selectbox("Count", counts, key=scoped("samples-metric"))
+    state_manager = shared_state()
+    # The count shown is a setting in the plot's toolbar (⚙)
+    count_setting = {"identifier": "samples_metric", "label": "Count shown", "kind": "choice",
+                     "options": counts, "default": counts[0]}
+    metric = setting_value(state_manager, count_setting)
+    if metric not in counts:
+        metric = counts[0]
     bars = samples[["Sample", "Condition", metric]].copy()
     bars["Sample"] = bars["Sample"].map(short_sample_names(bars["Sample"]))
     show_series(
         bars, f"samples_{metric.lower().replace(' ', '_')}",
         height=max(260, 34 * len(samples) + 140), x_column="Sample", y_column=metric, series_column="Condition",
         mode="bars", orientation="h", x_label="Sample", y_label=metric, y_range_mode="nonnegative",
+        state_manager=state_manager, toolbar_settings=[count_setting],
+        note="Samples without a group are shown as Unassigned."
+        if (samples["Condition"] == "Unassigned").any() else None,
     )
     show_insight_table(
         samples[["Sample", "Condition"] + counts],
@@ -92,6 +102,3 @@ def render(ctx) -> None:
         height=_table_height(len(summary)),
         layout="fitColumns",
     )
-    if (samples["Condition"] == "Unassigned").any():
-        st.caption("Samples without a group are shown as Unassigned.")
-        page_link("configure")

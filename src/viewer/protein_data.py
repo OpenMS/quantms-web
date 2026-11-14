@@ -17,7 +17,7 @@ from src.common.insight_tables import show_insight_table
 from src.common.protein_table import build_tables, collect_psms, coverage_html, read_fasta
 from src.common.result_filters import add_protein_flags, file_conditions, max_replicates, protein_numeric_filters
 from src.common.results_helpers import get_run_dir, get_run_params
-from src.viewer.scope import scoped, shared_state
+from src.viewer.scope import heading, retitle, scoped, shared_state
 
 # Columns the linked tables filter on: already shown by the selection above them
 HIDDEN = {"visible": False}
@@ -129,7 +129,7 @@ def protein_table(data: ProteinData) -> None:
         cache_dir=data.cache_dir,
         source_files=data.source_files,
         extra_key=f"menu-v1|{'per-sample' if data.sample_of else ''}|{sorted(data.conditions.items())}",
-        title="proteins",
+        title="Proteins",
         height=420,
         state_manager=shared_state(),
         interactivity={"protein": "accession"},
@@ -162,7 +162,7 @@ def protein_peptides(data: ProteinData) -> None:
         cache_dir=data.cache_dir,
         source_files=data.source_files,
         extra_key="per-sample" if data.sample_of else "",
-        title="peptides",
+        title="Peptides",
         height=420,
         state_manager=state_manager,
         filters={"protein": "accession"},
@@ -182,7 +182,7 @@ def protein_psms(data: ProteinData) -> None:
         name="protein_psms",
         cache_dir=data.cache_dir,
         source_files=data.source_files,
-        title="psms",
+        title="PSMs",
         height=860,
         state_manager=shared_state(),
         filters={"protein": "accession", "peptide": "peptide"},
@@ -227,7 +227,9 @@ def psm_spectrum(data: ProteinData) -> None:
     viewer_state.set_selection("identification", int(psm_id))
     viewer_state.set_selection("file", mzml_names.index(psm["file"]))
     viewer_state.set_selection("spectrum", int(psm["scan"]))
-    SequenceView(cache_id=f"seqview_{run}", cache_path=str(data.cache_dir))(
+    head = heading("Spectrum")
+    retitle(SequenceView(cache_id=f"seqview_{run}", cache_path=str(data.cache_dir)), head.get("title"))(
+        help=head.get("help"),
         key=scoped("proteins_seqview"), state_manager=viewer_state, height=420,
     )
     tolerance, ppm = fragment_tolerance(data.run_params)
