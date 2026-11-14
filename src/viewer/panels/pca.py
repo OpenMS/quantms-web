@@ -13,7 +13,8 @@ from src.common.results_helpers import (
     sample_columns,
 )
 from openms_insight import PCAPlot
-from src.viewer.scope import needs_results, scoped, shared_state, zoom
+from openms_insight.core.settings import setting_value
+from src.viewer.scope import heading, needs_results, scoped, shared_state, zoom
 
 
 def render(ctx) -> None:
@@ -40,25 +41,19 @@ def render(ctx) -> None:
             "Only one biological group was detected - points will still be plotted, "
             "but group-based coloring requires 2 or more groups."
         )
-    settings = st.popover("⚙️ Settings")
     expr_df_wide = base_df.set_index(id_col)[sample_cols]
     max_available = expr_df_wide.shape[0]
-    if max_available <= 20:
-        top_n = max_available
-        settings.caption(f"Using all {top_n} proteins for PCA (dataset too small for variance filtering).")
-    else:
-        top_n = settings.slider(
-            "Proteins used (most variable first)",
-            min_value=20,
-            max_value=min(5000, max_available),
-            value=min(500, max_available),
-            step=10,
-            key=scoped("pca_top_n"),
-            help=(
-                "PCA is computed only on the N proteins with the highest variance "
-                "across samples, to reduce noise from low-variance/uninformative features."
-            ),
-        )
+    state_manager = shared_state()
+    # The plot's settings live in its toolbar (⚙): proteins used and the axes
+    settings = []
+    top_n = max_available
+    if max_available > 20:
+        top_setting = {
+            "identifier": "pca_top_n", "label": "Proteins used (most variable first)", "kind": "range",
+            "min": 20, "max": min(5000, max_available), "step": 10, "default": min(500, max_available),
+        }
+        settings.append(top_setting)
+        top_n = int(setting_value(state_manager, top_setting))
     top_proteins = expr_df_wide.var(axis=1).sort_values(ascending=False).head(top_n).index
     expr_df_pca = expr_df_wide.loc[top_proteins].reset_index()
     if expr_df_pca.shape[0] < 2:
@@ -80,22 +75,20 @@ def render(ctx) -> None:
             sample_id_field="sample_id",
             group_field="group",
             n_components=5,
-            title="Sample PCA",
+            **heading("Sample PCA"),
         )
     except ValueError as e:
         st.error(f"PCA computation failed: {e}")
         return
     pc_columns = pca_component.get_pc_columns()
-    # 4. Let the user pick which component pair to view (no recomputation needed)
-    col1, col2 = settings.columns(2)
-    with col1:
-        pc_x_label = st.selectbox("X-axis component", pc_columns, index=0, key=scoped("pca_pc_x"))
-    with col2:
-        default_y_index = 1 if len(pc_columns) > 1 else 0
-        pc_y_label = st.selectbox("Y-axis component", pc_columns, index=default_y_index, key=scoped("pca_pc_y"))
-    pc_x = int(pc_x_label.replace("PC", ""))
-    pc_y = int(pc_y_label.replace("PC", ""))
-    # 5. Render the component
-    state_manager = shared_state()
+    # Which component pair to view (no recomputation needed)
+    x_setting = {"identifier": "pca_pc_x", "label": "X axis", "kind": "choice", "options": pc_columns,
+                 "default": pc_columns[0]}
+    y_setting = {"identifier": "pca_pc_y", "label": "Y axis", "kind": "choice", "options": pc_columns,
+                 "default": pc_columns[1 if len(pc_columns) > 1 else 0]}
+    settings += [x_setting, y_setting]
+    pc_x = int(str(setting_value(state_manager, x_setting)).replace("PC", ""))
+    pc_y = int(str(setting_value(state_manager, y_setting)).replace("PC", ""))
+    pca_component.set_toolbar_settings(settings)
     pca_component(state_manager=state_manager, pc_x=pc_x, pc_y=pc_y, height=520, key=scoped("pca_plot"))
 

@@ -7,15 +7,14 @@ from src.common import result_export
 from src.common.common import page_setup
 from src.common.guide import explain_empty_run, needs_results
 from src.common.results_helpers import get_runs
-from src.layout_manager import (
-    MAX_EXPERIMENTS, experiment_selector, experiment_state, load_layout, render_experiments, request_analysis,
-    resolve_layout, selected_datasets, view_bar,
-)
+from src.layout_manager import DatasetKind, ViewerSpec, experiment_state, show_viewer
 from src.viewer import analyses
 from src.viewer.catalog import (
-    CATALOG, DEFAULT_LAYOUT, LABELS, PRESETS, ViewerContext, default_view, member_picker, migrate_views, renderers,
+    CATALOG, DEFAULT_LAYOUT, LABELS, MEMBER_HELP, PRESETS, ViewerContext, default_view, member_label,
+    migrate_views, renderers,
 )
 from src.viewer.comparison import edit_comparison_button
+from src.viewer.scope import TUTORIAL_KEY, tutorial
 from src.viewer.history_ui import history_button
 from src.workflow.RunManager import FINISHED
 from src.workflow.run_widgets import get_selected_run, run_label, set_selected_run
@@ -32,34 +31,19 @@ explain_empty_run(workspace, finished[0]["id"] if finished else None)
 if not finished:
     needs_results()
 
-# A run that processed more files for an earlier run is shown with it, as one experiment
-datasets = {r["id"]: run_label(r, len(runs.added_runs(r["id"]))) for r in runs.experiments(FINISHED)}
-# A run picked elsewhere (a run that has just finished, or imported from a ZIP)
-# becomes the first experiment's run
-selected = get_selected_run(runs)
-if st.session_state.get("_viewer_selected") != selected:
-    st.session_state[f"{KEY}_experiment_0"] = selected
-    st.session_state["_viewer_selected"] = selected
-
 layout_path = workspace / "layouts" / "viewer.json"
 # Views saved before the current ready-made views open on the default view
 migrate_views(layout_path)
-VIEW_KEY = "viewer_view"
-# The experiment whose component asked for a missing analysis (its note's button)
-MISSING_INDEX = "_viewer_missing_experiment"
 
 
-def missing_options(missing, view):
-    """The dialog's choices for the run of the experiment that asked (the first for a view)."""
-    index = st.session_state.pop(MISSING_INDEX, 0)
-    run_id = selected_datasets(KEY, index + 1)[index]
-    if run_id is None:
-        return []
-    return analyses.options(workspace, run_id, missing)
+def run_context(ctx) -> ViewerContext:
+    """What the components of experiment ``ctx`` draw: its run, and the run picked under Files of."""
+    return ViewerContext(workspace=workspace, run_id=ctx.dataset, index=ctx.index, params=params,
+                         member=ctx.member)
 
 
-def run_of(index: int):
-    return selected_datasets(KEY, index + 1)[index]
+def available(ctx):
+    return analyses.available(workspace, ctx.dataset, member=ctx.member)
 
 
 def add_files_menu(run_id):
@@ -71,67 +55,61 @@ def add_files_menu(run_id):
             analyses.add_files(run_id)
 
 
-def add_missing(missing, component, run_id, index):
-    st.session_state[MISSING_INDEX] = index
-    request_analysis(VIEW_KEY, missing, component=component)
-
-
-def top_buttons(index: int) -> None:
+def top_buttons(ctx) -> None:
     """What can be done with the experiment shown: beside its selector, above the views."""
-    run_id = run_of(index)
-    if not run_id:
-        return
-    st.session_state[analyses.INDEX_KEY] = index
-    member_picker(workspace, run_id, index)
-    edit_comparison_button(ViewerContext(workspace=workspace, run_id=run_id, index=index, params=params))
-    history_button(runs, run_id)
-    add_files_menu(run_id)
-    result_export.viewer_button(runs, run_id)
+    history_button(runs, ctx.dataset)
+    add_files_menu(ctx.dataset)
+    result_export.viewer_button(runs, ctx.dataset)
+    tutorial_button()
 
 
-# The experiment first, then the views of what it shows below it
-experiment_selector(datasets, key=KEY, label="choose experiment", buttons=top_buttons)
+def _flip_tutorial() -> None:
+    st.session_state[TUTORIAL_KEY] = not tutorial()
 
-first_available = analyses.available(workspace, selected_datasets(KEY, 1)[0] if datasets else None, 0)
-# Quantification for samples in groups, else Identification, until a view is picked
-opening_view = default_view(first_available)
-view_bar(
-    layout_path, CATALOG, PRESETS, DEFAULT_LAYOUT, key=VIEW_KEY, default_view=opening_view,
-    available=first_available,
-    analyses=analyses.ANALYSES, unavailable_options=missing_options,
-    max_experiments=MAX_EXPERIMENTS, experiment_label="Run", target="the Viewer",
+
+def tutorial_button() -> None:
+    """Tutorial mode: a ? beside each component's title says what it shows and how to use it."""
+    on = tutorial()
+    st.button(
+        "🎓", key="viewer_tutorial_button", on_click=_flip_tutorial, type="primary" if on else "secondary",
+        help=("Tutorial mode is on: the ? beside a component's title says what it shows and how to use it. "
+              "Click to hide them.") if on else "Tutorial mode: show a ? beside each component's title "
+        "that says what it shows and how to use it.",
+    )
+
+
+def show_picked(ctx) -> None:
+    """The experiment shown first is the run the other pages show."""
+    if ctx.experiment != get_selected_run(runs):
+        set_selected_run(runs, ctx.experiment)
+
+
+RUNS = DatasetKind(
+    name="run", components=CATALOG, presets=PRESETS, default_layout=DEFAULT_LAYOUT, views_path=layout_path,
+    renderers=lambda ctx: renderers(run_context(ctx)), labels=LABELS,
+    available=available, analyses=analyses.ANALYSES,
+    unavailable_options=lambda missing, view, ctx: analyses.options(workspace, ctx.dataset, missing),
+    # Quantification for samples in groups, else Identification, until a view is picked
+    default_view=lambda ctx: default_view(available(ctx)),
     # A view of the user's own keeps each run's selection and zoom (📌, ↺)
-    states=lambda i: experiment_state("viewer", i, run_of(i)),
-    datasets=run_of,
+    states=lambda ctx: experiment_state("viewer", ctx.index, ctx.dataset),
+    # The comparison steps, beside every experiment's selector
+    buttons=lambda ctx: edit_comparison_button(run_context(ctx)),
+    view_key="viewer_view", experiment_label="Run", target="the Viewer",
     help_text=(
         "Drag a view to order the bar, untick it to keep it under More. Your own views take up to 3 "
         "components per row; ready-made views can be duplicated. Add runs to compare them side by side."
     ),
 )
-layout, side_by_side = resolve_layout(layout_path, CATALOG, DEFAULT_LAYOUT)
-if load_layout(layout_path) is None:
-    layout = [next(p["layout"] for p in PRESETS if p["name"] == opening_view)]
 
-
-def experiment_renderers(run_id: str, index: int):
-    return renderers(ViewerContext(workspace=workspace, run_id=run_id, index=index, params=params))
-
-
-def buttons(index: int) -> None:
-    run_id = selected_datasets(KEY, index + 1)[index]
-    if run_id:
-        st.session_state[analyses.INDEX_KEY] = index  # what the run has is asked next, for this experiment
-        member_picker(workspace, run_id, index)
-        edit_comparison_button(ViewerContext(workspace=workspace, run_id=run_id, index=index, params=params))
-
-
-picked = render_experiments(
-    layout, side_by_side, datasets, experiment_renderers, key=KEY,
-    labels=LABELS, experiment_label="Run", buttons=buttons,
-    components=CATALOG, available=lambda run_id: analyses.available(workspace, run_id),
-    analyses=analyses.ANALYSES, on_missing=add_missing, first_selector=False,
-)
-if picked and picked[0] and picked[0] != selected:
-    set_selected_run(runs, picked[0])
-    st.session_state["_viewer_selected"] = picked[0]
-
+show_viewer(ViewerSpec(
+    key=KEY, kinds=[RUNS],
+    # A run that processed more files for an earlier run is shown with it, as one experiment
+    datasets={r["id"]: run_label(r, len(runs.added_runs(r["id"]))) for r in runs.experiments(FINISHED)},
+    # Files of: which run's files the components that show one run's files show
+    members=runs.experiment, member_mode="files", member_format=lambda m: member_label(workspace, m),
+    member_help=MEMBER_HELP,
+    label="choose experiment", later_label="Run", buttons=top_buttons, empty=needs_results,
+    # A run picked elsewhere (a run that has just finished, or imported from a ZIP) is shown first
+    pick=get_selected_run(runs), on_pick=show_picked,
+))

@@ -14,7 +14,8 @@ from src.common.results_helpers import (
     log2_matrix,
 )
 from openms_insight import Heatmap
-from src.viewer.scope import needs_results, scoped, shared_state
+from openms_insight.core.settings import setting_value
+from src.viewer.scope import heading, needs_results, scoped, shared_state
 
 
 def render(ctx) -> None:
@@ -38,9 +39,12 @@ def render(ctx) -> None:
         return
     sample_cols = expr_df.columns.tolist()
     # UI settings (number of top variance proteins)
-    top_n = st.popover("⚙️ Settings").slider(
-        "Proteins shown (most variable first)", 20, 200, 50, key=scoped("heatmap_top_n")
-    )
+    state_manager = shared_state()
+    top_setting = {
+        "identifier": "heatmap_top_n", "label": "Proteins shown (most variable first)", "kind": "range",
+        "min": 20, "max": 200, "step": 10, "default": 50,
+    }
+    top_n = int(setting_value(state_manager, top_setting))
     # Process data (variance selection -> Z-score normalization)
     var_series = expr_df.var(axis=1)
     top_proteins = var_series.sort_values(ascending=False).head(top_n).index
@@ -72,7 +76,8 @@ def render(ctx) -> None:
             y_column=id_col,
             data=heatmap_pl_lazy,
             intensity_column="Z_score",
-            title="Protein Abundance Heatmap (Z-score)",
+            **heading("Protein Abundance Heatmap (Z-score)"),
+            toolbar_settings=[top_setting],
             x_label="Samples",
             y_label="Proteins",
             colorscale="RdBu",
@@ -84,7 +89,6 @@ def render(ctx) -> None:
         )
 
         # Render the component
-        state_manager = shared_state()
         heatmap_component(state_manager=state_manager, key=scoped("heatmap"), height=520)
     else:
         st.warning("Insufficient data to generate the heatmap.")

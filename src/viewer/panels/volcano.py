@@ -8,7 +8,7 @@ from src.common.differential import comparison_groups, lead_accession, raw_p_cut
 from src.common.guide import ensure_group_comparison
 from src.common.insight_tables import plot_cache
 from src.common.results_helpers import get_abundance_data, get_id_column, get_sample_group_map
-from src.viewer.scope import GO_SET, change_cutoffs, needs_results, scoped, shared_state, zoom
+from src.viewer.scope import GO_SET, heading, change_cutoffs, needs_results, scoped, shared_state, zoom
 
 
 def render(ctx) -> None:
@@ -45,7 +45,7 @@ def render(ctx) -> None:
         log2fc_column="log2FC",
         pvalue_column="p-value",
         label_column="label",
-        title=title,
+        **heading(title, detail=title),
         x_label="log2 fold change",
         y_label="-log10(p-value)",
         up_color="#E74C3C",

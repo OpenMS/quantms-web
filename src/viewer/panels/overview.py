@@ -47,9 +47,8 @@ def dda_tiles(ctx) -> None:
     data = protein_data.load(ctx)
     proteins = protein_data.protein_count(data) if data is not None else None
     fdr = float(workflow_params.get("psm-fdr-percent", 1.0))
-    st.caption(f"Filters of this run: {fdr_summary(workflow_params)}.")
     tiles = [
-        ("Files", _show(figures["Files"]), None),
+        ("Files", _show(figures["Files"]), f"Filters of this run: {fdr_summary(workflow_params)}."),
         ("Target PSMs", _show(figures["Target PSMs"]), f"At {fdr:g} % PSM FDR, over all files."),
         ("Peptides", _show(figures["Peptides"]), "Distinct target peptide sequences."),
         ("Proteins", _show(proteins), "Identified target proteins, without contaminants."),
@@ -67,7 +66,6 @@ def files_table(ctx) -> None:
         return needs_results()
     per_file, _, workflow_params, cache_dir, sources = loaded
     fdr = float(workflow_params.get("psm-fdr-percent", 1.0))
-    st.caption(f"Counts at {fdr:g} % PSM FDR.")
     # The fractional columns go as text, since the table stores floats as float32
     # and would show 36.8 as 36.79999923706055
     per_file_view = per_file[PER_FILE_COLUMNS].copy()
@@ -78,7 +76,8 @@ def files_table(ctx) -> None:
         name="overview_files",
         cache_dir=cache_dir,
         source_files=sources,
-        title="run_overview",
+        title="Files",
+        note=f"Counts at {fdr:g} % PSM FDR.",
         height=300,
         # Share the page width between the columns rather than folding the last ones away
         layout="fitColumns",

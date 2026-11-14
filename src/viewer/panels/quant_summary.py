@@ -29,10 +29,10 @@ def render(ctx) -> None:
         statistics_df = ensure_group_comparison(ctx.params, show_errors=False)
         if statistics_df is not None and not statistics_df.empty:
             up, down = count_significant(statistics_df, fc, padj)
-        st.caption(
-            f"Up and down: higher or lower in {direction[1]} than in {direction[0]}, "
-            f"|log2 fold change| ≥ {fc:g} and adjusted p-value ≤ {padj:g} (Edit comparison, step 4)."
-        )
+    cutoffs = (
+        f"in {direction[1]} than in {direction[0]}, |log2 fold change| ≥ {fc:g} and adjusted p-value "
+        f"≤ {padj:g} (Edit comparison, step 4)." if direction else None
+    )
 
     def show(value, unit: str = "") -> str:
         return "–" if value is None else f"{value:,}{unit}"
@@ -41,8 +41,8 @@ def render(ctx) -> None:
         ("Quantified proteins", show(len(pivot_df)), "Without contaminants."),
         ("Samples", show(len(measured) or len(expr_df.columns)), None),
         ("Groups", show(len(groups) or None), "Set on Describe experiment."),
-        ("Proteins up", show(up), None),
-        ("Proteins down", show(down), None),
+        ("Proteins up", show(up), f"Higher {cutoffs}" if cutoffs else None),
+        ("Proteins down", show(down), f"Lower {cutoffs}" if cutoffs else None),
         ("Missing values", show(missing, " %"), "Share of protein abundances not measured, before imputation."),
     ]
     for col, (label, value, help_text) in zip(st.columns(len(tiles)), tiles):

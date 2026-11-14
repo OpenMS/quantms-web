@@ -6,10 +6,9 @@ from pathlib import Path
 import polars as pl
 import streamlit as st
 from openms_insight import LinePlot, Table
-from src.common.guide import page_link
 from src.common.mass_shifts import MIN_PSMS, mass_shift_summary, psm_mass_shifts
 from src.common.results_helpers import get_run_dir, get_run_params, search_tolerances
-from src.viewer.scope import needs_results, scoped, shared_state, zoom
+from src.viewer.scope import heading, needs_results, retitle, scoped, shared_state, zoom
 
 
 def render(ctx) -> None:
@@ -32,30 +31,18 @@ def render(ctx) -> None:
     tolerances = search_tolerances(workflow_params)
     tolerance, units = tolerances["precursor"], tolerances["precursor_unit"]
     if units == "Da" and tolerance and float(tolerance) >= 100:
-        st.caption(f"Open search: precursor tolerance ±{float(tolerance):g} Da.")
+        search_note = f"Open search: precursor tolerance ±{float(tolerance):g} Da."
     else:
-        st.caption("Closed search: only shifts within the precursor tolerance.")
-        page_link("configure")
+        search_note = (
+            "Closed search: only shifts within the precursor tolerance. "
+            "A wider precursor tolerance in Configure finds modifications outside it."
+        )
     if psms.empty:
         st.info("No target PSMs in the filtered results.")
         return
     modified = shifts[
         ~shifts["Interpretation"].isin(["Unmodified"]) & ~shifts["Interpretation"].str.contains("isotope")
     ]
-    cols = st.columns(4)
-    cols[0].metric("Target PSMs", f"{len(psms):,}")
-    cols[1].metric("Shifts", f"{len(shifts):,}", help=f"Recurring shifts with at least {MIN_PSMS} PSMs.")
-    cols[2].metric(
-        "PSMs with a modification shift",
-        f"{int(modified['PSMs'].sum()):,}",
-        help="PSMs in shifts other than 0 Da and isotope picks.",
-    )
-    cols[3].metric(
-        "Unexplained shifts",
-        f"{int((shifts['Interpretation'] == '').sum()):,}",
-        help="Shifts with no Unimod modification within 0.02 Da.",
-    )
-
     def _fixed(precision: int) -> dict:
         """Column options showing a number with ``precision`` decimals (the table stores float32)."""
         return {
@@ -94,7 +81,7 @@ def render(ctx) -> None:
             cache_path=str(cache_dir),
             interactivity={"mass_shift": "shift_id"},
             index_field="shift_id",
-            title="mass_shifts",
+            title="Shifts",
             layout="fitColumns",
             column_definitions=[
                 {"field": "Observed Δ (Da)", "title": "Observed Δ (Da)", **_fixed(4)},
@@ -113,7 +100,7 @@ def render(ctx) -> None:
             cache_path=str(cache_dir),
             filters={"mass_shift": "shift_id"},
             index_field="psm_id",
-            title="mass_shift_psms",
+            title="PSMs of the selected shift",
             initial_sort=[{"column": "score", "dir": "asc"}],
             column_definitions=[
                 {"field": "sequence", "title": "Sequence"},
@@ -126,14 +113,26 @@ def render(ctx) -> None:
             ],
         )
     state_manager = shared_state()
-    LinePlot(cache_id=ids["histogram"], cache_path=str(cache_dir), **zoom(LinePlot, "mass_shifts"))(
-        key=scoped("mass_shift_histogram"), state_manager=state_manager, height=400
+    head = heading("Precursor mass shifts", note=search_note)
+    retitle(LinePlot(cache_id=ids["histogram"], cache_path=str(cache_dir), **zoom(LinePlot, "mass_shifts")), head.get("title"))(
+        key=scoped("mass_shift_histogram"), state_manager=state_manager, height=400, help=head.get("help")
     )
-    st.subheader("Shifts")
-    Table(cache_id=ids["shifts"], cache_path=str(cache_dir), collapse_columns=False)(
+    cols = st.columns(4)
+    cols[0].metric("Target PSMs", f"{len(psms):,}")
+    cols[1].metric("Shifts", f"{len(shifts):,}", help=f"Recurring shifts with at least {MIN_PSMS} PSMs.")
+    cols[2].metric(
+        "PSMs with a modification shift",
+        f"{int(modified['PSMs'].sum()):,}",
+        help="PSMs in shifts other than 0 Da and isotope picks.",
+    )
+    cols[3].metric(
+        "Unexplained shifts",
+        f"{int((shifts['Interpretation'] == '').sum()):,}",
+        help="Shifts with no Unimod modification within 0.02 Da.",
+    )
+    retitle(Table(cache_id=ids["shifts"], cache_path=str(cache_dir), collapse_columns=False), "Shifts")(
         key=scoped("mass_shift_table"), state_manager=state_manager, height=140 + 34 * min(len(shifts), 10)
     )
-    st.subheader("PSMs of the selected shift")
-    Table(cache_id=ids["psms"], cache_path=str(cache_dir), collapse_columns=False)(
+    retitle(Table(cache_id=ids["psms"], cache_path=str(cache_dir), collapse_columns=False), "PSMs of the selected shift")(
         key=scoped("mass_shift_psm_table"), state_manager=state_manager, height=420
     )

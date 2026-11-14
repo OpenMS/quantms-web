@@ -129,7 +129,10 @@ PRESETS = [
         "name": "quality_control", "label": "Quality control",
         "layout": [
             ["files_table"],
-            ["sample_counts", "id_diagnostics"],
+            # Both need the full width: the counts put their plot beside their tables, and
+            # the likely causes of a file falling short are sentences
+            ["sample_counts"],
+            ["id_diagnostics"],
             ["qc_scores", "qc_mass_error"],
             ["comparison_missing_values", "comparison_normalization"],
             ["comparison_imputed_values", "comparison_pvalues"],
@@ -198,6 +201,8 @@ class ViewerContext:
     run_id: str
     index: int = 0
     params: dict = field(default_factory=dict)
+    # The run of the experiment picked under **Files of** (None: the first)
+    member: str | None = None
 
 
 def panel(module: str) -> Callable:
@@ -211,67 +216,62 @@ def draw(module: str, ctx: ViewerContext, name: str = "") -> None:
     A component that shows one run's files, in an experiment of several runs,
     shows the run picked above it (the first run unless picked).
     """
-    if name in LABELS:
-        _title(name)
+    import streamlit as st
+
+    from src.viewer.scope import COMPONENT_KEY
+
+    # The component's main Insight view takes its title and help (scope.heading);
+    # a component that has none gets its title above it
+    slot = st.empty() if name in LABELS else None
+    if slot is not None:
+        st.session_state[COMPONENT_KEY] = name
     run_id = ctx.run_id
     if name and name not in EXPERIMENT_WIDE:
         run_id = experiment_member(ctx, name)
-    with experiment(run_id, ctx.index):
-        panel(module)(replace(ctx, run_id=run_id) if run_id != ctx.run_id else ctx)
+    try:
+        with experiment(run_id, ctx.index):
+            panel(module)(replace(ctx, run_id=run_id) if run_id != ctx.run_id else ctx)
+    finally:
+        if slot is not None and st.session_state.pop(COMPONENT_KEY, None) == name:
+            with slot.container():
+                _title(name)
 
 
 def _title(name: str) -> None:
     """The component's title, with a tooltip linking to its section on Understand your Results."""
     import streamlit as st
 
-    from src.viewer.teaching import tooltip
+    from src.viewer.scope import tutorial
+    from src.viewer.teaching import help_text
 
-    st.markdown(f"**{LABELS[name]}**", help=tooltip(name))
-
-
-def _member_key(run_id: str, index: int) -> str:
-    return f"viewer-member-{run_id}-e{index}"
+    st.markdown(f"**{LABELS[name]}**", help=help_text(name) if tutorial() else None)
 
 
 def experiment_member(ctx: ViewerContext, name: str = "") -> str:
     """The run of ``ctx.run_id``'s experiment whose files the components that
-    show one run's files show (picked with ``member_picker``, else the first)."""
-    import streamlit as st
-
+    show one run's files show: the one picked under **Files of** (the Viewer's
+    ``ctx.member``), else the first."""
     from src.common.results_helpers import get_runs
 
     members = get_runs(ctx.workspace).experiment(ctx.run_id)
-    picked = st.session_state.get(_member_key(ctx.run_id, ctx.index))
-    return picked if picked in members else ctx.run_id
+    return ctx.member if ctx.member in members else ctx.run_id
 
 
-def member_picker(workspace, run_id: str, index: int) -> None:
-    """**Files of**: which run of an experiment of several runs the components
-    that show one run's files (PSMs, identified proteins, QC) show. Drawn once
-    per experiment, next to its run selector; nothing for a run alone."""
-    import streamlit as st
-
+def member_label(workspace, member: str) -> str:
+    """A run of an experiment under **Files of**: its name and how many files it processed."""
     from src.common.results_helpers import get_runs
 
     runs = get_runs(workspace)
-    members = runs.experiment(run_id)
-    if len(members) < 2:
-        return
+    files = runs.params(member).get("mzML-files") or []
+    count = 1 if isinstance(files, str) else len(files)
+    return f"{(runs.get(member) or {}).get('name') or member} ({count} {'file' if count == 1 else 'files'})"
 
-    def label(member: str) -> str:
-        files = runs.params(member).get("mzML-files") or []
-        count = 1 if isinstance(files, str) else len(files)
-        return f"{(runs.get(member) or {}).get('name') or member} ({count} {'file' if count == 1 else 'files'})"
 
-    key = _member_key(run_id, index)
-    if st.session_state.get(key) not in members:
-        st.session_state[key] = members[0]
-    st.segmented_control(
-        "Files of", members, key=key, format_func=label,
-        help="This experiment's files were processed in several runs (Process more files). "
-             "Abundances, the group comparison, PCA and the heatmaps cover all of them; "
-             "identifications and quality control show the files of the run picked here.",
-    )
+MEMBER_HELP = (
+    "This experiment's files were processed in several runs (Process more files). "
+    "Abundances, the group comparison, PCA and the heatmaps cover all of them; "
+    "identifications and quality control show the files of the run picked here."
+)
 
 
 def renderers(ctx: ViewerContext) -> Dict[str, Callable[[], None]]:

@@ -117,6 +117,51 @@ def experiment(run_id: str, index: int):
         st.session_state.pop(SCOPE_KEY, None)
 
 
+# The catalog component being drawn, until its main Insight view claims its
+# title and help (heading()); and the Viewer's tutorial switch
+COMPONENT_KEY = "_viewer_component"
+TUTORIAL_KEY = "viewer_tutorial"
+
+
+def tutorial() -> bool:
+    """Whether the Viewer explains its components (the info icon on each)."""
+    return bool(st.session_state.get(TUTORIAL_KEY, True))
+
+
+def heading(title: str | None = None, detail: str | None = None, note: str | None = None) -> dict:
+    """``title=`` and ``help=`` for the main Insight view of the component being drawn.
+
+    The first view of a component claims the component's label as its title,
+    so the title sits inside the view, and, in tutorial mode, its explanation
+    as the view's info icon. Later views of the component (and views outside
+    the Viewer) get ``title`` only. ``detail`` follows the label (``Volcano
+    plot: B vs. A``); ``note`` (figures of the shown run) follows the
+    explanation in the info icon.
+    """
+    name = st.session_state.pop(COMPONENT_KEY, None)
+    if not name:
+        return {"title": title} if title else {}
+    from src.viewer.catalog import LABELS
+    from src.viewer.teaching import help_text
+
+    out = {"title": LABELS.get(name, title)}
+    if detail and out["title"]:
+        out["title"] = f"{out['title']}: {detail}"
+    text = help_text(name) if tutorial() else None
+    if text and note:
+        text = f"{text}\n\n{note}"
+    if text:
+        out["help"] = text
+    return out
+
+
+def retitle(component, title: str | None):
+    """Show a component rebuilt from its cache under ``title``."""
+    if title and hasattr(component, "_title"):
+        component._title = title
+    return component
+
+
 def needs_results(
     message: str = "No results of this kind in this run.",
 ) -> None:

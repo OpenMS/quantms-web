@@ -66,7 +66,6 @@ _RESULTS = {
 }
 ANALYSES.update(_RESULTS)
 # Set by the Viewer before it asks what a run has: the experiment it draws
-INDEX_KEY = "_viewer_analyses_index"
 CONFIGURE_PAGE = Path("content", "workflow_configure.py")
 
 
@@ -124,19 +123,18 @@ def run_results(workspace, run_id: str) -> set:
     return has
 
 
-def available(workspace, run_id, index: int | None = None) -> set | None:
-    """The analyses run ``run_id`` can show as experiment ``index`` (None: no run).
+def available(workspace, run_id, member: str | None = None) -> set | None:
+    """The analyses run ``run_id`` can show (None: no run).
 
-    Identifications, search hits and rescoring are those of the run picked
-    under **Files of**, abundances those of any run of the experiment.
+    Identifications, search hits and rescoring are those of ``member``, the run
+    of the experiment picked under **Files of** (the first when None),
+    abundances those of any run of the experiment.
     """
     if run_id is None:
         return None
     from src.viewer.catalog import ViewerContext, experiment_member
 
-    if index is None:
-        index = st.session_state.get(INDEX_KEY, 0)
-    member = experiment_member(ViewerContext(workspace=workspace, run_id=run_id, index=index))
+    member = experiment_member(ViewerContext(workspace=workspace, run_id=run_id, member=member))
     has = run_results(workspace, member) - {QUANTIFICATION}
     if any(QUANTIFICATION in run_results(workspace, r) for r in experiment_runs(workspace, run_id)):
         has.add(QUANTIFICATION)

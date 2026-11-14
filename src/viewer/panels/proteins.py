@@ -12,9 +12,6 @@ def render(ctx) -> None:
     protein_data.protein_table(data)
     if data.proteins.empty:
         return
-    st.markdown("**Peptides**")
     protein_data.protein_peptides(data)
-    st.markdown("**PSMs**")
     protein_data.protein_psms(data)
-    st.markdown("**Spectrum**")
     protein_data.psm_spectrum(data)
