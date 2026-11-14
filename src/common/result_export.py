@@ -16,7 +16,7 @@ from src.workflow.RunManager import RunManager
 
 EXPORT_PAGE = "content/workflow_export.py"
 # Folders that are caches of the viewer, not results
-EXCLUDE = ["insight_cache"]
+EXCLUDE = ["insight_cache", "viewer-cache"]
 
 
 def is_local() -> bool:

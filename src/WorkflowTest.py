@@ -1334,6 +1334,14 @@ class WorkflowTest(WorkflowManager):
         except Exception as e:  # an export must not fail the run
             self.logger.log(f"⚠️ QPX export failed: {e}")
 
+    def prepare_viewer(self) -> None:
+        """Compute what the Viewer shows, so it opens on finished results."""
+        from src.viewer import precompute
+
+        self.logger.log("🖼️ Preparing the Viewer...")
+        precompute.run(Path(self.workflow_dir).parent, Path(self.results_dir).parent.name,
+                       log=lambda message: self.logger.log(message, 1))
+
     def write_identified_spectra(self, mzml_files: list, idxml_files: list) -> None:
         """Keep the spectra of the final PSMs with the run (``results/spectra``).
 
@@ -1790,6 +1798,7 @@ class WorkflowTest(WorkflowManager):
             self.write_qpx()
             self.prepare_go_terms(quant_dir)
             self.write_identified_spectra(in_mzML, filter_results)
+            self.prepare_viewer()
 
             # ================================
             # 5️⃣ Final report
@@ -2058,8 +2067,10 @@ class WorkflowTest(WorkflowManager):
             self.write_qpx()
             self.prepare_go_terms(quant_dir)
             self.write_identified_spectra(in_mzML, psm_filtered)
+            self.prepare_viewer()
 
             self.logger.log("🎉 WORKFLOW FINISHED")
+            return True
 
     @st.fragment
     def results(self) -> None:
