@@ -190,3 +190,131 @@ def test_files_of_is_kept_per_experiment(tmp_path):
     at.selectbox(key="v_experiment_0_select").set_value("r3").run()
     at.selectbox(key="v_experiment_0_select").set_value("r1").run()
     assert _texts(at)[0] == "0:run:r1:r2:plot"
+
+
+def test_presets_follow_the_shown_dataset(tmp_path):
+    # A kind's presets, components and default layout may depend on what is shown
+    at = AppTest.from_string(
+        "from pathlib import Path\n"
+        "import streamlit as st\n"
+        "from src.layout_manager.viewer import DatasetKind, ViewerSpec, show_viewer\n"
+        "C = [{'name': 'a', 'label': 'A', 'group': 'G'}, {'name': 'b', 'label': 'B', 'group': 'G'}]\n"
+        "K = DatasetKind(name='run', components=lambda ctx: C if ctx.dataset == 'x' else C[:1],\n"
+        "    presets=lambda ctx: [{'name': 'p', 'label': 'P', 'layout': [['a', 'b']] if ctx.dataset == 'x' else [['a']]}],\n"
+        "    default_layout=lambda ctx: [['a', 'b']] if ctx.dataset == 'x' else [['a']], views_path=Path(%r) / 'v.json', states=None,\n"
+        "    renderers=lambda ctx: {n: (lambda n=n: st.markdown(f'{ctx.dataset}:{n}')) for n in ('a', 'b')})\n"
+        "show_viewer(ViewerSpec(key='v', kinds=[K], datasets={'x': 'X', 'y': 'Y'}))\n" % str(tmp_path)
+    ).run()
+    assert not at.exception
+    assert _texts(at) == ["x:a", "x:b"]
+    at.selectbox(key="v_experiment_0_select").set_value("y").run()
+    assert not at.exception
+    assert _texts(at) == ["y:a"]
+
+
+def test_later_experiments_have_no_switch(tmp_path):
+    (tmp_path / "runs.json").write_text(json.dumps({
+        "layout": [[["plot"]], [["plot"]]], "side_by_side": False, "current": "plots", "experiments": 2,
+    }))
+    at = _app(tmp_path).run()
+    at.selectbox(key="v_experiment_0_select").set_value("r3").run()
+    assert not at.exception
+    # The first experiment offers the comparison locked; the second has no control
+    assert _segmented(at, "v_show_0_lone") is not None
+    assert _segmented(at, "v_show_1_lone") is None and _segmented(at, "v_show_1_widget") is None
+
+
+# An experiment whose id is its first run's (runs that added files to it):
+# Single run shows that run under the same id, and whole_kind names the kind
+# of the whole
+_SAME_ID_APP = """
+import streamlit as st
+from pathlib import Path
+from src.layout_manager.viewer import DatasetKind, ViewerSpec, show_viewer
+
+ROOT = Path({root!r})
+COMPONENTS = [{{"name": "plot", "label": "Plot", "group": "Plots"}}]
+PRESETS = [{{"name": "plots", "label": "Plots", "layout": [["plot"]]}}]
+
+
+def kind(name):
+    return DatasetKind(
+        name=name, components=COMPONENTS, presets=PRESETS, default_layout=[["plot"]],
+        views_path=ROOT / f"{{name}}.json", states=None,
+        renderers=lambda ctx: {{"plot": lambda: st.markdown(
+            f"{{ctx.kind.name}}:{{ctx.dataset}}:{{ctx.whole}}")}},
+    )
+
+
+show_viewer(ViewerSpec(
+    key="s", kinds=[kind("run"), kind("experiment")], member_mode="switch", whole_kind="experiment",
+    datasets={{"r1": "Run 1"}}, members=lambda e: ["r1", "r2"],
+))
+"""
+
+
+def test_whole_of_an_experiment_named_after_its_first_run(tmp_path):
+    at = AppTest.from_string(_SAME_ID_APP.format(root=str(tmp_path))).run()
+    assert not at.exception
+    assert _texts(at) == ["experiment:r1:True"]
+    _choose(at, "s_show_0_widget", "member")
+    assert _texts(at) == ["run:r1:False"]
+    at.selectbox(key="s_member_0_r1_widget").set_value("r2").run()
+    assert _texts(at) == ["run:r2:False"]
+
+
+_SWITCH_APP = """
+import streamlit as st
+from src.layout_manager import member_switch
+
+picked = member_switch("m", {members!r}, label_of=str.upper)
+st.markdown(f"picked {{picked}}")
+"""
+
+
+def test_member_switch(tmp_path):
+    at = AppTest.from_string(_SWITCH_APP.format(members=["a", "b"])).run()
+    assert _texts(at) == ["picked None"]
+    _choose(at, "m_show_widget", "member")
+    assert _texts(at) == ["picked a"]
+    at.selectbox(key="m_member_widget").set_value("b").run()
+    assert _texts(at) == ["picked b"]
+    _choose(at, "m_show_widget", "whole")
+    assert _texts(at) == ["picked None"]
+    # One run: nothing to switch
+    at = AppTest.from_string(_SWITCH_APP.format(members=["a"])).run()
+    assert _texts(at) == ["picked None"] and _segmented(at, "m_show_widget") is None
+
+
+_COMPARISON_APP = """
+import streamlit as st
+from src.layout_manager import edit_comparison
+
+def done():
+    st.session_state["done"] = st.session_state.get("step_value")
+    return st.session_state.get("step_value") != "bad"
+
+edit_comparison(
+    "c", [("1. One", lambda: st.text_input("value", key="step_value")), ("2. Two", lambda: st.markdown("two"))],
+    on_reset=lambda: st.session_state.update(reset=True), on_done=done,
+)
+"""
+
+
+def test_edit_comparison(tmp_path):
+    at = AppTest.from_string(_COMPARISON_APP).run()
+    assert not at.exception and not at.tabs
+    at.button(key="c_comparison_button").click().run()
+    assert [t.label for t in at.tabs] == ["1. One", "2. Two"]
+    at.text_input(key="step_value").set_value("bad").run()
+    at.button(key="c_comparison_done").click().run()
+    # on_done returned False: the dialog stays
+    assert at.session_state["done"] == "bad" and at.tabs
+    at.text_input(key="step_value").set_value("good").run()
+    at.button(key="c_comparison_done").click().run()
+    # AppTest keeps the dialog's elements after a rerun from inside it, so check the state
+    assert at.session_state["done"] == "good" and not at.session_state["c_comparison_open"]
+    at = AppTest.from_string(_COMPARISON_APP).run()
+    at.button(key="c_comparison_button").click().run()
+    at.button(key="c_comparison_reset").click().run()
+    assert at.session_state["reset"] and at.session_state["c_comparison_open"]
