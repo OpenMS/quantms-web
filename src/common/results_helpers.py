@@ -65,12 +65,17 @@ def experiment_runs(workspace, run_id: str | None = None) -> list[str]:
 
     A run that processed more files for an earlier run (Process more files)
     belongs to that run's experiment; what compares samples is computed over
-    every run of it. One run alone is an experiment of its own.
+    every run of it. One run alone is an experiment of its own, and so is the
+    run the Viewer shows on its own (Single run).
     """
+    from src.viewer.scope import shown_run, shown_single
+
     runs = get_runs(workspace)
     run_id = run_id or _shown_run(runs)
     if run_id is None:
         return []
+    if shown_single() and run_id == shown_run():
+        return [run_id]
     return runs.experiment(run_id) or [run_id]
 
 

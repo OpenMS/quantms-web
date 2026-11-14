@@ -10,7 +10,7 @@ from src.common.results_helpers import get_runs
 from src.layout_manager import DatasetKind, ViewerSpec, experiment_state, show_viewer
 from src.viewer import analyses
 from src.viewer.catalog import (
-    CATALOG, DEFAULT_LAYOUT, LABELS, MEMBER_HELP, PRESETS, ViewerContext, default_view, member_label,
+    CATALOG, DEFAULT_LAYOUT, LABELS, LONE_HELP, MEMBER_HELP, PRESETS, ViewerContext, default_view, member_label,
     migrate_views, renderers,
 )
 from src.viewer.comparison import edit_comparison_button
@@ -36,9 +36,10 @@ migrate_views(layout_path)
 
 
 def run_context(ctx) -> ViewerContext:
-    """What the components of experiment ``ctx`` draw: its run, and the run picked under Files of."""
+    """What the components of experiment ``ctx`` draw: its run, alone (Single run) or with the
+    runs of its experiment (Comparison)."""
     return ViewerContext(workspace=workspace, run_id=ctx.dataset, index=ctx.index, params=params,
-                         member=ctx.member)
+                         member=ctx.member, single=ctx.member is not None)
 
 
 def available(ctx):
@@ -89,9 +90,11 @@ show_viewer(ViewerSpec(
     key=KEY, kinds=[RUNS],
     # A run that processed more files for an earlier run is shown with it, as one experiment
     datasets={r["id"]: run_label(r, len(runs.added_runs(r["id"]))) for r in runs.experiments(FINISHED)},
-    # Files of: which run's files the components that show one run's files show
-    members=runs.experiment, member_mode="files", member_format=lambda m: member_label(workspace, m),
-    member_help=MEMBER_HELP,
+    # Single run | Comparison: one run of an experiment of several on its own, or all of them;
+    # a run alone offers processing more files to compare with it
+    members=runs.experiment, member_mode="switch", member_format=lambda m: member_label(workspace, m),
+    whole=lambda e: len(runs.experiment(e)) > 1, switch_help=MEMBER_HELP,
+    lone_whole=lambda ctx: ctx.request_analysis([analyses.MORE_RUNS], "Comparison"), lone_help=LONE_HELP,
     label="choose experiment", later_label="Run", buttons=top_buttons, empty=needs_results,
     # A run picked elsewhere (a run that has just finished, or imported from a ZIP) is shown first
     pick=get_selected_run(runs), on_pick=show_picked,

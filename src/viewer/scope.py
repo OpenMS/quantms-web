@@ -16,6 +16,8 @@ from src.common.guide import page_link
 RUN_KEY = "_viewer_run"
 SCOPE_KEY = "_viewer_scope"
 CHAINS_KEY = "_viewer_chains"
+# Set while a run of an experiment of several runs is shown on its own (Single run)
+SINGLE_KEY = "_viewer_single"
 
 
 def scoped(key: str) -> str:
@@ -88,9 +90,17 @@ def shown_run() -> str | None:
     return st.session_state.get(RUN_KEY)
 
 
+def shown_single() -> bool:
+    """Whether the run being drawn is shown on its own (Single run), not with its experiment."""
+    return bool(st.session_state.get(SINGLE_KEY))
+
+
 @contextmanager
-def experiment(run_id: str, index: int):
+def experiment(run_id: str, index: int, single: bool = False):
     """Draw components for ``run_id`` as experiment ``index``.
+
+    ``single``: the run is shown on its own (Single run), so what compares
+    samples covers its files only, not every run of its experiment.
 
     The group comparison of the run is put in place of whatever comparison the
     session holds, and saved back for the run afterwards, so two experiments
@@ -103,18 +113,22 @@ def experiment(run_id: str, index: int):
     outer = {k: st.session_state.pop(k) for k in RUN_DERIVED_KEYS if k in st.session_state}
     if outer_run is not None:
         chains[outer_run] = outer
-    for key, value in chains.get(run_id, {}).items():
+    # A run on its own and its whole experiment have comparisons of their own
+    chain = f"{run_id}#single" if single else run_id
+    for key, value in chains.get(chain, {}).items():
         st.session_state[key] = value
     st.session_state[RUN_KEY] = run_id
     st.session_state[SCOPE_KEY] = index
+    st.session_state[SINGLE_KEY] = single
     try:
         yield
     finally:
-        chains[run_id] = {k: st.session_state.pop(k) for k in RUN_DERIVED_KEYS if k in st.session_state}
+        chains[chain] = {k: st.session_state.pop(k) for k in RUN_DERIVED_KEYS if k in st.session_state}
         for key, value in (chains.get(outer_run, {}) if outer_run is not None else outer).items():
             st.session_state[key] = value
         st.session_state.pop(RUN_KEY, None)
         st.session_state.pop(SCOPE_KEY, None)
+        st.session_state.pop(SINGLE_KEY, None)
 
 
 # The catalog component being drawn, until its main Insight view claims its

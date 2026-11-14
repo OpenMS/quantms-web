@@ -201,8 +201,10 @@ class ViewerContext:
     run_id: str
     index: int = 0
     params: dict = field(default_factory=dict)
-    # The run of the experiment picked under **Files of** (None: the first)
+    # The run of the experiment shown on its own (Single run); None: the whole experiment
     member: str | None = None
+    # Shown on its own: what compares samples covers this run's files only
+    single: bool = False
 
 
 def panel(module: str) -> Callable:
@@ -229,7 +231,7 @@ def draw(module: str, ctx: ViewerContext, name: str = "") -> None:
     if name and name not in EXPERIMENT_WIDE:
         run_id = experiment_member(ctx, name)
     try:
-        with experiment(run_id, ctx.index):
+        with experiment(run_id, ctx.index, single=ctx.single):
             panel(module)(replace(ctx, run_id=run_id) if run_id != ctx.run_id else ctx)
     finally:
         if slot is not None and st.session_state.pop(COMPONENT_KEY, None) == name:
@@ -248,7 +250,7 @@ def _title(name: str) -> None:
 
 def experiment_member(ctx: ViewerContext, name: str = "") -> str:
     """The run of ``ctx.run_id``'s experiment whose files the components that
-    show one run's files show: the one picked under **Files of** (the Viewer's
+    show one run's files show: the one shown on its own (the Viewer's
     ``ctx.member``), else the first."""
     from src.common.results_helpers import get_runs
 
@@ -268,9 +270,11 @@ def member_label(workspace, member: str) -> str:
 
 MEMBER_HELP = (
     "This experiment's files were processed in several runs (Process more files). "
-    "Abundances, the group comparison, PCA and the heatmaps cover all of them; "
-    "identifications and quality control show the files of the run picked here."
+    "Comparison: abundances, the group comparison, PCA and the heatmaps cover all of them, and "
+    "identifications and quality control show the first run's files. Single run: everything "
+    "covers the files of the run picked here only."
 )
+LONE_HELP = "Process more files with this run's settings, to compare them with its files as one experiment."
 
 
 def renderers(ctx: ViewerContext) -> Dict[str, Callable[[], None]]:

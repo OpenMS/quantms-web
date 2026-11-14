@@ -37,7 +37,8 @@ def test_components_comparing_samples_need_samples_or_groups():
         "comparison_imputed_values", "comparison_normalization", "comparison_pvalues",
     }
     assert {n for n, v in needs.items() if analyses.SAMPLES in v} == {"heatmap", "clustered_heatmap"}
-    assert set().union(*needs.values()) == set(analyses.ANALYSES)
+    # Every analysis but more runs (the Comparison of a run alone) is one a component needs
+    assert set().union(*needs.values()) == set(analyses.ANALYSES) - {analyses.MORE_RUNS}
 
 
 def test_every_component_needs_the_results_it_draws():
