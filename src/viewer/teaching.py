@@ -169,7 +169,7 @@ def tooltip(name: str) -> str | None:
 
 
 def help_text(name: str) -> str | None:
-    """The full explanation of a component, for its info icon in tutorial mode."""
+    """The full explanation of a component, for its info icon."""
     return COMPONENTS.get(name)
 
 

@@ -138,8 +138,7 @@ def show_insight_table(
         column_overrides: Extra Tabulator column settings per column name,
             e.g. a ``formatter``. openms-insight stores floats as float32, so
             a column of rounded values needs one to display without noise.
-        note: Figures of the shown run, added to the info icon in the
-            Viewer's tutorial mode.
+        note: Figures of the shown run, added to the info icon.
         **table_kwargs: Passed on to ``Table`` (e.g. ``initial_sort``).
     """
     from src.viewer.scope import heading, retitle

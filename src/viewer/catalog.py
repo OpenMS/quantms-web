@@ -241,10 +241,9 @@ def _title(name: str) -> None:
     """The component's title, with a tooltip linking to its section on Understand your Results."""
     import streamlit as st
 
-    from src.viewer.scope import tutorial
     from src.viewer.teaching import help_text
 
-    st.markdown(f"**{LABELS[name]}**", help=help_text(name) if tutorial() else None)
+    st.markdown(f"**{LABELS[name]}**", help=help_text(name))
 
 
 def experiment_member(ctx: ViewerContext, name: str = "") -> str:
