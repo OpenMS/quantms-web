@@ -5,7 +5,7 @@ from src.common.results_helpers import get_run_dir, get_run_params, search_resul
 from src.common.spectrum_view import ensure_psm_views, psm_mzml_files, show_selected_psm_spectrum
 from src.common.sequence_display import psm_table, sequence_mode_selector
 from openms_insight import Heatmap, SequenceView
-from src.viewer.scope import needs_results, scoped, shared_state, PSM_PRIVATE
+from src.viewer.scope import needs_results, scoped, shared_state, PSM_PRIVATE, PSM_COLOR_COLUMNS
 
 
 def render(ctx) -> None:
@@ -30,7 +30,13 @@ def render(ctx) -> None:
     # Initialize state manager for cross-component linking
     state_manager = shared_state("search", PSM_PRIVATE)
     # Load components from cache (no data parameter needed)
-    heatmap = Heatmap(cache_id=f"heatmap_{cache_id_prefix}", cache_path=str(cache_dir))
+    # Toolbar: color the PSMs by score or charge, show or hide each charge state
+    heatmap = Heatmap(
+        cache_id=f"heatmap_{cache_id_prefix}",
+        cache_path=str(cache_dir),
+        color_columns=PSM_COLOR_COLUMNS,
+        layer_column="charge",
+    )
     seq_view = SequenceView(cache_id=f"seqview_{cache_id_prefix}", cache_path=str(cache_dir))
     # Render components
     st.subheader("PSM Overview")

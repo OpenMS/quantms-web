@@ -36,6 +36,10 @@ def scoped(key: str) -> str:
 # so they mean another PSM in each (database search, rescored, filtered)
 PSM_PRIVATE = ("identification", "peak")
 
+# Further values a PSM map can be colored by, besides the score (render-time
+# options of the Heatmap; the cached PSMs keep every column)
+PSM_COLOR_COLUMNS = {"Charge": "charge", "Retention time": "rt"}
+
 
 def shared_state(owner: str = "", private: tuple = ()):
     """The Insight state every component of the experiment being drawn shares.
