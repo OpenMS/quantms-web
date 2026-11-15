@@ -135,5 +135,6 @@ def ion_table_html(values: pd.DataFrame, matched: pd.DataFrame) -> str:
         ".iontab th,.iontab td{padding:2px 10px;text-align:right;border-bottom:1px solid #e4e4e7}"
         ".iontab .res{text-align:center;font-weight:700}"
         f".iontab .hit-b{{background:{B_COLOR};color:white}}.iontab .hit-y{{background:{Y_COLOR};color:white}}</style>"
-        f'<table class="iontab"><thead><tr>{head}</tr></thead><tbody>{"".join(rows)}</tbody></table>'
+        ".iontab caption{caption-side:top;text-align:left;font-family:inherit;font-weight:600;padding:4px 0}"
+        f'<table class="iontab"><caption>b and y ions (theoretical m/z, matched ions highlighted)</caption><thead><tr>{head}</tr></thead><tbody>{"".join(rows)}</tbody></table>'
     )

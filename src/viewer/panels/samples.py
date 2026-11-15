@@ -6,7 +6,8 @@ from src.common.guide import page_link
 from src.common.insight_tables import show_insight_table, show_series
 from src.common.results_helpers import get_abundance_data, get_sample_group_map, get_run_dir, get_run_params
 from src.common.samples import COUNT_COLUMNS, channel_samples, condition_summary, lfq_samples, short_sample_names
-from src.viewer.scope import scoped
+from openms_insight.core.settings import setting_value
+from src.viewer.scope import scoped, shared_state
 
 
 def render(ctx) -> None:
@@ -55,29 +56,44 @@ def render(ctx) -> None:
         return
 
     def _table_height(rows: int) -> int:
-        """Room for every row up to a page of 12, plus the header and pager."""
-        return 140 + 34 * min(rows, 12)
+        """Room for every row up to a page of 12, plus the title, toolbar, header and pager."""
+        return 160 + 34 * min(rows, 12)
 
     counts = [c for c in COUNT_COLUMNS if samples[c].notna().any()]
     group_key = "|".join(f"{s}={c}" for s, c in zip(samples["Sample"], samples["Condition"]))
-    metric = st.popover("⚙️ Count shown").selectbox("Count", counts, key=scoped("samples-metric"))
+    state_manager = shared_state()
+    # The count shown is a setting in the plot's toolbar (⚙)
+    count_setting = {"identifier": "samples_metric", "label": "Count shown", "kind": "choice",
+                     "options": counts, "default": counts[0]}
+    metric = setting_value(state_manager, count_setting)
+    if metric not in counts:
+        metric = counts[0]
     bars = samples[["Sample", "Condition", metric]].copy()
     bars["Sample"] = bars["Sample"].map(short_sample_names(bars["Sample"]))
-    show_series(
-        bars, f"samples_{metric.lower().replace(' ', '_')}",
-        height=max(260, 34 * len(samples) + 140), x_column="Sample", y_column=metric, series_column="Condition",
-        mode="bars", orientation="h", x_label="Sample", y_label=metric, y_range_mode="nonnegative",
-    )
-    show_insight_table(
-        samples[["Sample", "Condition"] + counts],
-        name="samples_per_sample",
-        cache_dir=cache_dir,
-        source_files=sources,
-        extra_key=group_key,
-        title="Per sample",
-        height=_table_height(len(samples)),
-        layout="fitColumns",
-    )
+    # The plot beside the table of the samples, both of one height; the conditions below
+    # (at half width the pager takes two lines)
+    row_height = _table_height(len(samples)) + 30
+    plot_column, table_column = st.columns(2, gap="medium")
+    with plot_column:
+        show_series(
+            bars, f"samples_{metric.lower().replace(' ', '_')}",
+            height=max(260, row_height), x_column="Sample", y_column=metric, series_column="Condition",
+            mode="bars", orientation="h", x_label="Sample", y_label=metric, y_range_mode="nonnegative",
+            state_manager=state_manager, toolbar_settings=[count_setting],
+            note="Samples without a group are shown as Unassigned."
+            if (samples["Condition"] == "Unassigned").any() else None,
+        )
+    with table_column:
+        show_insight_table(
+            samples[["Sample", "Condition"] + counts],
+            name="samples_per_sample",
+            cache_dir=cache_dir,
+            source_files=sources,
+            extra_key=group_key,
+            title="Per sample",
+            height=row_height,
+            layout="fitColumns",
+        )
     summary = condition_summary(samples)
     # Means go as text, since the table stores floats as float32 and would show 36.8 as 36.79999923706055
     for col in summary.columns[2:]:
@@ -92,6 +108,3 @@ def render(ctx) -> None:
         height=_table_height(len(summary)),
         layout="fitColumns",
     )
-    if (samples["Condition"] == "Unassigned").any():
-        st.caption("Samples without a group are shown as Unassigned.")
-        page_link("configure")

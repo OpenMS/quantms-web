@@ -1296,6 +1296,30 @@ class WorkflowTest(WorkflowManager):
         self.logger.log("Workflow stopped due to error")
         return False
 
+    def prepare_go_terms(self, quant_dir: Path) -> None:
+        """Look up the GO terms of the quantified proteins now, so the Viewer's GO
+        enrichment opens without a network call. Best effort: a failure is logged
+        and the Viewer looks them up when it is opened."""
+        import pandas as pd
+        from src.common.differential import lead_accession
+        from src.viewer import go_terms
+
+        proteins = set()
+        for csv in sorted(Path(quant_dir).glob("*.csv")):
+            try:
+                table = pd.read_csv(csv, sep=None, engine="python", comment="#")
+            except Exception:  # pylint: disable=broad-except
+                continue
+            column = next((c for c in ("ProteinName", "protein", "Protein") if c in table.columns), None)
+            if column:
+                proteins |= {lead_accession(p) for p in table[column].dropna().unique()}
+        if not proteins:
+            return
+        self.logger.log(f"Looking up the GO terms of {len(proteins)} proteins at MyGene.info")
+        error = go_terms.prepare(Path(self.workflow_dir).parent / "insight_tables" / "go", proteins)
+        if error:
+            self.logger.log(f"⚠️ {error} The Viewer looks them up when GO enrichment is opened.")
+
     def write_qpx(self) -> None:
         """Export the filtered PSMs and the run's provenance as QPX Parquet (an export; failures are logged)."""
         self.logger.log("📦 Writing the QPX export (PSMs and provenance)...")
@@ -1309,6 +1333,14 @@ class WorkflowTest(WorkflowManager):
             self.logger.log(f"✅ QPX export: {out['psms']} PSMs in {Path(out['psm']).name}")
         except Exception as e:  # an export must not fail the run
             self.logger.log(f"⚠️ QPX export failed: {e}")
+
+    def prepare_viewer(self) -> None:
+        """Compute what the Viewer shows, so it opens on finished results."""
+        from src.viewer import precompute
+
+        self.logger.log("🖼️ Preparing the Viewer...")
+        precompute.run(Path(self.workflow_dir).parent, Path(self.results_dir).parent.name,
+                       log=lambda message: self.logger.log(message, 1))
 
     def write_identified_spectra(self, mzml_files: list, idxml_files: list) -> None:
         """Keep the spectra of the final PSMs with the run (``results/spectra``).
@@ -1764,7 +1796,9 @@ class WorkflowTest(WorkflowManager):
             #     st.stop()
 
             self.write_qpx()
+            self.prepare_go_terms(quant_dir)
             self.write_identified_spectra(in_mzML, filter_results)
+            self.prepare_viewer()
 
             # ================================
             # 5️⃣ Final report
@@ -2031,9 +2065,12 @@ class WorkflowTest(WorkflowManager):
             self.logger.log("✅ ProteinQuantifier complete")
             self.logger.log("📄 Generating protein table...")
             self.write_qpx()
+            self.prepare_go_terms(quant_dir)
             self.write_identified_spectra(in_mzML, psm_filtered)
+            self.prepare_viewer()
 
             self.logger.log("🎉 WORKFLOW FINISHED")
+            return True
 
     @st.fragment
     def results(self) -> None:

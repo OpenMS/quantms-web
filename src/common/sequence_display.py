@@ -90,9 +90,13 @@ def display_table_id(cache_dir: Path, table_id: str, mode: str) -> str:
     return variant_id
 
 
-def psm_table(cache_dir: Path, table_id: str, mode: str, state_manager, height: int = 533) -> None:
+def psm_table(
+    cache_dir: Path, table_id: str, mode: str, state_manager, height: int = 533, title: str | None = "PSMs",
+) -> None:
     """Render the cached PSM table ``table_id`` with its sequences in ``mode``."""
     table = Table(cache_id=display_table_id(cache_dir, table_id, mode), cache_path=str(cache_dir), collapse_columns=False)
+    if title:
+        table._title = title
     table(state_manager=state_manager, height=height)
 
 
@@ -177,9 +181,11 @@ def filtered_table_id(
 
 def filtered_psm_table(
     cache_dir: Path, table_id: str, mode: str, state_manager, idxml_path: Path,
-    q_suggestions: list | None = None, height: int = 533,
+    q_suggestions: list | None = None, height: int = 533, title: str | None = "PSMs",
 ) -> None:
     """Render the PSM table with its search box, q-value thresholds and contaminant switch."""
     variant_id = filtered_table_id(cache_dir, table_id, mode, idxml_path, q_suggestions)
     table = Table(cache_id=variant_id, cache_path=str(cache_dir), collapse_columns=False)
+    if title:
+        table._title = title
     table(state_manager=state_manager, height=height)

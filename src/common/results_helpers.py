@@ -65,12 +65,17 @@ def experiment_runs(workspace, run_id: str | None = None) -> list[str]:
 
     A run that processed more files for an earlier run (Process more files)
     belongs to that run's experiment; what compares samples is computed over
-    every run of it. One run alone is an experiment of its own.
+    every run of it. One run alone is an experiment of its own, and so is the
+    run the Viewer shows on its own (Single run).
     """
+    from src.viewer.scope import shown_run, shown_single
+
     runs = get_runs(workspace)
     run_id = run_id or _shown_run(runs)
     if run_id is None:
         return []
+    if shown_single() and run_id == shown_run():
+        return [run_id]
     return runs.experiment(run_id) or [run_id]
 
 
@@ -590,6 +595,22 @@ def load_abundance_data(
     Returns:
         Tuple of (pivot_df, expr_df, group_map) or None if data unavailable
     """
+    from src.common.disk_cache import remember
+
+    run_id = run_id or get_run_id(workspace_path)
+    if run_id is None:
+        return _load_abundance_data(workspace_path, run_id, members, csv_mtime, params_mtime)
+    # Kept with the run, so the Viewer reads what the workflow computed (src/viewer/precompute.py)
+    return remember(
+        get_run_dir(workspace_path, run_id), "abundance",
+        (str(Path(workspace_path).resolve()), csv_mtime, params_mtime, run_id, tuple(members)),
+        lambda: _load_abundance_data(workspace_path, run_id, members, csv_mtime, params_mtime),
+    )
+
+
+def _load_abundance_data(workspace_path: str, run_id: str | None, members: tuple,
+                         csv_mtime: float = 0.0, params_mtime: float = 0.0) -> tuple | None:
+    """load_abundance_data, computed."""
     quant_dir = get_results_dir(workspace_path, run_id) / "quant_results"
     workflow_params = get_run_params(workspace_path, run_id)
     analysis_mode = workflow_params.get("analysis-mode", "LFQ")
