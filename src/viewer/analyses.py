@@ -65,12 +65,12 @@ _RESULTS = {
     },
 }
 ANALYSES.update(_RESULTS)
-# Single run | Comparison: a run alone has nothing to compare it with yet
+# Single run | All runs: a run alone has nothing to compare it with yet
 MORE_RUNS = "more_runs"
 ANALYSES[MORE_RUNS] = {
     "label": "files processed in more runs",
-    "help": ("A comparison shows the files of several runs as one experiment. Process more files "
-             "with this run's settings, and they are compared with its files."),
+    "help": ("All runs shows the files of several runs as one experiment. Process more files "
+             "with this run's settings, and they are analysed with its files."),
 }
 # Set by the Viewer before it asks what a run has: the experiment it draws
 CONFIGURE_PAGE = Path("content", "workflow_configure.py")

@@ -1,4 +1,6 @@
 """Abundance of the picked protein in every sample, coloured by group."""
+import inspect
+
 import numpy as np
 import pandas as pd
 import polars as pl
@@ -68,6 +70,10 @@ def render(ctx) -> None:
     colors = {}
     for i, group in enumerate(groups):
         colors[group] = colors[f"{group} mean"] = PALETTE[i % len(PALETTE)]
+    # Samples are points, not a sequence: only the group means are lines
+    modes = {}
+    if "series_modes" in inspect.signature(SeriesPlot.__init__).parameters:
+        modes = {"series_modes": {f"{group} mean": "lines" for group in groups}}
     SeriesPlot(
         **plot_cache("quantms_abundance_profile_v2", table),
         **zoom(SeriesPlot, "abundance_profile"),
@@ -81,7 +87,8 @@ def render(ctx) -> None:
         series_column="group",
         series_colors=colors,
         hover_column="sample",
-        mode="lines+markers",
+        mode="markers",
+        **modes,
         x_label="Sample",
         y_label="log2 abundance",
         y_range_mode="normal",

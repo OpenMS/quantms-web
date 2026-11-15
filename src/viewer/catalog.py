@@ -260,11 +260,11 @@ def member_label(workspace, member: str) -> str:
 
 MEMBER_HELP = (
     "This experiment's files were processed in several runs (Process more files). "
-    "Comparison: abundances, the group comparison, PCA and the heatmaps cover all of them, and "
+    "All runs: abundances, the group comparison, PCA and the heatmaps cover all of them, and "
     "identifications and quality control show the first run's files. Single run: everything "
     "covers the files of the run picked here only."
 )
-LONE_HELP = "Process more files with this run's settings, to compare them with its files as one experiment."
+LONE_HELP = "Process more files with this run's settings, to analyse them with its files as one experiment."
 
 
 def renderers(ctx: ViewerContext) -> Dict[str, Callable[[], None]]:
