@@ -134,11 +134,11 @@ def test_abundance_profile_table():
 
     pivot = pd.DataFrame({"ProteinName": ["sp|P1|A_HUMAN", "sp|P2|B_HUMAN"], "s1": [4.0, 0.0], "s2": [8.0, 2.0]})
     table = profile_table(pivot, "ProteinName", {"s1": "ctrl", "s2": "drug"})
-    p1 = table[(table["accession"] == "sp|P1|A_HUMAN") & ~table["group"].str.endswith(" mean")]
+    p1 = table[(table["accession"] == "sp|P1|A_HUMAN") & ~table["series"].str.endswith(" mean")]
     assert p1["x"].tolist() == [1.0, 2.0] and p1["y"].tolist() == [2.0, 3.0]
-    assert p1["group"].tolist() == ["ctrl", "drug"]
+    assert p1["series"].tolist() == ["ctrl", "drug"]
     # An abundance of 0 is not measured
-    p2 = table[(table["accession"] == "sp|P2|B_HUMAN") & ~table["group"].str.endswith(" mean")]
+    p2 = table[(table["accession"] == "sp|P2|B_HUMAN") & ~table["series"].str.endswith(" mean")]
     assert p2["sample"].tolist() == ["s2"]
 
 
@@ -149,8 +149,8 @@ def test_abundance_profile_groups_side_by_side_with_means():
 
     pivot = pd.DataFrame({"ProteinName": ["P1"], "a1": [2.0], "b1": [8.0], "a2": [8.0], "b2": [32.0]})
     table = profile_table(pivot, "ProteinName", {"a1": "a", "b1": "b", "a2": "a", "b2": "b"})
-    points = table[~table["group"].str.endswith(" mean")]
+    points = table[~table["series"].str.endswith(" mean")]
     assert dict(zip(points["sample"], points["x"])) == {"a1": 1.0, "a2": 2.0, "b1": 3.0, "b2": 4.0}
-    mean_a = table[table["group"] == "a mean"]
+    mean_a = table[table["series"] == "a mean"]
     assert mean_a["x"].tolist() == [1.0, 2.0] and mean_a["y"].tolist() == [2.0, 2.0]
-    assert table[table["group"] == "b mean"]["y"].tolist() == [4.0, 4.0]
+    assert table[table["series"] == "b mean"]["y"].tolist() == [4.0, 4.0]
