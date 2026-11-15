@@ -47,7 +47,7 @@ def test_every_component_needs_the_results_it_draws():
         "protein_abundance", "abundance_profile", "quant_summary", "pca", "heatmap", "clustered_heatmap", "group_comparison", "volcano", "go_enrichment",
         "comparison_missing_values", "comparison_imputed_values", "comparison_normalization", "comparison_pvalues"}
     assert needs["psms_rescored"] == {analyses.RESCORING}
-    assert needs["psms_search"] == needs["id_quality"] == needs["qc_scores"] == {analyses.SEARCH}
+    assert needs["psms_search"] == needs["qc_scores"] == {analyses.SEARCH}
     assert all(needs[n] for n in needs)
 
 

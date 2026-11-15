@@ -3,8 +3,7 @@
 from pathlib import Path
 import streamlit as st
 from src.common.empty_result import fdr_summary
-from src.common.insight_tables import show_insight_table
-from src.common.overview import PER_FILE_COLUMNS, run_overview
+from src.common.overview import run_overview
 from src.common.results_helpers import get_run_dir, get_run_params, search_tolerances
 from src.viewer.scope import needs_results
 
@@ -59,36 +58,5 @@ def dda_tiles(ctx) -> None:
         col.metric(label, value, help=help_text)
 
 
-def files_table(ctx) -> None:
-    """One row per file: spectra, PSMs, ID rate, peptides, mass error."""
-    loaded = load_overview(ctx)
-    if loaded is None:
-        return needs_results()
-    per_file, _, workflow_params, cache_dir, sources = loaded
-    fdr = float(workflow_params.get("psm-fdr-percent", 1.0))
-    # The fractional columns go as text, since the table stores floats as float32
-    # and would show 36.8 as 36.79999923706055
-    per_file_view = per_file[PER_FILE_COLUMNS].copy()
-    for col in ("ID rate (%)", "Mass error (ppm)"):
-        per_file_view[col] = per_file_view[col].map(lambda v: "" if v is None or v != v else f"{v:g}")
-    show_insight_table(
-        per_file_view,
-        name="overview_files",
-        cache_dir=cache_dir,
-        source_files=sources,
-        title="Files",
-        note=f"Counts at {fdr:g} % PSM FDR.",
-        height=300,
-        # Share the page width between the columns rather than folding the last ones away
-        layout="fitColumns",
-    )
-
-
 def _show(value, unit: str = "") -> str:
     return "–" if value is None else f"{value:,}{unit}"
-
-
-def render(ctx) -> None:
-    """The former Run summary (kept for saved views): the tiles and the files."""
-    dda_tiles(ctx)
-    files_table(ctx)

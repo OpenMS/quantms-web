@@ -39,7 +39,8 @@ def test_default_layout_uses_catalog_components():
 
 
 def test_every_panel_is_used():
-    used = set(MODULES.values()) | {m for m, _ in COMPARISON_STEPS}
+    # overview and qc hold what the summary and QC components share
+    used = set(MODULES.values()) | {m for m, _ in COMPARISON_STEPS} | {"overview", "qc"}
     on_disk = {p.stem for p in PANELS.glob("*.py") if p.stem != "__init__"}
     assert on_disk == used
 
@@ -78,7 +79,6 @@ def test_presets_are_valid_layouts():
     shown = {n for p in PRESETS for row in p["layout"] for n in row}
     assert {c["name"] for c in CATALOG} - shown == {
         "clustered_heatmap", "psms", "psms_rescored", "psms_search", "protein_abundance",
-        "run_summary", "id_quality", "protein_explorer",
     }
 
 

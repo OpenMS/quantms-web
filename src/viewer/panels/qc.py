@@ -84,22 +84,3 @@ def mass_error(ctx) -> None:
         note=f"Target PSMs at {fdr * 100:.3g} % PSM FDR, isotope errors removed.", series_colors=None, x_label="Precursor error (ppm)", y_label="PSMs",
         show_legend=False, y_range_mode="nonnegative",
     )
-
-
-def render(ctx) -> None:
-    """The former Identification quality component (kept for saved views)."""
-    loaded = load_qc(ctx)
-    if loaded is None:
-        return needs_results()
-    scores(ctx)
-    mass_error(ctx)
-    filtered = loaded[1]
-    if filtered is not None and not filtered.empty:
-        from src.common.insight_tables import show_series
-
-        per_file = psms_per_file(filtered).assign(kind="target")
-        show_series(
-            per_file, "qc-psms-per-file", height=max(250, 36 * len(per_file) + 120), x_column="file",
-            y_column="PSMs", series_column="kind", mode="bars", orientation="h", series_colors={"target": TARGET_COLOR}, x_label="File",
-            y_label="Target PSMs", show_legend=False, y_range_mode="nonnegative",
-        )

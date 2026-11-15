@@ -4,8 +4,9 @@ Called by the workflow after its last tool, in the workflow process (no
 Streamlit server; Streamlit's session state and caches work there in memory).
 It fills the run's ``viewer-cache/`` (``src/common/disk_cache.py``) through the
 same functions the Viewer calls, so the Viewer opens on finished results:
-the per-file overview and QC tables, the per-sample counts, the abundance
-table and the group comparison with the recommended settings.
+the per-file overview and QC tables, the per-sample counts, the protein,
+peptide and PSM tables, the mass shifts, the abundance table and the group
+comparison with the recommended settings.
 
 Nothing here may stop a run: a failure is logged and the Viewer computes what
 is missing when it is opened.
@@ -60,6 +61,37 @@ def run(workspace: Path, run_id: str, log=print) -> None:
             else:
                 st.session_state["workspace"] = previous
 
+    def in_viewer_scope(compute):
+        """``compute()`` with the workspace and the run picked as the Viewer has them."""
+        def step():
+            previous = st.session_state.get("workspace")
+            st.session_state["workspace"] = workspace
+            try:
+                with experiment(run_id, 0, single=True):
+                    return compute()
+            finally:
+                if previous is None:
+                    st.session_state.pop("workspace", None)
+                else:
+                    st.session_state["workspace"] = previous
+        return step
+
+    def protein_tables():
+        from types import SimpleNamespace
+
+        from src.viewer import protein_data
+
+        protein_data.load(SimpleNamespace(workspace=workspace))
+
+    def mass_shifts():
+        from src.viewer.panels import mass_shifts as panel
+
+        idxmls = _idxmls(results / "psm_filter")
+        if idxmls:
+            panel.summary(tuple(str(p) for p in idxmls), tuple(names), tuple(p.stat().st_mtime for p in idxmls))
+
+    steps.append(("protein tables", in_viewer_scope(protein_tables)))
+    steps.append(("mass shifts", mass_shifts))
     steps.append(("group comparison", comparison))
     for label, step in steps:
         try:

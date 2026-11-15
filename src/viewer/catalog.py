@@ -13,7 +13,6 @@ from src.viewer.scope import experiment
 _COMPONENTS = [
     ("dda_summary", "Identification summary", "Summaries", "dda_summary"),
     ("quant_summary", "Quantification summary", "Summaries", "quant_summary"),
-    ("files_table", "Files", "Quality control", "files_table"),
     ("sample_counts", "Counts per sample", "Quality control", "samples"),
     ("id_diagnostics", "Files with few identifications", "Quality control", "diagnostics"),
     ("qc_scores", "Score distribution", "Quality control", "qc_scores"),
@@ -38,28 +37,20 @@ _COMPONENTS = [
     ("comparison_imputed_values", "Imputed values", "Quality control", "comparison_imputed_values"),
     ("comparison_normalization", "Normalization", "Quality control", "comparison_normalization"),
     ("comparison_pvalues", "p-value distribution", "Quality control", "comparison_pvalues"),
-    # Earlier components, kept for views saved with them
-    ("run_summary", "Run summary (summary and files)", "Earlier components", "overview"),
-    ("id_quality", "Identification quality (scores, mass error, PSMs per file)", "Earlier components", "qc"),
-    ("protein_explorer", "Proteins, peptides and spectra in one", "Earlier components", "proteins"),
 ]
 
 # Components that need more than every run has: the analysis each needs (src/viewer/analyses.py)
 NEEDS = {
     "dda_summary": "identification",
     "quant_summary": "quantification",
-    "files_table": "identification",
-    "run_summary": "identification",
     "sample_counts": "identification",
     "qc_scores": "search",
     "qc_mass_error": "identification",
-    "id_quality": "search",
     "id_diagnostics": "identification",
     "protein_table": "identification",
     "protein_peptides": "identification",
     "protein_psms": "identification",
     "psm_spectrum": "identification",
-    "protein_explorer": "identification",
     "psms": "identification",
     "psms_rescored": "rescoring",
     "psms_search": "search",
@@ -128,7 +119,6 @@ PRESETS = [
     {
         "name": "quality_control", "label": "Quality control",
         "layout": [
-            ["files_table"],
             # Both need the full width: the counts put their plot beside their tables, and
             # the likely causes of a file falling short are sentences
             ["sample_counts"],

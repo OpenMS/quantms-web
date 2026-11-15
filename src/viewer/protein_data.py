@@ -36,6 +36,21 @@ def _load_psms(paths: tuple, fasta: str | None, mtimes: tuple, mzml_names: tuple
 
 @st.cache_data(show_spinner="Building protein tables...")
 def _load_tables(paths: tuple, fasta: str | None, mtimes: tuple, mzml_names: tuple, conditions: tuple, samples: tuple = ()):
+    from src.common.disk_cache import cache_root, remember
+
+    # Kept with the run, so the tables the workflow built at its end (precompute) are read, not built again
+    return remember(
+        cache_root(Path(paths[0])), "protein_tables", ("protein_tables", 1, _resolved(paths), fasta and str(Path(fasta).resolve()), mtimes, mzml_names, conditions, samples),
+        lambda: _build_tables(paths, fasta, mtimes, mzml_names, conditions, samples),
+    )
+
+
+def _resolved(paths: tuple) -> tuple:
+    """``paths`` as absolute paths, so the workflow and the Viewer key the same tables."""
+    return tuple(str(Path(p).resolve()) for p in paths)
+
+
+def _build_tables(paths: tuple, fasta: str | None, mtimes: tuple, mzml_names: tuple, conditions: tuple, samples: tuple):
     psms, fasta_entries = _load_psms(paths, fasta, mtimes, mzml_names)
     files = sorted(psms["file"].unique())
     proteins, peptides, psms_long, coverage = build_tables(psms, fasta_entries, files, dict(samples) or None)

@@ -11,6 +11,17 @@ from src.common.results_helpers import get_run_dir, get_run_params, search_toler
 from src.viewer.scope import heading, needs_results, retitle, scoped, shared_state, zoom
 
 
+
+@st.cache_data(show_spinner="Computing mass shifts...")
+def summary(paths: tuple, names: tuple, mtimes: tuple):
+    """mass_shift_summary of the filtered PSMs, kept with the run (the workflow computes it at its end)."""
+    from src.common.disk_cache import cache_root, remember
+
+    return remember(
+        cache_root(Path(paths[0])), "mass_shifts", ("mass_shifts", 1, tuple(str(Path(p).resolve()) for p in paths), names, mtimes),
+        lambda: mass_shift_summary(psm_mass_shifts(list(paths), list(names))),
+    )
+
 def render(ctx) -> None:
     run_dir = get_run_dir(ctx.workspace)
     filter_dir = run_dir / "results" / "psm_filter"
@@ -22,12 +33,7 @@ def render(ctx) -> None:
     mzml_names = [Path(f).name for f in workflow_params.get("mzML-files", [])]
     mtimes = tuple(p.stat().st_mtime for p in idxmls)
 
-    @st.cache_data(show_spinner="Computing mass shifts...")
-    def _summary(paths: tuple, names: tuple, mtimes: tuple):
-        """mass_shift_summary of the filtered PSMs, cached on the idXMLs' modification times."""
-        return mass_shift_summary(psm_mass_shifts(list(paths), list(names)))
-
-    shifts, histogram, psms = _summary(tuple(str(p) for p in idxmls), tuple(mzml_names), mtimes)
+    shifts, histogram, psms = summary(tuple(str(p) for p in idxmls), tuple(mzml_names), mtimes)
     tolerances = search_tolerances(workflow_params)
     tolerance, units = tolerances["precursor"], tolerances["precursor_unit"]
     if units == "Da" and tolerance and float(tolerance) >= 100:

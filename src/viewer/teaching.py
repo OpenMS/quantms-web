@@ -50,11 +50,6 @@ COMPONENTS = {
         "that were not measured. Up and down count proteins past the cut-offs of Edit comparison, by "
         "default |log2 fold change| ≥ 1 (at least twice or half as abundant) and an adjusted p-value ≤ 0.05."
     ),
-    "files_table": (
-        "One row per file: its MS2 spectra, target and decoy PSMs, the identification rate (target "
-        "PSMs per MS2 spectrum), distinct peptides and the median precursor error. A file far below the "
-        "others is worth a look in Files with few identifications."
-    ),
     "sample_counts": (
         "PSMs, peptides and proteins per sample and per group. Samples of one group should reach "
         "similar counts; one far below the rest may have failed."
@@ -153,9 +148,6 @@ COMPONENTS = {
         "The distribution of the comparison's p-values. Flat with a peak near zero means some proteins "
         "differ; flat only means none do; a peak elsewhere hints at a test that does not fit the data."
     ),
-    "run_summary": "The identification summary and the files of the run, in one component.",
-    "id_quality": "Score distribution, precursor mass error and PSMs per file, in one component.",
-    "protein_explorer": "Proteins, their peptides, PSMs and annotated spectra, in one component.",
 }
 
 
