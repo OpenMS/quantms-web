@@ -1,10 +1,9 @@
 """results_pca as a Viewer component."""
 
-import polars as pl
 import streamlit as st
 
 from src.common.guide import ensure_group_comparison
-from src.common.insight_tables import plot_cache
+from src.common.insight_tables import _default_cache_dir
 from src.common.results_helpers import (
     get_abundance_data,
     get_active_table,
@@ -14,6 +13,7 @@ from src.common.results_helpers import (
 )
 from openms_insight import PCAPlot
 from openms_insight.core.settings import setting_value
+from src.viz.pca import pca_component as build_pca
 from src.viewer.scope import heading, needs_results, scoped, shared_state, zoom
 
 
@@ -59,23 +59,13 @@ def render(ctx) -> None:
     if expr_df_pca.shape[0] < 2:
         st.info("Not enough proteins after variance filtering for PCA.")
         return
-    # Prepare structural Polars metadata DataFrame required by PCAPlot
-    metadata_pl = pl.DataFrame(
-        [{"sample_id": s, "group": sample_group_map[s]} for s in sample_cols if s in sample_group_map],
-        schema={"sample_id": pl.String, "group": pl.String},
-    )
-    pca_lazy = pl.from_pandas(expr_df_pca).lazy()
-    # 3. Initialize the OpenMS-Insight PCAPlot component (computes PCA internally)
+    # 3. The library's PCA panel (computes PCA internally, samples coloured by group)
+    head = heading("Sample PCA")
     try:
-        pca_component = PCAPlot(
-            **plot_cache("quantms_pca_plot", expr_df_pca),
-            **zoom(PCAPlot, "pca"),
-            data=pca_lazy,
-            metadata=metadata_pl,
-            sample_id_field="sample_id",
-            group_field="group",
-            n_components=5,
-            **heading("Sample PCA"),
+        pca_component = build_pca(
+            expr_df_pca, sample_group_map, "quantms_pca_plot", cache_path=_default_cache_dir(),
+            samples=sample_cols, zoom=zoom(PCAPlot, "pca").get("zoom_identifier"), n_components=5,
+            title=head.get("title") or "Sample PCA",
         )
     except ValueError as e:
         st.error(f"PCA computation failed: {e}")
@@ -90,5 +80,6 @@ def render(ctx) -> None:
     pc_x = int(str(setting_value(state_manager, x_setting)).replace("PC", ""))
     pc_y = int(str(setting_value(state_manager, y_setting)).replace("PC", ""))
     pca_component.set_toolbar_settings(settings)
-    pca_component(state_manager=state_manager, pc_x=pc_x, pc_y=pc_y, height=520, key=scoped("pca_plot"))
+    pca_component(state_manager=state_manager, pc_x=pc_x, pc_y=pc_y, height=520, key=scoped("pca_plot"),
+                  help=head.get("help"))
 
