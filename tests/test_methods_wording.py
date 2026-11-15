@@ -63,7 +63,9 @@ def test_a_label_free_run_reads_as_methods(tmp_path):
 
     text = methods_text(report, SETTINGS, names=lambda *a: None)
 
-    assert "Then, spectra were searched against the protein database with ProSE on each file" in text
-    assert "peptide-spectrum matches were rescored with Percolator [4] on each file" in text
-    assert "peptides and proteins were quantified label-free with ProteomicsLFQ on all files together" in text
+    assert "First, decoy sequences were added to the protein database with DecoyDatabase [3]" in text
+    assert "Then, spectra were searched against the protein database with ProSE on " in text
+    assert "peptide-spectrum matches were rescored with Percolator [4] on " in text
+    assert "identifications were filtered with IDFilter on " in text
+    assert "peptides and proteins were quantified label-free with ProteomicsLFQ on " in text
     assert "Elias JE, Gygi SP." in text and "Käll L," in text
