@@ -8,6 +8,7 @@ from pathlib import Path
 import pandas as pd
 import polars as pl
 import pyarrow.parquet as pq
+import pyopenms as poms
 import streamlit as st
 from openms_insight import LinePlot, MirrorPlot
 
@@ -16,9 +17,11 @@ from src.common.ms2_prediction import (
     spectral_angle,
 )
 from src.common.identified_spectra import spectra_sources
+from src.common.precursor_window import isolation_windows, precursor_window
 from src.common.psm_features import features_by_id, features_frame
 from src.common.results_helpers import parse_idxml, search_tolerances
 from src.common.plot_style import spectrum_styling
+from src.viewer.scope import zoom
 
 
 def fragment_tolerance(workflow_params: dict) -> tuple[float, bool]:
@@ -38,6 +41,23 @@ def _model():
 @st.cache_data(show_spinner=False)
 def _instrument(mzml_path: str) -> str:
     return instrument_of(mzml_path)
+
+
+@st.cache_data(show_spinner=False)
+def _isolation_windows(mzml_path: str, mtime: float) -> dict[int, tuple[float, float, float]]:
+    # mtime only keys the cache
+    return isolation_windows(mzml_path)
+
+
+def isolation_window(mzml_path: Path | None, scan: int) -> tuple[float, float, float] | None:
+    """``(target, lower, upper)``: the isolation window of ``scan`` in ``mzml_path``, if recorded."""
+    if not mzml_path or not Path(mzml_path).is_file():
+        return None
+    try:
+        windows = _isolation_windows(str(mzml_path), Path(mzml_path).stat().st_mtime)
+    except Exception:  # an unreadable file must not break the spectrum
+        return None
+    return windows.get(int(scan))
 
 
 @st.cache_data(show_spinner=False)
@@ -75,6 +95,38 @@ def svg_name(peptide: str, charge: int, scan: int) -> str:
     return f"{name}_{int(charge)}+_scan{int(scan)}"
 
 
+@st.cache_data(show_spinner=False)
+def modified_residues(peptide: str) -> dict[str, float]:
+    """Monoisotopic residue masses of the peptide's modified residues, e.g. ``{"M(Oxidation)": 147.0354}``.
+
+    The spectrum's measure tool matches the m/z difference of two clicked peaks
+    to residue masses; with these it also recognises the modified residues of
+    the PSM shown. Terminal modifications (no residue of their own) and
+    sequences pyOpenMS cannot read give nothing.
+    """
+    try:
+        sequence = poms.AASequence.fromString(str(peptide))
+    except Exception:  # a sequence pyOpenMS cannot parse: no extra masses
+        return {}
+    masses: dict[str, float] = {}
+    for i in range(sequence.size()):
+        residue = sequence.getResidue(i)
+        if not residue.isModified():
+            continue
+        name = f"{residue.getOneLetterCode()}({residue.getModificationName()})"
+        masses[name] = round(residue.getMonoWeight(poms.Residue.ResidueType.Internal), 5)
+    return masses
+
+
+def measure_options(peptide: str, tolerance: float, ppm: bool) -> dict:
+    """Arguments of the spectrum plots' measure tool for a PSM: its modified residues and,
+    for a tolerance in Da, the search's fragment tolerance (a ppm tolerance keeps the plot's default)."""
+    options: dict = {"measure_residues": modified_residues(peptide)}
+    if not ppm and tolerance > 0:
+        options["measure_tolerance"] = float(tolerance)
+    return options
+
+
 def show_spectrum(cache_dir: Path, run: str, state_manager, *, peptide: str, charge: int, file_index: int,
                   scan: int, seqview_key: str, key: str, tolerance: float, ppm: bool,
                   mzml_path: Path | None = None, height: int = 450) -> None:
@@ -98,9 +150,11 @@ def show_spectrum(cache_dir: Path, run: str, state_manager, *, peptide: str, cha
         if predicted is None and reason is None:
             reason = "the peptide carries a modification or residue the model does not know"
 
+    measure = measure_options(peptide, tolerance, ppm)
     if predicted is None:
         st.caption(f"No predicted spectrum for comparison: {reason}.")
-        LinePlot(cache_id=f"lineplot_{run}", cache_path=str(cache_dir))(
+        window = precursor_window(state_manager, isolation_window(mzml_path, scan), LinePlot)
+        LinePlot(cache_id=f"lineplot_{run}", cache_path=str(cache_dir), **measure, **zoom(LinePlot, key), **window)(
             key=f"{key}_lineplot", state_manager=state_manager, height=height, sequence_view_key=seqview_key,
         )
         return
@@ -158,6 +212,9 @@ def show_spectrum(cache_dir: Path, run: str, state_manager, *, peptide: str, cha
         y_label="Relative intensity (%)",
         styling=spectrum_styling(),
         svg_filename=svg_name(peptide, charge, scan),
+        **measure,
+        **zoom(MirrorPlot, f"{key}_mirror"),
+        **precursor_window(state_manager, isolation_window(mzml_path, scan), MirrorPlot),
     )(key=f"{key}_mirror", state_manager=state_manager, height=height, sequence_view_top_key=seqview_key)
 
 

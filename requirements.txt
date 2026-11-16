@@ -26,7 +26,7 @@ contourpy==1.3.1
     # via matplotlib
 cycler==0.12.1
     # via matplotlib
-fonttools==4.60.2
+fonttools==4.68.0
     # via matplotlib
 gitdb==4.0.12
     # via gitpython
@@ -140,9 +140,7 @@ xlsxwriter
 streamlit_plotly_events
 scipy
 scikit-learn
-# Development build of OpenMS-Insight (#54: image downloads in a chosen format).
-# Replace with the next PyPI release before an app release.
-openms-insight @ https://raw.githubusercontent.com/OpenMS/quantms-web/claude/insight-dev-wheels/openms_insight-0.6.1.dev2026110702-py3-none-any.whl#sha256=668d75028507a5c26277bcdc1d97d17fcb90c32c289986850e7e1432b317ab26
+openms-insight>=0.7.1
 polars>=1.0.0
 # Forces polars to prefer its most CPU-compatible native runtime.
 # Without this, polars can select an AVX-optimized runtime (e.g. runtime-32)

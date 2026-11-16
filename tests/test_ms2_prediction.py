@@ -68,3 +68,44 @@ def test_predict_fragments_labels_b_and_y_ions():
     assert ions["y1¹⁺"] == pytest.approx(147.1128, abs=1e-3)
     assert not any(ion.endswith("²⁺") for ion in ions)
     assert predict_fragments(load_model(), "PEPTIDEXK", 2) is None
+
+
+def test_load_model_retries_a_failed_download(monkeypatch, tmp_path):
+    import sys
+    import types
+
+    import src.common.ms2_prediction as ms2
+
+    partial = tmp_path / "pretrained_models.zip"
+    calls = []
+
+    class FakeManager:
+        def __init__(self, device):
+            calls.append(device)
+            if len(calls) < 3:
+                partial.write_bytes(b"cut off")
+                raise FileNotFoundError("Downloading model failed: timed out")
+            # a retry starts without the partial file of the failed attempt
+            assert not partial.exists()
+
+        def load_installed_models(self):
+            pass
+
+    models = types.ModuleType("peptdeep.pretrained_models")
+    models.ModelManager = FakeManager
+    models.get_model_zip_file_path = lambda: str(partial)
+    settings = types.ModuleType("peptdeep.settings")
+    settings.global_settings = {}
+    monkeypatch.setitem(sys.modules, "peptdeep", types.ModuleType("peptdeep"))
+    monkeypatch.setitem(sys.modules, "peptdeep.pretrained_models", models)
+    monkeypatch.setitem(sys.modules, "peptdeep.settings", settings)
+    monkeypatch.setattr(ms2.time, "sleep", lambda s: None)
+
+    assert isinstance(ms2.load_model(), FakeManager)
+    assert len(calls) == 3
+
+    calls.clear()
+    monkeypatch.setattr(ms2, "_DOWNLOAD_ATTEMPTS", 2)
+    with pytest.raises(FileNotFoundError):
+        ms2.load_model()
+    assert len(calls) == 2

@@ -5,6 +5,7 @@ Streamlit-free: the page caches the model and renders the result.
 from __future__ import annotations
 
 import os
+import time
 import numpy as np
 import pandas as pd
 import polars as pl
@@ -13,6 +14,9 @@ from pyopenms import AASequence, MSExperiment, MzMLFile, PeakFileOptions
 # peptdeep's default model setting; used when the instrument is not recognised
 DEFAULT_INSTRUMENT = "Lumos"
 DEFAULT_NCE = 30.0
+# Tries of the first-use model download, and the wait before the next one
+_DOWNLOAD_ATTEMPTS = 4
+_DOWNLOAD_RETRY_SECONDS = 15
 FRAG_TYPES = ["b_z1", "y_z1", "b_z2", "y_z2"]
 # Ion labels as the SequenceView writes them: y7¹⁺, b3²⁺
 _SUPERSCRIPT = {1: "¹", 2: "²"}
@@ -46,13 +50,28 @@ def peptdeep_available() -> bool:
 
 def load_model():
     """The pretrained AlphaPeptDeep models on the CPU (downloaded once on first use)."""
-    from peptdeep.pretrained_models import ModelManager
+    from peptdeep.pretrained_models import ModelManager, get_model_zip_file_path
     from peptdeep.settings import global_settings
 
     # The Docker images ship the models outside the (per-user) home directory
     if os.environ.get("PEPTDEEP_HOME"):
         global_settings["PEPTDEEP_HOME"] = os.environ["PEPTDEEP_HOME"]
-    model = ModelManager(device="cpu")
+    # The first use downloads the models from GitHub; a slow or failing
+    # download raises FileNotFoundError, so try it a few times. A download cut
+    # off while reading leaves a partial zip, which peptdeep would not fetch
+    # again, so it goes first.
+    for attempt in range(_DOWNLOAD_ATTEMPTS):
+        try:
+            model = ModelManager(device="cpu")
+            break
+        except FileNotFoundError:
+            if attempt == _DOWNLOAD_ATTEMPTS - 1:
+                raise
+            try:
+                os.remove(get_model_zip_file_path())
+            except FileNotFoundError:
+                pass
+            time.sleep(_DOWNLOAD_RETRY_SECONDS * (attempt + 1))
     model.load_installed_models()
     return model
 

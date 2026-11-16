@@ -8,7 +8,7 @@ from src.common.guide import ensure_group_comparison, show_comparison_settings
 from src.common.results_helpers import get_abundance_data, get_id_column, get_sample_group_map
 from src.common.insight_tables import plot_cache
 from openms_insight import VolcanoPlot
-from src.viewer.scope import needs_results, scoped, shared_state
+from src.viewer.scope import needs_results, scoped, shared_state, zoom
 
 
 def render(ctx) -> None:
@@ -58,6 +58,7 @@ def render(ctx) -> None:
     # 4. Initialize the OpenMS-Insight VolcanoPlot component
     volcano_plot_component = VolcanoPlot(
         **plot_cache("quantms_volcano_plot", volcano_df),
+        **zoom(VolcanoPlot, "volcano"),
         data=volcano_pl_lazy,
         log2fc_column="log2FC",
         pvalue_column="p-value",
