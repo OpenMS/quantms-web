@@ -159,6 +159,13 @@ EXAMPLE_MZML = {
 EXAMPLE_FASTA = [str(f) for f in sorted(Path("example-data", "db").glob("*.fasta"))]
 
 MODE_LABELS = {"LFQ": "Label-free (LFQ)", "TMT": "Isobaric labels (TMT, iTRAQ)"}
+# The label kits of the isobaric analysis (IsobaricAnalyzer's type)
+TMT_INSTANCE = "IsobaricAnalyzer-TMT"
+DEFAULT_PLEX = "tmt11plex"
+PLEX_LABELS = {
+    "tmt6plex": "TMT 6", "tmt10plex": "TMT 10", "tmt11plex": "TMT 11", "tmt16plex": "TMT 16",
+    "tmt18plex": "TMT 18", "itraq4plex": "iTRAQ 4", "itraq8plex": "iTRAQ 8",
+}
 MODE_HELP = {
     "LFQ": "every sample was measured in its own run (or its fractions).",
     "TMT": "samples were labelled with isobaric tags and pooled into one run (or its fractions).",
@@ -222,8 +229,12 @@ class WorkflowTest(WorkflowManager):
     # Every run is kept as its own result set (runs/<id>/); the results pages
     # show the run picked under "Showing run".
     multi_run = True
-    # Start analysis (settings adding files to an experiment) opens the Run page
+    # The four steps of the OpenMS Workflow Framework (src/workflow/guide.py):
+    # Describe experiment -> Run analysis -> Explore results -> Export results
+    configure_page = Path("content", "workflow_configure.py")
     run_page = Path("content", "workflow_run.py")
+    results_page = Path("content", "viewer.py")
+    export_page = Path("content", "workflow_export.py")
     # The browser notification at the end of a run: "OpenDDA analysis finished."
     run_label = "OpenDDA analysis"
 
@@ -251,34 +262,37 @@ class WorkflowTest(WorkflowManager):
             )
 
     def current_params(self) -> dict:
-        """The parameters with the values the widgets hold in this rerun
-        (self.params is stale within a fragment rerun)."""
-        prefix = self.parameter_manager.param_prefix
-        current = dict(self.params)
-        current.update({k[len(prefix):]: v for k, v in st.session_state.items() if k.startswith(prefix)})
-        return current
+        """The parameters with the values the widgets hold in this rerun."""
+        return self.ui.current_params()
 
     def mode(self) -> str:
         """LFQ or TMT, as chosen in Your analysis."""
         mode = self.current_params().get("analysis-mode", "LFQ")
         return mode if mode in MODE_LABELS else "LFQ"
 
-    def _choice(self, key, options, labels, default, label, help=None):
-        """A segmented choice stored as the workflow parameter `key`."""
-        widget = f"{self.parameter_manager.param_prefix}{key}"
-        if st.session_state.get(widget) not in options:
-            stored = self.params.get(key, default)
-            st.session_state[widget] = stored if stored in options else default
-        st.segmented_control(label, options, format_func=lambda o: labels[o], key=widget, help=help,
-                             on_change=self._keep_choice, args=(widget, default))
-        self.parameter_manager.save_parameters()
-        return st.session_state[widget]
+    def plex(self) -> str:
+        """The isobaric label kit (IsobaricAnalyzer type), as set in Your analysis."""
+        stored = self.parameter_manager.get_parameters_from_json().get(TMT_INSTANCE, {})
+        plex = stored.get("type", DEFAULT_PLEX) if isinstance(stored, dict) else DEFAULT_PLEX
+        return plex if plex in PLEX_LABELS else DEFAULT_PLEX
 
-    @staticmethod
-    def _keep_choice(widget, default):
-        # A click on the chosen option clears a segmented control: keep a choice
-        if st.session_state.get(widget) is None:
-            st.session_state[widget] = default
+    def _use_plex(self, chosen: str) -> None:
+        self.parameter_manager.set_topp_parameter(TMT_INSTANCE, "type", chosen, default=DEFAULT_PLEX)
+
+    def library(self) -> bool:
+        """Whether a spectral library is built (label-free only)."""
+        return self.mode() == "LFQ" and bool(self.current_params().get("generate-library", False))
+
+    def steps(self) -> list:
+        """The step tabs of Describe experiment for the analysis chosen in Your analysis."""
+        if self.mode() == "TMT":
+            return ["Samples and groups", "Labels and decoys", "Database search", "Rescoring",
+                    "False discovery rate", "Proteins and quantification"]
+        steps = ["Samples and groups", "Database search", "Rescoring", "False discovery rate",
+                 "Quantification"]
+        if self.library():
+            steps.append("Spectral library")
+        return steps
 
     # --- Instrument and search: presets of presets.json, read back from the settings ---
 
@@ -321,20 +335,14 @@ class WorkflowTest(WorkflowManager):
         return OPEN_SEARCH if self._is_open(self._search_values(mode)) else CLOSED_SEARCH
 
     def _instrument_choice(self, mode: str, current: str | None) -> None:
-        key = "analysis-instrument"  # outside param_prefix: the preset values are the parameters
-        st.session_state[key] = current
-        st.segmented_control(
-            "Instrument", list(INSTRUMENT_LABELS), format_func=lambda o: INSTRUMENT_LABELS[o],
-            key=key, on_change=self._apply_instrument, args=(key, current, mode),
+        # Read back from the tolerances; the preset values are the parameters
+        self.ui.preset_choice(
+            "analysis-instrument", "Instrument", list(INSTRUMENT_LABELS), current,
+            labels=INSTRUMENT_LABELS, on_pick=lambda chosen: self._use_instrument(chosen, mode),
             help="Sets the precursor and fragment mass tolerances of the search for your mass "
                  "spectrometer. **Orbitrap (HCD)**: 10 ppm and 20 ppm. **timsTOF**: 20 ppm and "
                  "40 ppm. **Ion trap (CID)**: 20 ppm and 0.5 Da.",
         )
-
-    def _apply_instrument(self, key, current, mode):
-        chosen = st.session_state.get(key)
-        if chosen and chosen != current:
-            self._use_instrument(chosen, mode)
 
     def _use_instrument(self, chosen, mode):
         was_open = self.current_search(mode) == OPEN_SEARCH
@@ -344,23 +352,15 @@ class WorkflowTest(WorkflowManager):
             self.parameter_manager.apply_preset(OPEN_SEARCH)
 
     def _search_choice(self, mode: str, current_search: str, current_instrument: str | None) -> None:
-        key = "analysis-search"
-        st.session_state[key] = current_search
-        st.segmented_control(
-            "Search", list(SEARCH_LABELS), format_func=lambda o: SEARCH_LABELS[o], key=key,
-            on_change=self._apply_search, args=(key, current_search, current_instrument),
-            help=SEARCH_HELP,
-        )
+        def pick(chosen):
+            if chosen == CLOSED_SEARCH and current_instrument:
+                # Back to the instrument's own precursor tolerance
+                self.ui._apply_preset_callback(current_instrument)
+            else:
+                self.ui._apply_preset_callback(chosen)
 
-    def _apply_search(self, key, current, current_instrument):
-        chosen = st.session_state.get(key)
-        if not chosen or chosen == current:
-            return
-        if chosen == CLOSED_SEARCH and current_instrument:
-            # Back to the instrument's own precursor tolerance
-            self.ui._apply_preset_callback(current_instrument)
-        else:
-            self.ui._apply_preset_callback(chosen)
+        self.ui.preset_choice("analysis-search", "Search", list(SEARCH_LABELS), current_search,
+                              labels=SEARCH_LABELS, help=SEARCH_HELP, on_pick=pick)
 
     def _selected_runs(self) -> list:
         selected = self.current_params().get("mzML-files") or []
@@ -379,32 +379,24 @@ class WorkflowTest(WorkflowManager):
         recommendation = _instrument_recommendation(tuple(selected), str(converted_dir), mtimes)
         if recommendation.preset is None:
             if recommendation.runs:
-                st.warning(recommendation.reason(), icon="⚠️")
+                self.ui.recommendation(recommendation.reason(), None, current, "", "")
             return
         text = recommendation.reason()
         if recommendation.unreadable:
             text += " Thermo .raw files are read once they are converted, when the analysis starts."
-        if current == recommendation.preset:
-            st.success(text, icon="✅")
-            return
-        c1, c2 = st.columns([4, 1], vertical_alignment="center")
-        c1.info(text, icon="💡")
-        c2.button(
+        self.ui.recommendation(
+            text, recommendation.preset, current,
             f"Use {INSTRUMENT_LABELS[recommendation.preset]} settings",
-            key="apply_recommended_instrument",
-            on_click=self._use_instrument,
-            args=(recommendation.preset, self.mode()),
-            use_container_width=True,
+            "apply_recommended_instrument",
+            on_click=self._use_instrument, args=(recommendation.preset, self.mode()),
         )
 
     def analysis_section(self) -> None:
-        """Your analysis: the runs and the database, the experiment type, the
-        instrument and the search, and what a start will do. Drawn above the
-        parameters, not in a fragment: the tabs of configure() follow these choices."""
-        # Whose settings these are, after a follow-up from the Viewer
-        self.ui.follow_up_notice()
-        with st.container(border=True):
-            st.markdown("##### Your analysis")
+        """Your analysis: the runs and the database, the experiment type (and its
+        labels), the instrument and the search, the spectral library, and what a
+        start will do. Drawn above the parameters, not in a fragment: the step
+        tabs of configure() follow these choices."""
+        with self.ui.analysis_box():
             # The examples are in place before the first selection takes every file
             self.ui._ensure_fallback("mzML-files", EXAMPLE_MZML)
             self.preselect_all_inputs("mzML-files")
@@ -421,10 +413,28 @@ class WorkflowTest(WorkflowManager):
             self.params = self.parameter_manager.get_parameters_from_json()
             self.apply_decoy_default()
 
-            mode = self._choice(
-                "analysis-mode", list(MODE_LABELS), MODE_LABELS, "LFQ", "Experiment type",
-                help=" ".join(f"**{MODE_LABELS[m]}**: {h}" for m, h in MODE_HELP.items()),
-            )
+            c1, c2 = st.columns([3, 2])
+            with c1:
+                mode = self.ui.choice(
+                    "analysis-mode", list(MODE_LABELS), MODE_LABELS, "LFQ", "Quantification",
+                    option_help=MODE_HELP,
+                )
+            with c2:
+                if mode == "TMT":
+                    self.ui.preset_choice(
+                        "analysis-plex", "Labels", list(PLEX_LABELS), self.plex(),
+                        labels=PLEX_LABELS, on_pick=self._use_plex,
+                        help="The TMT or iTRAQ kit the samples were labelled with: it names the "
+                             "reporter ions IsobaricAnalyzer reads from the fragment spectra.",
+                    )
+                else:
+                    self.ui.choice(
+                        "generate-library", [False, True], {False: "Off", True: "On"}, False,
+                        "Spectral library",
+                        help="Builds a spectral library from the identified peptides (EasyPQP), "
+                             "for analysing data-independent acquisition (DIA) runs of the same "
+                             "samples later. Not needed for the protein comparison.",
+                    )
             current_instrument = self.current_instrument(mode)
             current_search = self.current_search(mode)
             c1, c2 = st.columns([3, 2])
@@ -438,38 +448,38 @@ class WorkflowTest(WorkflowManager):
                     "(Database search tab), or pick your instrument to set them."
                 )
             self._recommend_instrument(current_instrument)
+            self.ui.analysis_summary(self.describe())
 
-            with st.expander("🧬 Reanalyse a PRIDE dataset, set up from its sample metadata (SDRF)"):
-                pride_import_section(self, {"mzML-files": list(EXAMPLE_MZML), "fasta-file": EXAMPLE_FASTA})
+        # Not part of describing the experiment: an import that fills it in
+        with st.expander("🧬 Reanalyse a PRIDE dataset, set up from its sample metadata (SDRF)"):
+            pride_import_section(self, {"mzML-files": list(EXAMPLE_MZML), "fasta-file": EXAMPLE_FASTA})
 
-            params = self.current_params()
-            runs = len(self._selected_runs())
-            database = params.get("fasta-file")
-            st.info(self.summary(mode, runs, current_instrument, current_search,
-                                 Path(database).name if isinstance(database, str) else None), icon="🧭")
+    def describe(self) -> str:
+        """What a start will do, from the choices of Your analysis."""
+        mode = self.mode()
+        database = self.current_params().get("fasta-file")
+        return self.summary(
+            mode, len(self._selected_runs()), self.current_instrument(mode), self.current_search(mode),
+            Path(database).name if isinstance(database, str) and database else None,
+            plex=self.plex() if mode == "TMT" else None, library=self.library(),
+        )
 
     def run_bar_summary(self) -> str:
-        """One line for the Run bar: analysis, runs and database."""
-        params = self.current_params()
-        mode = params.get("analysis-mode", "LFQ")
-        runs = len(self._selected_runs())
-        database = params.get("fasta-file")
-        parts = ["Label-free" if mode == "LFQ" else "Isobaric (TMT/iTRAQ)",
-                 f"{runs} run{'s' if runs != 1 else ''}"]
-        if isinstance(database, str) and database:
-            parts.append(Path(database).name)
-        return " · ".join(parts) + " · settings are saved when the analysis starts"
+        """The Run bar says the same as Your analysis."""
+        return self.describe()
 
     @staticmethod
     def summary(mode: str, runs: int, instrument_preset: str | None, search: str,
-                database: str | None) -> str:
+                database: str | None, plex: str | None = None, library: bool = False) -> str:
         """What a start does, in one paragraph."""
         if not runs:
             return "Choose the runs to analyse with **📂 Browse**."
         what = "label-free" if mode == "LFQ" else "isobaric (TMT/iTRAQ)"
         article = "An" if what[0] in "aeiou" else "A"
-        text = (f"**{article} {what} analysis of {runs} run{'s' if runs != 1 else ''}**: "
-                f"{'an open' if search == OPEN_SEARCH else 'a'} database search")
+        text = f"**{article} {what} analysis of {runs} run{'s' if runs != 1 else ''}**"
+        if plex:
+            text += f" labelled with {PLEX_LABELS.get(plex, plex)}"
+        text += f": {'an open' if search == OPEN_SEARCH else 'a'} database search"
         if database:
             text += f" against **{database}** with decoys and common contaminants"
         else:
@@ -477,9 +487,10 @@ class WorkflowTest(WorkflowManager):
         text += (f" ({INSTRUMENT_LABELS[instrument_preset]} tolerances)" if instrument_preset
                  else " (your own tolerances)")
         text += ", rescoring with Percolator, a 1 % FDR filter by default, protein inference and "
-        text += ("quantification across the runs, then the comparison of your groups."
+        text += ("quantification across the runs, then the comparison of your groups"
                  if mode == "LFQ" else
-                 "reporter ion quantification, then the comparison of your groups.")
+                 "reporter ion quantification, then the comparison of your groups")
+        text += ", and a spectral library of the identified peptides." if library else "."
         return text
 
     @st.fragment
@@ -692,16 +703,12 @@ class WorkflowTest(WorkflowManager):
         )
 
     def render_lfq_tabs(self):
-        st.subheader("Label-free experiment")
-        t = st.tabs([
-            "**1 · Samples and groups**", "**2 · Database search**", "**3 · Rescoring**",
-            "**4 · False discovery rate**", "**5 · Quantification**", "**6 · Spectral library (optional)**",
-        ])
+        t = self.ui.step_tabs(self.steps())
 
-        with t[0]:
+        with t["Samples and groups"]:
             self.render_lfq_groups()
 
-        with t[1]:
+        with t["Database search"]:
             # Checkbox for decoy generation
             # reactive=True ensures the parent configure() fragment re-runs when checkbox changes,
             # so conditional UI (DecoyDatabase settings) updates immediately
@@ -733,7 +740,7 @@ class WorkflowTest(WorkflowManager):
 
             self.render_search_settings("ProSE", SEARCH_DEFAULTS)
 
-        with t[2]:
+        with t["Rescoring"]:
             st.info(PERCOLATOR_INFO)
             # decoy_pattern is always derived from upstream, never shown
             percolator_include = ["post_processing_tdc", "score_type", "subset_max_train"]
@@ -753,7 +760,7 @@ class WorkflowTest(WorkflowManager):
             )
             self.render_prediction_features_widget()
 
-        with t[3]:
+        with t["False discovery rate"]:
             st.info(FDR_INFO)
             self.render_psm_fdr_widget()
             self.ui.input_TOPP(
@@ -764,67 +771,58 @@ class WorkflowTest(WorkflowManager):
                 exclude_parameters=["type_protein", "type_peptide", "score:psm"],
             )
 
-        with t[5]:
-            st.info("""
-            **Optional.** Builds a spectral library from the identified peptides, for analysing
-            data-independent acquisition (DIA/SWATH) runs of the same samples later, e.g. in
-            OpenSWATH. Not needed for the protein comparison; leave it off if you do not plan a
-            DIA experiment.
-            """)
-
-            self.ui.input_widget(
-                key="generate-library",
-                default=False,
-                name="Generate Spectral Library",
-                widget_type="checkbox",
-                help="Enable spectral library generation using EasyPQP.",
-                reactive=True,
-            )
-            self.params = self.parameter_manager.get_parameters_from_json()
-
-            if self.params.get("generate-library", False):
-                # FDR options
-                self.ui.input_widget(
-                    key="library-use-fdr",
-                    default=False,
-                    name="Apply additional FDR filtering",
-                    widget_type="checkbox",
-                    help="If disabled (recommended), uses --nofdr since IDFilter already applied FDR.",
-                    reactive=True,
-                )
+        if "Spectral library" in t:
+            with t["Spectral library"]:
+                st.info("""
+                The library is built from the identified peptides, for analysing data-independent
+                acquisition (DIA/SWATH) runs of the same samples later, e.g. in OpenSWATH. Switch it
+                off in **Your analysis** if you do not plan a DIA experiment.
+                """)
                 self.params = self.parameter_manager.get_parameters_from_json()
 
-                if self.params.get("library-use-fdr", False):
+                if self.params.get("generate-library", False):
+                    # FDR options
                     self.ui.input_widget(
-                        key="library-psm-fdr",
-                        default=0.01,
-                        name="PSM FDR Threshold",
-                        widget_type="number",
-                        min_value=0.001,
-                        max_value=1.0,
-                        step_size=0.01,
+                        key="library-use-fdr",
+                        default=False,
+                        name="Apply additional FDR filtering",
+                        widget_type="checkbox",
+                        help="If disabled (recommended), uses --nofdr since IDFilter already applied FDR.",
+                        reactive=True,
                     )
+                    self.params = self.parameter_manager.get_parameters_from_json()
 
-                # Decoy options
-                self.ui.input_widget(
-                    key="library-generate-decoys",
-                    default=True,
-                    name="Generate Decoy Library",
-                    widget_type="checkbox",
-                    reactive=True,
-                )
-                self.params = self.parameter_manager.get_parameters_from_json()
+                    if self.params.get("library-use-fdr", False):
+                        self.ui.input_widget(
+                            key="library-psm-fdr",
+                            default=0.01,
+                            name="PSM FDR Threshold",
+                            widget_type="number",
+                            min_value=0.001,
+                            max_value=1.0,
+                            step_size=0.01,
+                        )
 
-                if self.params.get("library-generate-decoys", True):
+                    # Decoy options
                     self.ui.input_widget(
-                        key="library-decoy-method",
-                        default="shuffle",
-                        name="Decoy Method",
-                        widget_type="selectbox",
-                        options=["shuffle", "reverse", "pseudo-reverse", "shift"],
+                        key="library-generate-decoys",
+                        default=True,
+                        name="Generate Decoy Library",
+                        widget_type="checkbox",
+                        reactive=True,
                     )
+                    self.params = self.parameter_manager.get_parameters_from_json()
 
-        with t[4]:
+                    if self.params.get("library-generate-decoys", True):
+                        self.ui.input_widget(
+                            key="library-decoy-method",
+                            default="shuffle",
+                            name="Decoy Method",
+                            widget_type="selectbox",
+                            options=["shuffle", "reverse", "pseudo-reverse", "shift"],
+                        )
+
+        with t["Quantification"]:
             st.info("""
             **How proteins are quantified.** ProteomicsLFQ measures each identified peptide's
             signal over its elution time in every run, aligns the runs so the same peptide is
@@ -940,12 +938,9 @@ class WorkflowTest(WorkflowManager):
             self.parameter_manager.save_parameters()
 
     def render_tmt_tabs(self):
-        st.subheader("TMT / iTRAQ experiment")
-        # Create tabs for different analysis steps.
-        t = st.tabs([
-            "**1 · Samples and groups**", "**2 · Labels and decoys**", "**3 · Database search**",
-            "**4 · Rescoring**", "**5 · False discovery rate**", "**6 · Proteins and quantification**",
-        ])
+        # The steps in order: Samples and groups, Labels and decoys, Database search,
+        # Rescoring, False discovery rate, Proteins and quantification
+        t = list(self.ui.step_tabs(self.steps()).values())
 
         with t[0]:
             self.render_tmt_groups()
@@ -980,9 +975,9 @@ class WorkflowTest(WorkflowManager):
                 )
 
             st.info("""
-            **Label type.** Choose the TMT or iTRAQ kit you used (e.g. *tmt11plex*, *tmt16plex*).
-            IsobaricAnalyzer reads each channel's reporter-ion intensity from the fragment spectra;
-            the defaults fit current Orbitrap TMT methods.
+            **Reporter ions.** IsobaricAnalyzer reads each channel's reporter-ion intensity from
+            the fragment spectra of the label kit picked in **Your analysis**; the defaults fit
+            current Orbitrap TMT methods.
             """)
             self.ui.input_TOPP(
                 "IsobaricAnalyzer",
@@ -996,7 +991,9 @@ class WorkflowTest(WorkflowManager):
                     "extraction:precursor_isotope_deviation": 10.0,
                     "quantification:isotope_correction": "false",
                 },
-                tool_instance_name="IsobaricAnalyzer-TMT",
+                tool_instance_name=TMT_INSTANCE,
+                # The label kit is picked in Your analysis
+                exclude_parameters=["type"],
                 reactive=True,
             )
         with t[2]:
