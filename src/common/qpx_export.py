@@ -1,7 +1,7 @@
-"""QPX (quantms Parquet) export of a run: the PSM view and the provenance view.
+"""QPX (quantms Parquet) export of a run: its PSM, protein group, run and provenance views.
 
 QPX (https://github.com/bigbio/qpx, the successor of quantms.io) stores a
-proteomics result as Parquet views. This module writes two of them for a run:
+proteomics result as Parquet views. This module writes these for a run:
 
 - ``qpx/<run>.psm.parquet``: every PSM after the PSM FDR filter, one row per
   spectrum (its top hit), following QPX's ``psm`` schema (spec 1.2).
@@ -96,6 +96,44 @@ PROVENANCE_SCHEMA = pa.schema([
     pa.field("config", pa.string()),
     pa.field("output_views", pa.list_(pa.string())),
 ])
+
+# pg.yaml (the fields OpenDDA fills; the others are optional)
+PEPTIDE_PER_PROTEIN = pa.struct([pa.field("protein_name", pa.string()), pa.field("peptide_count", pa.int32())])
+PEPTIDE_COUNTS = pa.struct([pa.field("unique_sequences", pa.int32()), pa.field("total_sequences", pa.int32())])
+PG_IDENTITY = ("pg_accessions", "grouped_runs", "label")
+PG_SCHEMA = pa.schema([
+    pa.field("pg_id", pa.int64(), nullable=False),
+    pa.field("pg_accessions", pa.list_(pa.string()), nullable=False),
+    pa.field("pg_group_id", pa.int64()),
+    pa.field("anchor_protein", pa.string(), nullable=False),
+    pa.field("grouped_runs", pa.list_(pa.string()), nullable=False),
+    pa.field("label", pa.string()),
+    pa.field("intensity", pa.float32()),
+    pa.field("is_decoy", pa.bool_(), nullable=False),
+    pa.field("contaminant", pa.bool_()),
+    pa.field("peptides", pa.list_(PEPTIDE_PER_PROTEIN), nullable=False),
+    pa.field("peptide_counts", PEPTIDE_COUNTS),
+])
+
+# run.yaml
+SAMPLE_CHANNEL = pa.struct([
+    pa.field("sample_accession", pa.string()),
+    pa.field("label", pa.string()),
+    pa.field("biological_replicate", pa.int32(), nullable=True),
+    pa.field("technical_replicate", pa.int32(), nullable=True),
+    pa.field("channel_role", pa.string(), nullable=True),
+    pa.field("mixture", pa.string(), nullable=True),
+])
+RUN_SCHEMA = pa.schema([
+    pa.field("run_accession", pa.string(), nullable=False),
+    pa.field("run_file_name", pa.string(), nullable=False),
+    pa.field("file_name", pa.string()),
+    pa.field("samples", pa.list_(SAMPLE_CHANNEL), nullable=False),
+    pa.field("fraction", pa.string()),
+    pa.field("enzymes", pa.list_(pa.string())),
+    pa.field("acquisition_method", pa.string()),
+])
+LFQ_LABEL = "LFQ"
 
 # What each TOPP tool of the workflow does, as (step_category, step_name)
 STEPS = {
@@ -421,7 +459,7 @@ def provenance_rows(log_text: str, workflow_dir, params: Mapping, app_version: s
             "tool_uri": TOPP_URI.format(tool=tool),
             "parameters": [{"key": k, "value": str(v)} for k, v in given.items()],
             "config": json.dumps(config, sort_keys=True),
-            "output_views": ["psm"] if tool == "IDFilter" else [],
+            "output_views": {"IDFilter": ["psm"], "ProteomicsLFQ": ["pg"]}.get(tool, []),
         })
     database = next(
         (p["value"] for r in rows if r["tool_name"] in ("OpenMS/ProSE", "OpenMS/CometAdapter") for p in r["parameters"] if p["key"] == "database"),
@@ -454,7 +492,7 @@ def provenance_rows(log_text: str, workflow_dir, params: Mapping, app_version: s
         "tool_uri": "https://github.com/OpenMS/quantms-web",
         "parameters": [{"key": "qpx_version", "value": QPX_SPEC_VERSION}],
         "config": None,
-        "output_views": ["psm", "provenance"],
+        "output_views": ["psm", "provenance", "run"] + (["pg"] if params.get("analysis-mode", "LFQ") == "LFQ" else []),
     })
     for i, row in enumerate(rows, start=1):
         row["step_order"] = i
@@ -482,11 +520,163 @@ def provenance_table(rows: List[dict]):
     return pd.DataFrame(flat, columns=["step", "tool", "version", "parameter", "value", "set by"])
 
 
+# ----------------------------------------------------------------------------- protein groups and runs
+
+def _stem(file_name: str) -> str:
+    name = Path(str(file_name)).name
+    return name[:-5] if name.lower().endswith(".mzml") else Path(name).stem
+
+
+def _stripped(peptide: str) -> str:
+    """A peptide of the MSstats table without its modifications (``.(Oxidation)``, ``[+16]``)."""
+    return re.sub(r"\(.*?\)|\[.*?\]|[^A-Za-z]", "", str(peptide)).upper()
+
+
+def _int(value) -> Optional[int]:
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def pg_rows(msstats, fractions: Optional[Mapping[str, dict]] = None) -> List[dict]:
+    """One QPX pg row per protein group and sample of ProteomicsLFQ's MSstats table.
+
+    ``msstats`` is the table (ProteinName, PeptideSequence, Reference,
+    Intensity); a group's intensity in a sample is the sum of its rows, as on
+    the results pages. ``fractions`` (``fractions.fraction_samples``) puts the
+    fractions of a sample into one quantification unit (``grouped_runs``).
+    """
+    import pandas as pd
+
+    from src.common.contaminants import is_contaminant
+    from src.common.fractions import sample_of
+    from src.common.protein_table import DECOY_PREFIXES
+
+    df = msstats.dropna(subset=["ProteinName", "Reference"]).copy()
+    if df.empty:
+        return []
+    df["_sample"] = df["Reference"].map(lambda ref: sample_of(ref, fractions))
+    df["_run"] = df["Reference"].map(_stem)
+    df["_seq"] = df["PeptideSequence"].map(_stripped) if "PeptideSequence" in df else ""
+    df["Intensity"] = pd.to_numeric(df["Intensity"], errors="coerce")
+    rows = []
+    for (group, _sample), grp in df.groupby(["ProteinName", "_sample"], sort=True):
+        accessions = [a for a in dict.fromkeys(str(group).split(";")) if a]
+        if not accessions:
+            continue
+        runs = sorted(grp["_run"].unique().tolist())
+        total = grp["PeptideSequence"].nunique() if "PeptideSequence" in grp else 0
+        unique = grp["_seq"].nunique() if "PeptideSequence" in grp else 0
+        intensity = grp["Intensity"].sum(min_count=1)
+        rows.append({
+            "pg_id": derive_id([sorted(accessions), runs, LFQ_LABEL]),
+            "pg_accessions": accessions,
+            "pg_group_id": derive_id(sorted(accessions)),
+            "anchor_protein": accessions[0],
+            "grouped_runs": runs,
+            "label": LFQ_LABEL,
+            "intensity": None if intensity != intensity else float(intensity),
+            "is_decoy": all(a.startswith(DECOY_PREFIXES) for a in accessions),
+            "contaminant": bool(is_contaminant(";".join(accessions))),
+            "peptides": [{"protein_name": a, "peptide_count": int(unique)} for a in accessions],
+            "peptide_counts": {"unique_sequences": int(unique), "total_sequences": int(total)},
+        })
+    return rows
+
+
+def _search_enzyme(params: Mapping, provenance: Optional[List[dict]] = None) -> Optional[str]:
+    """The enzyme the run searched with: the search step of its provenance (every
+    effective parameter, defaults included), else its stored settings."""
+    for row in provenance or []:
+        if row.get("step_name") != "sequence_search":
+            continue
+        values = {p["key"]: p["value"] for p in row.get("parameters") or []}
+        if row.get("config"):
+            values = {**json.loads(row["config"]), **values}
+        for key in ("Search:enzyme", "enzyme"):
+            if values.get(key):
+                return str(values[key])
+    for source in (params, params.get("_defaults") or {}):
+        for key, value in source.items():
+            if key.endswith(":1:Search:enzyme") or key.endswith(":1:enzyme"):
+                return str(value)
+    return None
+
+
+def run_rows(params: Mapping, msstats=None, fractions: Optional[Mapping[str, dict]] = None,
+             provenance: Optional[List[dict]] = None) -> List[dict]:
+    """One QPX run row per input file, with its sample, replicate and fraction."""
+    from src.common.fractions import sample_of
+
+    files = [Path(str(f)).name for f in params.get("mzML-files", []) or []]
+    replicate = {}
+    if msstats is not None and "Reference" in msstats:
+        refs = msstats.drop_duplicates("Reference")
+        reps = refs["BioReplicate"] if "BioReplicate" in refs else [None] * len(refs)
+        for ref, rep in zip(refs["Reference"], reps):
+            name = Path(str(ref)).name
+            replicate[_stem(name)] = _int(rep)
+            if not any(_stem(f) == _stem(name) for f in files):
+                files.append(name)
+    fraction_of = {}
+    if fractions:
+        # The design's fraction number, by the order of a sample's files
+        by_sample = {}
+        for f in sorted(fractions):
+            by_sample.setdefault(fractions[f]["sample"], []).append(f)
+        for members in by_sample.values():
+            for i, f in enumerate(members, start=1):
+                fraction_of[_stem(f)] = str(i)
+    enzyme = _search_enzyme(params, provenance)
+    rows = []
+    for f in dict.fromkeys(files):
+        stem = _stem(f)
+        mzml = f if f.lower().endswith(".mzml") else f"{stem}.mzML"
+        sample = sample_of(mzml, fractions)
+        rows.append({
+            "run_accession": stem,
+            "run_file_name": stem,
+            "file_name": f,
+            "samples": [{
+                "sample_accession": sample,
+                "label": LFQ_LABEL if params.get("analysis-mode", "LFQ") == "LFQ" else None,
+                "biological_replicate": replicate.get(stem),
+                "technical_replicate": None,
+                "channel_role": None,
+                "mixture": None,
+            }],
+            "fraction": fraction_of.get(stem, "1"),
+            "enzymes": [enzyme] if enzyme else None,
+            "acquisition_method": "DDA",
+        })
+    return rows
+
+
+def read_msstats(results_dir):
+    """ProteomicsLFQ's MSstats table of a run (None without one)."""
+    import pandas as pd
+
+    csvs = sorted(Path(results_dir, "quant_results").glob("*.csv"))
+    if not csvs:
+        return None
+    try:
+        return pd.read_csv(csvs[0])
+    except (OSError, ValueError):
+        return None
+
+
 # ----------------------------------------------------------------------------- export
 
 def qpx_paths(results_dir, name: str = "run") -> dict:
     folder = Path(results_dir, QPX_DIR)
     return {"psm": folder / f"{name}.psm.parquet", "provenance": folder / f"{name}.provenance.parquet"}
+
+
+def view_paths(results_dir, name: str = "run") -> dict:
+    """The protein group and run views, which a run written before them lacks."""
+    folder = Path(results_dir, QPX_DIR)
+    return {"pg": folder / f"{name}.pg.parquet", "run": folder / f"{name}.run.parquet"}
 
 
 def export_run(results_dir, workflow_dir, params: Mapping, log_text: str, app_version: str,
@@ -498,9 +688,36 @@ def export_run(results_dir, workflow_dir, params: Mapping, log_text: str, app_ve
     idxmls = sorted(Path(results_dir, "psm_filter").glob("*.idXML"))
     mzml_names = [Path(str(f)).name for f in params.get("mzML-files", []) or []]
     n = write_psms(idxmls, mzml_names, paths["psm"], to_proforma)
-    write_table(provenance_rows(log_text, workflow_dir, params, app_version), PROVENANCE_SCHEMA,
-                paths["provenance"], footer("provenance_file"))
-    return {**paths, "psms": n}
+    steps = provenance_rows(log_text, workflow_dir, params, app_version)
+    write_table(steps, PROVENANCE_SCHEMA, paths["provenance"], footer("provenance_file"))
+    return {**paths, "psms": n, **export_views(results_dir, params, name, steps)}
+
+
+def export_views(results_dir, params: Mapping, name: str = "run", provenance: Optional[List[dict]] = None) -> dict:
+    """Write a run's QPX run view and, for a label-free run, its pg view.
+
+    ``provenance`` (the run's provenance rows, read from its provenance view
+    when not given) names the search's enzyme.
+    """
+    from src.common.fractions import fraction_samples
+
+    paths = view_paths(results_dir, name)
+    if provenance is None:
+        stored = qpx_paths(results_dir, name)["provenance"]
+        provenance = read_provenance(stored) if stored.is_file() else []
+    msstats = read_msstats(results_dir)
+    fractions = fraction_samples(results_dir, params)
+    out = {"run": write_table(run_rows(params, msstats, fractions, provenance), RUN_SCHEMA, paths["run"],
+                              footer("run_file", {"primary_key": "run_file_name"}))}
+    groups = 0
+    if params.get("analysis-mode", "LFQ") == "LFQ" and msstats is not None:
+        rows = pg_rows(msstats, fractions)
+        out["pg"] = write_table(rows, PG_SCHEMA, paths["pg"], footer("pg_file", {
+            "primary_key": "pg_id",
+            "identity_composite": ",".join(PG_IDENTITY),
+        }))
+        groups = len(rows)
+    return {**out, "protein_groups": groups}
 
 
 def app_version() -> str:
