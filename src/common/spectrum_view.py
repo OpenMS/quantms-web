@@ -17,6 +17,7 @@ from src.common.ms2_prediction import (
     spectral_angle,
 )
 from src.common.identified_spectra import spectra_sources
+from src.common.precursor_window import isolation_windows, precursor_window
 from src.common.psm_features import features_by_id, features_frame
 from src.common.results_helpers import parse_idxml, search_tolerances
 from src.common.plot_style import spectrum_styling
@@ -40,6 +41,23 @@ def _model():
 @st.cache_data(show_spinner=False)
 def _instrument(mzml_path: str) -> str:
     return instrument_of(mzml_path)
+
+
+@st.cache_data(show_spinner=False)
+def _isolation_windows(mzml_path: str, mtime: float) -> dict[int, tuple[float, float, float]]:
+    # mtime only keys the cache
+    return isolation_windows(mzml_path)
+
+
+def isolation_window(mzml_path: Path | None, scan: int) -> tuple[float, float, float] | None:
+    """``(target, lower, upper)``: the isolation window of ``scan`` in ``mzml_path``, if recorded."""
+    if not mzml_path or not Path(mzml_path).is_file():
+        return None
+    try:
+        windows = _isolation_windows(str(mzml_path), Path(mzml_path).stat().st_mtime)
+    except Exception:  # an unreadable file must not break the spectrum
+        return None
+    return windows.get(int(scan))
 
 
 @st.cache_data(show_spinner=False)
@@ -134,7 +152,8 @@ def show_spectrum(cache_dir: Path, run: str, state_manager, *, peptide: str, cha
 
     measure = measure_options(peptide, tolerance, ppm)
     if predicted is None:
-        LinePlot(cache_id=f"lineplot_{run}", cache_path=str(cache_dir), **measure, **zoom(LinePlot, key))(
+        window = precursor_window(state_manager, isolation_window(mzml_path, scan), LinePlot)
+        LinePlot(cache_id=f"lineplot_{run}", cache_path=str(cache_dir), **measure, **zoom(LinePlot, key), **window)(
             key=f"{key}_lineplot", state_manager=state_manager, height=height, sequence_view_key=seqview_key,
         )
         return
@@ -194,6 +213,7 @@ def show_spectrum(cache_dir: Path, run: str, state_manager, *, peptide: str, cha
         svg_filename=svg_name(peptide, charge, scan),
         **measure,
         **zoom(MirrorPlot, f"{key}_mirror"),
+        **precursor_window(state_manager, isolation_window(mzml_path, scan), MirrorPlot),
     )(key=f"{key}_mirror", state_manager=state_manager, height=height, sequence_view_top_key=seqview_key)
 
 
