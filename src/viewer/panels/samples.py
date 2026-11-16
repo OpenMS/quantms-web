@@ -1,13 +1,12 @@
 """results_samples as a Viewer component."""
 
 from pathlib import Path
-import plotly.express as px
 import streamlit as st
 from src.common.guide import page_link
-from src.common.insight_tables import show_insight_table
+from src.common.insight_tables import show_insight_table, show_series
 from src.common.results_helpers import get_abundance_data, get_sample_group_map, get_run_dir, get_run_params
-from src.common.samples import COUNT_COLUMNS, channel_samples, condition_summary, lfq_samples
-from src.viewer.scope import scoped, show_fig
+from src.common.samples import COUNT_COLUMNS, channel_samples, condition_summary, lfq_samples, short_sample_names
+from src.viewer.scope import scoped
 
 
 def render(ctx) -> None:
@@ -16,7 +15,6 @@ def render(ctx) -> None:
     cache_dir = results_dir / "insight_cache"
     workflow_params = get_run_params(ctx.workspace)
     analysis_mode = workflow_params.get("analysis-mode", "LFQ")
-    fdr = float(workflow_params.get("psm-fdr-percent", 1.0))
 
     def _mtimes(paths) -> tuple:
         return tuple(Path(p).stat().st_mtime if Path(p).exists() else 0.0 for p in paths)
@@ -40,7 +38,6 @@ def render(ctx) -> None:
         }
         sources = sorted(filter_dir.glob("*.idXML")) + sorted((results_dir / "quant_results").glob("*.csv"))
         samples = _lfq_samples(str(run_dir), tuple(mzml_files), tuple(sorted(group_map.items())), _mtimes(sources))
-        st.caption(f"Counts at {fdr:g} % PSM FDR.")
     else:
         abundance = get_abundance_data(ctx.workspace)
         if abundance is None:
@@ -63,34 +60,24 @@ def render(ctx) -> None:
 
     counts = [c for c in COUNT_COLUMNS if samples[c].notna().any()]
     group_key = "|".join(f"{s}={c}" for s, c in zip(samples["Sample"], samples["Condition"]))
-    st.subheader("Per sample")
-    metric = st.selectbox("Count", counts, key=scoped("samples-metric"))
-    fig = px.bar(
-        samples,
-        x="Sample",
-        y=metric,
-        color="Condition",
-        category_orders={"Sample": samples["Sample"].tolist()},
+    metric = st.popover("⚙️ Count shown").selectbox("Count", counts, key=scoped("samples-metric"))
+    bars = samples[["Sample", "Condition", metric]].copy()
+    bars["Sample"] = bars["Sample"].map(short_sample_names(bars["Sample"]))
+    show_series(
+        bars, f"samples_{metric.lower().replace(' ', '_')}",
+        height=max(260, 34 * len(samples) + 140), x_column="Sample", y_column=metric, series_column="Condition",
+        mode="bars", orientation="h", x_label="Sample", y_label=metric, y_range_mode="nonnegative",
     )
-    # One full-width bar per sample: px gives each condition its own offset group,
-    # which would leave room beside every bar for the other conditions
-    fig.update_traces(offsetgroup=None, alignmentgroup=None)
-    fig.update_layout(xaxis_title=None, legend_title_text="Condition", bargap=0.2)
-    # Slant the sample names once they no longer fit side by side
-    label_chars = sum(len(s) for s in samples["Sample"])
-    fig.update_xaxes(tickangle=-35 if label_chars > 90 else 0, automargin=True)
-    show_fig(fig, f"samples_{metric.lower().replace(' ', '_')}")
     show_insight_table(
         samples[["Sample", "Condition"] + counts],
         name="samples_per_sample",
         cache_dir=cache_dir,
         source_files=sources,
         extra_key=group_key,
-        title="samples",
+        title="Per sample",
         height=_table_height(len(samples)),
         layout="fitColumns",
     )
-    st.subheader("Per condition")
     summary = condition_summary(samples)
     # Means go as text, since the table stores floats as float32 and would show 36.8 as 36.79999923706055
     for col in summary.columns[2:]:
@@ -101,7 +88,7 @@ def render(ctx) -> None:
         cache_dir=cache_dir,
         source_files=sources,
         extra_key=group_key,
-        title="conditions",
+        title="Per condition",
         height=_table_height(len(summary)),
         layout="fitColumns",
     )

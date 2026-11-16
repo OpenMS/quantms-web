@@ -152,7 +152,6 @@ def show_spectrum(cache_dir: Path, run: str, state_manager, *, peptide: str, cha
 
     measure = measure_options(peptide, tolerance, ppm)
     if predicted is None:
-        st.caption(f"No predicted spectrum for comparison: {reason}.")
         window = precursor_window(state_manager, isolation_window(mzml_path, scan), LinePlot)
         LinePlot(cache_id=f"lineplot_{run}", cache_path=str(cache_dir), **measure, **zoom(LinePlot, key), **window)(
             key=f"{key}_lineplot", state_manager=state_manager, height=height, sequence_view_key=seqview_key,
