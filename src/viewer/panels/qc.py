@@ -5,9 +5,11 @@ import pandas as pd
 import polars as pl
 import streamlit as st
 from openms_insight import SeriesPlot
+
+from src.viz.identification import precursor_mass_error, score_distribution
 from src.common.insight_tables import plot_cache
 from src.common.qc_plots import (
-    DECOY_COLOR, TARGET_COLOR, fdr_cutoff, mass_error_histogram, psm_qc_table, psms_per_file, score_histogram,
+    fdr_cutoff, mass_error_histogram, psm_qc_table, psms_per_file, score_histogram,
 )
 from src.common.results_helpers import get_run_dir, get_run_params, search_results_dir
 from src.viewer.scope import heading, needs_results, scoped, shared_state, zoom
@@ -42,10 +44,11 @@ def load_qc(ctx):
     return all_psms, filtered, fdr
 
 
-def _series(name: str, data: pd.DataFrame, detail=None, note=None, **kwargs) -> None:
+def _series(name: str, data: pd.DataFrame, settings: dict, detail=None, note=None) -> None:
+    """Draw a library series component; the Viewer's heading replaces its title."""
     SeriesPlot(
-        **plot_cache(f"quantms_{name}", data), **zoom(SeriesPlot, name), **heading(detail=detail, note=note),
-        data=pl.from_pandas(data).lazy(), x_column="x", y_column="y", mode="lines", **kwargs,
+        **plot_cache(f"quantms_{name}", data), **zoom(SeriesPlot, name),
+        **(settings | heading(detail=detail, note=note)), data=pl.from_pandas(data).lazy(),
     )(key=scoped(name), state_manager=shared_state(), height=340)
 
 
@@ -63,10 +66,9 @@ def scores(ctx) -> None:
     if not decoys:
         st.warning("No decoy PSMs found, so the score distribution cannot show the incorrect matches.")
     _series(
-        "qc_scores", data, detail=detail, note=note, series_column="kind",
-        series_names={"target": "Targets", "decoy": "Decoys"},
-        series_colors={"target": TARGET_COLOR, "decoy": DECOY_COLOR},
-        x_label=label, y_label="PSMs",
+        "qc_scores", data,
+        score_distribution.settings(2 if decoys else 1, x_label=label, y_label="PSMs", fixed_y_range=False),
+        detail=detail, note=note,
     )
 
 
@@ -80,7 +82,6 @@ def mass_error(ctx) -> None:
     if median is None:
         return needs_results("No precursor errors in this run.")
     _series(
-        "qc_mass_error", data, detail=f"median {median:+.2f} ppm",
-        note=f"Target PSMs at {fdr * 100:.3g} % PSM FDR, isotope errors removed.", series_colors=None, x_label="Precursor error (ppm)", y_label="PSMs",
-        show_legend=False, y_range_mode="nonnegative",
+        "qc_mass_error", data, precursor_mass_error.settings(), detail=f"median {median:+.2f} ppm",
+        note=f"Target PSMs at {fdr * 100:.3g} % PSM FDR, isotope errors removed.",
     )

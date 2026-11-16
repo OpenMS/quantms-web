@@ -6,9 +6,16 @@ from pathlib import Path
 import polars as pl
 import streamlit as st
 from openms_insight import LinePlot, Table
-from src.common.mass_shifts import MIN_PSMS, mass_shift_summary, psm_mass_shifts
+from src.common.mass_shifts import MATCH_TOLERANCE, MIN_PSMS, mass_shift_summary, psm_mass_shifts
 from src.common.results_helpers import get_run_dir, get_run_params, search_tolerances
 from src.viewer.scope import heading, needs_results, retitle, scoped, shared_state, zoom
+from src.viz.identification import mass_shift_histogram, mass_shift_matches, mass_shift_table
+
+# The summary's columns, named as the library's shift table reads them
+SHIFT_COLUMNS = {
+    "Observed Δ (Da)": "shift", "PSMs": "psms", "Interpretation": "interpretation", "Unimod Δ (Da)": "unimod",
+    "Deviation (mDa)": "deviation", "Residues": "residues", "Other matches": "other",
+}
 
 
 
@@ -49,18 +56,9 @@ def render(ctx) -> None:
     modified = shifts[
         ~shifts["Interpretation"].isin(["Unmodified"]) & ~shifts["Interpretation"].str.contains("isotope")
     ]
-    def _fixed(precision: int) -> dict:
-        """Column options showing a number with ``precision`` decimals (the table stores float32)."""
-        return {
-            "sorter": "number",
-            "hozAlign": "right",
-            "formatter": "money",
-            "formatterParams": {"precision": precision, "thousand": False},
-        }
-
     # One set of caches per result: keyed on the idXMLs, their modification times
     # and the detected shifts (so a change in how shifts are found rebuilds them)
-    key = hashlib.sha1(("|".join(f"{p}:{m}" for p, m in zip(idxmls, mtimes)) + shifts.to_csv()).encode()).hexdigest()[
+    key = hashlib.sha1(("v2|" + "|".join(f"{p}:{m}" for p, m in zip(idxmls, mtimes)) + shifts.to_csv()).encode()).hexdigest()[
         :10
     ]
     ids = {name: f"mass_shift_{name}_{key}" for name in ("histogram", "shifts", "psms")}
@@ -72,51 +70,20 @@ def render(ctx) -> None:
             cache_id=ids["histogram"],
             data=pl.from_pandas(histogram).lazy(),
             cache_path=str(cache_dir),
-            x_column="delta",
-            y_column="psms",
-            title="Precursor mass shifts",
-            x_label="Mass shift (Da)",
-            y_label="PSMs",
-            highlight_column="peak",
-            annotation_column="label",
-            interactivity={"mass_shift": "shift_id"},
+            **mass_shift_histogram.settings(count=("psms", "PSMs"), title="Precursor mass shifts"),
         )
         Table(
             cache_id=ids["shifts"],
-            data=pl.from_pandas(shifts).lazy(),
+            data=pl.from_pandas(shifts.rename(columns=SHIFT_COLUMNS)).lazy(),
             cache_path=str(cache_dir),
-            interactivity={"mass_shift": "shift_id"},
-            index_field="shift_id",
-            title="Shifts",
-            layout="fitColumns",
-            column_definitions=[
-                {"field": "Observed Δ (Da)", "title": "Observed Δ (Da)", **_fixed(4)},
-                {"field": "PSMs", "title": "PSMs", "sorter": "number", "hozAlign": "right"},
-                {"field": "Interpretation", "title": "Interpretation"},
-                {"field": "Unimod Δ (Da)", "title": "Unimod Δ (Da)", **_fixed(4)},
-                {"field": "Deviation (mDa)", "title": "Deviation (mDa)", **_fixed(1)},
-                {"field": "Residues", "title": "Residues"},
-                {"field": "Other matches", "title": "Other matches"},
-            ],
+            **mass_shift_table.settings(MATCH_TOLERANCE, count=("psms", "PSMs"), entries=None, title="Shifts"),
         )
-        psm_data = pl.from_pandas(psms.reset_index(drop=True)).with_row_index("psm_id")
+        psm_data = pl.from_pandas(psms.reset_index(drop=True)).with_row_index("match_id")
         Table(
             cache_id=ids["psms"],
             data=psm_data.lazy(),
             cache_path=str(cache_dir),
-            filters={"mass_shift": "shift_id"},
-            index_field="psm_id",
-            title="PSMs of the selected shift",
-            initial_sort=[{"column": "score", "dir": "asc"}],
-            column_definitions=[
-                {"field": "sequence", "title": "Sequence"},
-                {"field": "delta", "title": "Δ (Da)", **_fixed(4)},
-                {"field": "charge", "title": "Z", "sorter": "number"},
-                {"field": "mz", "title": "m/z", **_fixed(4)},
-                {"field": "rt", "title": "RT", **_fixed(1)},
-                {"field": "score", "title": "Score", "sorter": "number"},
-                {"field": "file", "title": "File"},
-            ],
+            **mass_shift_matches.settings(noun="PSMs"),
         )
     state_manager = shared_state()
     head = heading("Precursor mass shifts", note=search_note)
@@ -137,7 +104,7 @@ def render(ctx) -> None:
         help="Shifts with no Unimod modification within 0.02 Da.",
     )
     retitle(Table(cache_id=ids["shifts"], cache_path=str(cache_dir), collapse_columns=False), "Shifts")(
-        key=scoped("mass_shift_table"), state_manager=state_manager, height=140 + 34 * min(len(shifts), 10)
+        key=scoped("mass_shift_table"), state_manager=state_manager, height=mass_shift_table.height(len(shifts))
     )
     retitle(Table(cache_id=ids["psms"], cache_path=str(cache_dir), collapse_columns=False), "PSMs of the selected shift")(
         key=scoped("mass_shift_psm_table"), state_manager=state_manager, height=420

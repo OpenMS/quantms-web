@@ -14,7 +14,7 @@ from src.common.guide import ensure_group_comparison
 from src.common.results_helpers import get_abundance_data, get_id_column
 from src.viewer import go_terms
 from src.viewer.scope import GO_SET, heading, needs_results, scoped, shared_state
-from src.viz.go_panel import show_go_panel
+from src.viz.quantification.go_enrichment import show_go_panel
 
 # Results kept per session (one per selection)
 _RESULTS_KEPT = 8

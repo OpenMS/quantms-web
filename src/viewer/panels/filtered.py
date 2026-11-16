@@ -1,14 +1,17 @@
 """results_filtered as a Viewer component."""
 
+import pandas as pd
 import streamlit as st
 from src.common.results_helpers import get_run_dir, get_run_params
 from src.common.spectrum_view import ensure_psm_views, fragment_tolerance, psm_mzml_files, show_selected_psm_spectrum
-from src.common.fragment_plots import fragment_error_plot, ion_table, ion_table_html, load_psm_fragments
+from src.common.fragment_plots import ion_table, ion_table_html, load_psm_fragments
+from src.viz.identification import fragment_errors
+from src.viz.series import show_series
 from src.common.precursor_xic_view import show_precursor_xic
 from src.common.result_filters import q_suggestions
 from src.common.sequence_display import filtered_psm_table, sequence_mode_selector
 from openms_insight import Heatmap, SequenceView
-from src.viewer.scope import needs_results, scoped, show_fig, shared_state, PSM_PRIVATE, heading, retitle
+from src.viewer.scope import needs_results, scoped, shared_state, PSM_PRIVATE, heading, retitle
 
 
 def render(ctx) -> None:
@@ -80,11 +83,24 @@ def render(ctx) -> None:
             tolerance, tolerance_ppm = fragment_tolerance(run_params)
 
             first = fragments.iloc[0]
-            fig = fragment_error_plot(fragments, tolerance, tolerance_ppm)
-            fig.update_layout(
-                title=f"Fragment ions of {first['sequence']} ({int(first['precursor_charge'])}+): "
-                f"{len(fragments)} matched within ±{tolerance:g} {'ppm' if tolerance_ppm else 'Da'}"
+            unit = "ppm" if tolerance_ppm else "Da"
+            error = "mass_error_ppm" if tolerance_ppm else "mass_error_da"
+            points = pd.DataFrame({
+                "observed_mz": fragments["observed_mz"], error: fragments[error], "ion_type": fragments["ion_type"],
+                "fragment": [f"{ion}{'+' * int(z)}" for ion, z in zip(fragments["ion"], fragments["charge"])],
+            })
+            low, high = float(points["observed_mz"].min()), float(points["observed_mz"].max())
+            points = pd.concat([points, pd.DataFrame(
+                fragment_errors.tolerance_rows(tolerance, low, high, x="observed_mz", y=error))], ignore_index=True)
+            show_series(
+                points, f"fragment-errors-{cache_id_prefix}", cache_path=cache_dir,
+                key=scoped(f"fragment_errors_{cache_id_prefix}"), height=360,
+                **fragment_errors.settings(
+                    prsm=None, residue=None, x=("observed_mz", "m/z"), y=(error, f"Mass error ({unit})"),
+                    title=f"Fragment ions of {first['sequence']} ({int(first['precursor_charge'])}+): "
+                    f"{len(fragments)} matched within ±{tolerance:g} {unit}",
+                    svg_filename=f"fragment-errors-{cache_id_prefix}-{psm_id}",
+                ),
             )
-            show_fig(fig, f"fragment-errors-{cache_id_prefix}-{psm_id}")
             values, matched = ion_table(first["sequence"], int(first["precursor_charge"]), fragments)
             st.html(ion_table_html(values, matched))

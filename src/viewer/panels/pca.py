@@ -13,7 +13,7 @@ from src.common.results_helpers import (
 )
 from openms_insight import PCAPlot
 from openms_insight.core.settings import setting_value
-from src.viz.pca import pca_component as build_pca
+from src.viz.quantification.pca import pca_component as build_pca
 from src.viewer.scope import heading, needs_results, scoped, shared_state, zoom
 
 

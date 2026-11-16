@@ -1,4 +1,5 @@
-"""Fragment-level evidence for one PSM: mass error plot and b/y ion table.
+"""Fragment-level evidence for one PSM: its matched fragments and the b/y ion table
+(the mass error plot is the library's ``identification/fragment_errors``).
 
 Both read the run's ``<prefix>_fragment_ions.tsv`` export (written by the
 workflow with the same ion types and tolerance as the SequenceView), filtered
@@ -9,12 +10,14 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import plotly.graph_objects as go
 import polars as pl
 from pyopenms import AASequence, Residue
 
-B_COLOR = "#2a78d6"
-Y_COLOR = "#eb6834"
+from src.viz.identification.fragment_errors import ION_COLORS
+
+# The ion table marks matches in the colours the fragment error plot gives them
+B_COLOR = ION_COLORS["b"]
+Y_COLOR = ION_COLORS["y"]
 
 
 def load_psm_fragments(tsv_path: Path, sequence_id: int) -> pd.DataFrame:
@@ -30,40 +33,6 @@ def load_psm_fragments(tsv_path: Path, sequence_id: int) -> pd.DataFrame:
 def _is_plain(ion: str, ion_type: str, number: int) -> bool:
     """Whether an ion label is the plain fragment, not a neutral-loss one (``b4`` vs ``b4-H2O``)."""
     return ion == f"{ion_type}{number}"
-
-
-def fragment_error_plot(fragments: pd.DataFrame, tolerance: float, tolerance_ppm: bool) -> go.Figure:
-    """Mass error of every matched fragment against its m/z, in the search tolerance's unit.
-
-    Dots are sized by peak intensity; the shaded band is the fragment
-    tolerance. Errors spread evenly around 0 within the band are what a
-    correct match looks like; a trend with m/z points to a calibration issue.
-    """
-    unit = "ppm" if tolerance_ppm else "Da"
-    error_col = "mass_error_ppm" if tolerance_ppm else "mass_error_da"
-    fig = go.Figure()
-    fig.add_hrect(y0=-tolerance, y1=tolerance, fillcolor="#a1a1aa", opacity=0.15, line_width=0)
-    max_intensity = fragments["intensity"].max() if len(fragments) else 1.0
-    for ion_type, color in (("b", B_COLOR), ("y", Y_COLOR)):
-        part = fragments[fragments["ion_type"] == ion_type]
-        if part.empty:
-            continue
-        labels = [f"{ion}{'+' * int(z)}" for ion, z in zip(part["ion"], part["charge"])]
-        fig.add_trace(go.Scatter(
-            x=part["observed_mz"], y=part[error_col], mode="markers", name=f"{ion_type} ions",
-            marker=dict(color=color, size=6 + 14 * np.sqrt(part["intensity"] / max_intensity), opacity=0.8),
-            text=labels,
-            hovertemplate="%{text}<br>m/z %{x:.4f}<br>error %{y:.3f} " + unit + "<extra></extra>",
-        ))
-    fig.add_hline(y=0, line_color="grey", line_width=1)
-    fig.update_layout(
-        title=f"Fragment mass error ({len(fragments)} matched ions)",
-        xaxis_title="m/z",
-        yaxis_title=f"Mass error ({unit})",
-        yaxis_range=[-tolerance * 1.2, tolerance * 1.2],
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
-    )
-    return fig
 
 
 def ion_table(sequence: str, precursor_charge: int, fragments: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:

@@ -6,7 +6,7 @@ from src.common.guide import ensure_group_comparison, page_link
 from src.common.insight_tables import _default_cache_dir
 from src.common.results_helpers import get_abundance_data, get_id_column, get_sample_group_map
 from src.viewer.scope import GO_SET, change_cutoffs, heading, needs_results, scoped, shared_state
-from src.viz.comparison_table import comparison_title, show_comparison_table
+from src.viz.quantification.comparison_table import comparison_title, show_comparison_table
 
 
 def render(ctx) -> None:
