@@ -84,5 +84,51 @@
         "max_download_gb_online": 50,
         "allowed_hosts": [],
         "parallel_downloads": 4
+    },
+    "methods": {
+        "tools": {
+            "FileConverter": {
+                "text": "Thermo .raw files were converted to mzML with FileConverter"
+            },
+            "DecoyDatabase": {
+                "text": "Decoy sequences were added to the protein database with DecoyDatabase",
+                "reference": "Elias JE, Gygi SP. Target-decoy search strategy for increased confidence in large-scale protein identifications by mass spectrometry. Nat Methods. 2007;4(3):207-214. doi:10.1038/nmeth1019"
+            },
+            "DecoyDatabase-contaminants": {
+                "text": "Decoy sequences of the contaminant proteins were added with DecoyDatabase",
+                "reference": "Elias JE, Gygi SP. Target-decoy search strategy for increased confidence in large-scale protein identifications by mass spectrometry. Nat Methods. 2007;4(3):207-214. doi:10.1038/nmeth1019"
+            },
+            "ProSE": {
+                "text": "Spectra were searched against the protein database with ProSE"
+            },
+            "PercolatorAdapter": {
+                "text": "Peptide-spectrum matches were rescored with Percolator",
+                "reference": "Käll L, Canterbury JD, Weston J, Noble WS, MacCoss MJ. Semi-supervised learning for peptide identification from shotgun proteomics datasets. Nat Methods. 2007;4(11):923-925. doi:10.1038/nmeth1113"
+            },
+            "IDFilter": {
+                "text": "Identifications were filtered with IDFilter"
+            },
+            "ProteomicsLFQ": {
+                "text": "Peptides and proteins were quantified label-free with ProteomicsLFQ"
+            },
+            "IsobaricAnalyzer": {
+                "text": "Reporter ion intensities were extracted with IsobaricAnalyzer"
+            },
+            "IDMapper": {
+                "text": "Identifications were mapped to the quantified spectra with IDMapper"
+            },
+            "FileMerger": {
+                "text": "The files were merged with FileMerger"
+            },
+            "ProteinInference": {
+                "text": "Proteins were inferred from their peptides with ProteinInference"
+            },
+            "IDConflictResolver": {
+                "text": "Conflicting identifications of a spectrum were resolved with IDConflictResolver"
+            },
+            "ProteinQuantifier": {
+                "text": "Proteins were quantified from their peptides with ProteinQuantifier"
+            }
+        }
     }
 }
