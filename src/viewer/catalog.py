@@ -37,7 +37,16 @@ _COMPONENTS = [
     ("comparison_imputed_values", "Imputed values", "Quality control", "comparison_imputed_values"),
     ("comparison_normalization", "Normalization", "Quality control", "comparison_normalization"),
     ("comparison_pvalues", "p-value distribution", "Quality control", "comparison_pvalues"),
+    # Single run: one LC-MS run (mzML file) of the experiment
+    ("file_chromatogram", "Chromatogram", "MS data", "file_chromatogram"),
+    ("file_scans", "Scan table", "MS data", "file_scans"),
+    ("file_spectrum", "Spectrum of the picked scan", "MS data", "file_spectrum"),
+    ("file_peak_map", "Peak map (MS1)", "MS data", "file_peak_map"),
+    ("file_psms", "PSMs of this run", "Identification", "file_psms"),
 ]
+
+# What Single run offers (one mzML file); the rest is the experiment's Comparison
+FILE_COMPONENTS = ("file_chromatogram", "file_scans", "file_spectrum", "file_peak_map", "file_psms")
 
 # Components that need more than every run has: the analysis each needs (src/viewer/analyses.py)
 NEEDS = {
@@ -67,6 +76,7 @@ NEEDS = {
     "comparison_imputed_values": ["quantification", "groups"],
     "comparison_normalization": ["quantification", "groups"],
     "comparison_pvalues": ["quantification", "groups"],
+    "file_psms": "identification",
 }
 
 # Components computed over the samples of every run of an experiment (a run and
@@ -78,12 +88,15 @@ EXPERIMENT_WIDE = {
     "comparison_normalization", "comparison_pvalues",
 }
 
-CATALOG = [
+_ALL = [
     {"name": name, "label": label, "group": group, **({"needs": NEEDS[name]} if name in NEEDS else {})}
     for name, label, group, _ in _COMPONENTS
 ]
+# The components of an experiment shown as a whole (Comparison), and of one of its runs (Single run)
+CATALOG = [c for c in _ALL if c["name"] not in FILE_COMPONENTS]
+FILE_CATALOG = [c for c in _ALL if c["name"] in FILE_COMPONENTS]
 MODULES = {name: module for name, _, _, module in _COMPONENTS}
-LABELS = {c["name"]: c["label"] for c in CATALOG}
+LABELS = {c["name"]: c["label"] for c in _ALL}
 
 # Ready-made views, one per question users bring to their results. Each opens
 # with its own summary, then components that narrow what follows them: a
@@ -131,6 +144,21 @@ PRESETS = [
     },
 ]
 DEFAULT_LAYOUT = PRESETS[0]["layout"]
+
+# Ready-made views of one run (Single run): its spectra, then what was identified in them
+FILE_PRESETS = [
+    {
+        "name": "spectra", "label": "Spectra",
+        "layout": [["file_chromatogram"], ["file_scans", "file_spectrum"], ["file_peak_map"]],
+        "help": "The spectra of this run: pick one in the chromatogram, the scan table or the peak map.",
+    },
+    {
+        "name": "psms", "label": "PSMs",
+        "layout": [["file_psms"]],
+        "help": "The peptide-spectrum matches of this run after FDR, down to the annotated spectrum of each.",
+    },
+]
+FILE_DEFAULT_LAYOUT = FILE_PRESETS[0]["layout"]
 # Views of earlier releases: a saved file naming one opens on the default view
 REMOVED_PRESETS = ("overview", "differential", "comparison_checks")
 
@@ -195,6 +223,8 @@ class ViewerContext:
     member: str | None = None
     # Shown on its own: what compares samples covers this run's files only
     single: bool = False
+    # Single run: the stem of the mzML file shown (run_id is the workflow run that processed it)
+    file: str | None = None
 
 
 def panel(module: str) -> Callable:
@@ -248,23 +278,11 @@ def experiment_member(ctx: ViewerContext, name: str = "") -> str:
     return ctx.member if ctx.member in members else ctx.run_id
 
 
-def member_label(workspace, member: str) -> str:
-    """A run of an experiment under **Files of**: its name and how many files it processed."""
-    from src.common.results_helpers import get_runs
-
-    runs = get_runs(workspace)
-    files = runs.params(member).get("mzML-files") or []
-    count = 1 if isinstance(files, str) else len(files)
-    return f"{(runs.get(member) or {}).get('name') or member} ({count} {'file' if count == 1 else 'files'})"
-
-
 MEMBER_HELP = (
-    "This experiment's files were processed in several runs (Process more files). "
-    "All runs: abundances, the group comparison, PCA and the heatmaps cover all of them, and "
-    "identifications and quality control show the first run's files. Single run: everything "
-    "covers the files of the run picked here only."
+    "Comparison: the experiment as a whole, its samples compared (abundances, group comparison, "
+    "PCA, heatmaps) and its identifications and quality control. Single run: one LC-MS run of it, "
+    "its chromatogram, spectra, peak map and PSMs."
 )
-LONE_HELP = "Process more files with this run's settings, to analyse them with its files as one experiment."
 
 
 def renderers(ctx: ViewerContext) -> Dict[str, Callable[[], None]]:

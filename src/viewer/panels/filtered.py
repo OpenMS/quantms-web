@@ -25,9 +25,16 @@ def render(ctx) -> None:
     if not filter_files:
         st.warning("No filtering output files found.")
         return
-    selected_file = st.selectbox(
-        "Select filtering result file", filter_files, format_func=lambda x: x.name, key=scoped("filtered_file")
-    )
+    stem = getattr(ctx, "file", None)
+    if stem:
+        # Single run: the PSMs of that run's file
+        selected_file = next((f for f in filter_files if f.stem in (f"{stem}_filter", f"{stem}_prose_perc_filter")), None)
+        if selected_file is None:
+            return needs_results("No PSMs of this run after filtering.")
+    else:
+        selected_file = st.selectbox(
+            "Select filtering result file", filter_files, format_func=lambda x: x.name, key=scoped("filtered_file")
+        )
     cache_id_prefix = selected_file.stem
     # Check if cache exists
     if not ensure_psm_views(run_dir / "results", selected_file, run_params):
