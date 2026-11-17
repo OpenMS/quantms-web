@@ -102,6 +102,16 @@ def read_tables(path: Path) -> dict[str, pl.DataFrame]:
     }), "peaks": peaks, "ms1": ms1, "chromatogram": chromatogram}
 
 
+def spectra(peaks: pl.DataFrame) -> pl.DataFrame:
+    """One row per spectrum in the columns of the library's raw spectrum
+    (``ms_data.spectrum``): its peaks as ``MonoMass_Anno``/``SumIntensity_Anno``
+    and, since OpenDDA does not deconvolve, empty mass lists."""
+    return (peaks.group_by("index", maintain_order=True)
+            .agg(pl.col("mz").alias("MonoMass_Anno"), pl.col("intensity").alias("SumIntensity_Anno"))
+            .with_columns(pl.lit([], dtype=pl.List(pl.Float64)).alias("MonoMass"),
+                          pl.lit([], dtype=pl.List(pl.Float64)).alias("SumIntensity")))
+
+
 def state(ctx):
     """The Insight state the components of one Single run share (a picked
     spectrum stays picked across its views)."""

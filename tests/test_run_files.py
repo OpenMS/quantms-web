@@ -33,3 +33,17 @@ def test_read_tables_gives_scans_peaks_peak_map_and_chromatogram():
     chromatogram = tables["chromatogram"]
     assert set(chromatogram["series"].unique()) == {"TIC", "Base peak"}
     assert chromatogram.height == 2 * scans.filter(scans["MSLevel"] == 1).height
+
+
+def test_spectra_feed_the_library_raw_spectrum(tmp_path):
+    import polars as pl
+
+    insight = pytest.importorskip("openms_insight")
+    from src.viz.ms_data import spectrum
+
+    peaks = pl.DataFrame({"index": [0, 0, 1], "mz": [100.0, 200.0, 300.0], "intensity": [1.0, 2.0, 3.0]})
+    frame = run_files.spectra(peaks)
+    assert frame["MonoMass_Anno"].to_list() == [[100.0, 200.0], [300.0]]
+    assert frame["MonoMass"].to_list() == [[], []]
+    settings = spectrum.settings("scan", signal_column=None)
+    insight.DeconvolvedSpectrum(cache_id="t", data=frame.lazy(), cache_path=str(tmp_path), **settings)
