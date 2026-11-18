@@ -7,7 +7,8 @@ from src.common.fragment_plots import fragment_error_plot, ion_table, ion_table_
 from src.common.precursor_xic_view import show_precursor_xic
 from src.common.result_filters import q_suggestions
 from src.common.sequence_display import filtered_psm_table, sequence_mode_selector
-from openms_insight import Heatmap, SequenceView
+from src.common.all_psms import SELECTION, all_files_hit, all_files_table_id, file_label
+from openms_insight import Heatmap, SequenceView, Table
 from src.viewer.scope import needs_results, scoped, show_fig, shared_state, PSM_PRIVATE
 
 
@@ -22,6 +23,8 @@ def render(ctx) -> None:
     if not filter_files:
         st.warning("No filtering output files found.")
         return
+    if len(filter_files) > 1 and _all_files_chosen(len(filter_files)):
+        return _all_files(cache_dir, run_dir, run_params, filter_files)
     selected_file = st.selectbox(
         "Select filtering result file", filter_files, format_func=lambda x: x.name, key=scoped("filtered_file")
     )
@@ -34,7 +37,6 @@ def render(ctx) -> None:
     state_manager = shared_state("filtered", PSM_PRIVATE)
     # Load components from cache (no data parameter needed)
     heatmap = Heatmap(cache_id=f"heatmap_{cache_id_prefix}", cache_path=str(cache_dir))
-    seq_view = SequenceView(cache_id=f"seqview_{cache_id_prefix}", cache_path=str(cache_dir))
     # Render components
     st.subheader("PSM Overview")
     heatmap(state_manager=state_manager, height=350, key=scoped("filtered_map"))
@@ -49,6 +51,58 @@ def render(ctx) -> None:
         selected_file,
         q_suggestions=q_suggestions(run_fdr if run_fdr < 100.0 else None),
     )
+    _psm_details(cache_dir, run_dir, run_params, selected_file, state_manager)
+
+
+ONE_FILE, ALL_FILES = "One file", "All files"
+
+
+def _all_files_chosen(count: int) -> bool:
+    """**Show**: the PSMs of one file (with its overview) or of all files in one table."""
+    choice = st.segmented_control(
+        "Show", [ONE_FILE, ALL_FILES], default=ONE_FILE, key=scoped("filtered_scope"),
+        format_func=lambda c: f"{c} ({count})" if c == ALL_FILES else c,
+        help="All files: every file's PSMs in one table, searchable by file, peptide or protein. "
+             "One file: a file's PSMs with their retention time and m/z overview.",
+    )
+    return choice == ALL_FILES
+
+
+def _all_files(cache_dir, run_dir, run_params, filter_files) -> None:
+    """Every file's PSMs in one table; the picked PSM's sequence, spectrum and fragments below it."""
+    for idxml in filter_files:
+        ensure_psm_views(run_dir / "results", idxml, run_params)
+    st.subheader("PSM Table")
+    mode = sequence_mode_selector("filtered")
+    with st.spinner("Putting the PSMs of every file together (first time only)..."):
+        table_id = all_files_table_id(cache_dir, filter_files, mode)
+    if table_id is None:
+        st.warning("Visualization cache not found. Please re-run the workflow.")
+        return
+    state_manager = shared_state("filtered", PSM_PRIVATE)
+    Table(cache_id=table_id, cache_path=str(cache_dir))(
+        state_manager=state_manager, height=533, key=scoped("filtered_all_table"),
+    )
+    hit = all_files_hit(cache_dir, table_id, state_manager.get_selection(SELECTION))
+    by_stem = {f.stem: f for f in filter_files}
+    if hit is None or hit["source"] not in by_stem:
+        st.info("Select a PSM in the table to see its sequence, spectrum and fragment ions.")
+        return
+    selected_file = by_stem[hit["source"]]
+    # The picked PSM in its own file's identifiers, which the views below and
+    # the One file table read; One file then opens on that file
+    state_manager.set_selection("identification", int(hit["id_idx"]))
+    state_manager.set_selection("file", int(hit["file_index"]))
+    state_manager.set_selection("spectrum", int(hit["scan_id"]))
+    st.session_state[scoped("filtered_file")] = selected_file
+    st.caption(f"From {file_label(selected_file)}.")
+    _psm_details(cache_dir, run_dir, run_params, selected_file, state_manager)
+
+
+def _psm_details(cache_dir, run_dir, run_params, selected_file, state_manager) -> None:
+    """The sequence, spectrum, precursor XIC and fragment ions of the PSM picked in ``selected_file``."""
+    cache_id_prefix = selected_file.stem
+    seq_view = SequenceView(cache_id=f"seqview_{cache_id_prefix}", cache_path=str(cache_dir))
     st.subheader("Peptide Sequence")
     seq_view(key=scoped(f"seqview_{cache_id_prefix}"), state_manager=state_manager, height=533)
     st.subheader("MS2 spectrum")
