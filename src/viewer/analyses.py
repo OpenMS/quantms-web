@@ -18,6 +18,7 @@ from pathlib import Path
 
 import streamlit as st
 
+from src.common.final_results import FINAL_ONLY_KEY, keeps_final_only
 from src.common.results_helpers import (
     experiment_fractions,
     get_results_dir,
@@ -53,11 +54,13 @@ _RESULTS = {
     },
     SEARCH: {
         "label": "database search hits",
-        "help": "The files shown here have no database search hits.",
+        "help": ("The files shown here have no database search hits, or the run kept only its "
+                 "final results and deleted them."),
     },
     RESCORING: {
         "label": "rescored hits",
-        "help": "The files shown here were not rescored with Percolator.",
+        "help": ("The files shown here were not rescored with Percolator, or the run kept only its "
+                 "final results and deleted the rescored hits."),
     },
     QUANTIFICATION: {
         "label": "protein abundances",
@@ -158,10 +161,37 @@ def add_files(run_id: str) -> None:
     WorkflowTest().follow_up(run_id, page=CONFIGURE_PAGE, note="to add more files", add_files="mzML-files")
 
 
+def start_keeping_everything(run_id: str) -> None:
+    """Open Describe experiment with the files and settings of ``run_id``, keeping every result."""
+    from src.WorkflowTest import WorkflowTest  # the page set up the workspace already
+    WorkflowTest().follow_up(run_id, changes={FINAL_ONLY_KEY: False}, page=CONFIGURE_PAGE,
+                             note="to keep every result")
+
+
+def dropped_results(workspace, run_id: str, missing) -> bool:
+    """Whether ``run_id`` lacks ``missing`` because it kept only its final results."""
+    wanted = {missing} if isinstance(missing, str) else set(missing or ())
+    return bool(wanted & {SEARCH, RESCORING}) and keeps_final_only(get_run_params(workspace, run_id))
+
+
 def options(workspace, run_id: str, missing) -> list:
-    """The dialog's choice for run ``run_id`` lacking ``missing``: process more files."""
+    """The dialog's choices for run ``run_id`` lacking ``missing``.
+
+    A run that kept only its final results offers to run again keeping every
+    result; every run offers to process more files.
+    """
     name = _name(get_runs(workspace), run_id)
-    return [{
+    choices = []
+    if dropped_results(workspace, run_id, missing):
+        choices.append({
+            "label": "Run again keeping every result",
+            "icon": ":material/restart_alt:",
+            "help": (f"{name} kept only its final results, so its raw search hits and rescored hits "
+                     "were deleted after it finished. This opens Describe experiment with its files "
+                     "and settings and **Keep only final results** off; the new run sits beside it."),
+            "on_click": lambda: start_keeping_everything(run_id),
+        })
+    return choices + [{
         "label": "Process more files with these settings",
         "icon": ":material/library_add:",
         "help": (f"Opens Describe experiment with the settings and groups of {name}, to pick the files "
