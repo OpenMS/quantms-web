@@ -8,7 +8,6 @@ import pandas as pd
 import plotly.express as px
 from streamlit_plotly_events import plotly_events
 import numpy as np
-import mygene
 
 from collections import defaultdict        
 from src.workflow.WorkflowManager import WorkflowManager
