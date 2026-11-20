@@ -29,11 +29,47 @@ def start_again(runs: RunManager, run_id: str) -> None:
                              page=CONFIGURE_PAGE, note="to start again")
 
 
+LEFT_OUT_NAMES = 5
+
+
+def left_out_files(runs: RunManager, run_id: str) -> list:
+    """The files of ``run_id``'s experiment that a tool failed on and the run
+    went on without (rescoring leaves out a file it cannot learn from)."""
+    if not hasattr(runs, "left_out_files"):  # a template before left-out files
+        return []
+    files = []
+    for member in runs.experiment(run_id) or [run_id]:
+        files += runs.left_out_files(member, history.FILES_KEY)
+    return list(dict.fromkeys(files))
+
+
+def process_left_out(runs: RunManager, run_id: str, files: list) -> None:
+    """Open Describe experiment with the run's settings and the left-out files
+    picked; the next run adds them to the experiment."""
+    from src.WorkflowTest import WorkflowTest  # the page set up the workspace already
+    # files= comes with left_out_files (template #599), checked by the caller
+    WorkflowTest().follow_up(  # pylint: disable=unexpected-keyword-arg
+        runs.experiment_root(run_id) or run_id, page=CONFIGURE_PAGE,
+        add_files=history.FILES_KEY, files=files, note="to process the files it left out")
+
+
 def history_section(runs: RunManager, run_id: str, key: str) -> None:
     """How ``run_id``'s experiment came about, its settings, report and provenance."""
     st.markdown("**How this result came about**")
     events = history.timeline(runs, run_id)
     st.markdown("\n".join(f"{i}. {history.event_markdown(e)}" for i, e in enumerate(events, start=1)))
+
+    left_out = left_out_files(runs, run_id)
+    if left_out:
+        names = ", ".join(Path(str(f)).name for f in left_out[:LEFT_OUT_NAMES])
+        more = len(left_out) - LEFT_OUT_NAMES
+        st.markdown("**Files left out**")
+        st.warning(
+            f"This result went on without {len(left_out)} file{'s' if len(left_out) > 1 else ''} "
+            f"a tool failed on: {names}{f' and {more} more' if more > 0 else ''}. "
+            "The processing report names each error.",
+            icon=":material/warning:",
+        )
 
     st.markdown("**Settings that differ from the defaults**")
     rows = history.changed_settings(runs, run_id)
@@ -54,6 +90,11 @@ def history_section(runs: RunManager, run_id: str, key: str) -> None:
                      help="Open Describe experiment with these files and settings. "
                           "The new run is kept next to this one."):
             start_again(runs, run_id)
+        if left_out and st.button("Process the left-out files", icon=":material/library_add:",
+                                  key=f"{key}-left-out",
+                                  help="Open Describe experiment with these settings and the left-out "
+                                       "files picked. The new run adds them to this result."):
+            process_left_out(runs, run_id, left_out)
     if has_provenance(runs, run_id):
         # Drawn inside an expander on Export results, so no expander of its own
         st.markdown("**Provenance**", help="The tools, versions and files of this run, as written to its "
