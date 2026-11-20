@@ -130,10 +130,10 @@ def render(ctx) -> None:
         key=scoped("mass_shift_histogram"), state_manager=state_manager, height=400
     )
     st.subheader("Shifts")
-    Table(cache_id=ids["shifts"], cache_path=str(cache_dir))(
+    Table(cache_id=ids["shifts"], cache_path=str(cache_dir), collapse_columns=False)(
         key=scoped("mass_shift_table"), state_manager=state_manager, height=140 + 34 * min(len(shifts), 10)
     )
     st.subheader("PSMs of the selected shift")
-    Table(cache_id=ids["psms"], cache_path=str(cache_dir))(
+    Table(cache_id=ids["psms"], cache_path=str(cache_dir), collapse_columns=False)(
         key=scoped("mass_shift_psm_table"), state_manager=state_manager, height=420
     )

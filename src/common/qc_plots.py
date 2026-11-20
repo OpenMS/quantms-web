@@ -139,19 +139,52 @@ def precursor_error_histogram(df: pd.DataFrame) -> go.Figure:
     return fig
 
 
-def psms_per_file(df: pd.DataFrame) -> go.Figure:
-    """Target PSMs per run, so a failed or weak run stands out."""
-    counts = df.loc[~df["decoy"]].groupby("file").size()
+def psms_per_file(df: pd.DataFrame) -> pd.DataFrame:
+    """Target PSMs per run (file, PSMs), so a failed or weak run stands out."""
     files = sorted(df["file"].unique())
-    counts = counts.reindex(files, fill_value=0)
-    fig = go.Figure(go.Bar(
-        x=counts.values, y=counts.index, orientation="h", marker_color=TARGET_COLOR,
-        text=[f"{v:,}" for v in counts.values], textposition="auto",
-    ))
-    fig.update_layout(
-        title="Target PSMs per file",
-        xaxis_title="Target PSMs",
-        yaxis=dict(autorange="reversed"),
-        height=max(250, 40 * len(files) + 120),
-    )
-    return fig
+    counts = df.loc[~df["decoy"]].groupby("file").size().reindex(files, fill_value=0)
+    return pd.DataFrame({"file": files, "PSMs": counts.to_numpy()})
+
+
+def _binned(values: pd.Series, edges: np.ndarray) -> np.ndarray:
+    counts, _ = np.histogram(values.dropna().to_numpy(dtype=float), bins=edges)
+    return counts
+
+
+def score_histogram(df: pd.DataFrame, bins: int = 60) -> tuple[pd.DataFrame, str, float | None]:
+    """Target and decoy PSMs per score bin as a tidy table (x, y, kind) for a line plot.
+
+    Returns the table, the score's name and None (the FDR cut-off is added by
+    ``fdr_cutoff``).
+    """
+    scores, label = _score_axis(df)
+    finite = scores.replace([np.inf, -np.inf], np.nan).dropna()
+    if finite.empty:
+        return pd.DataFrame(columns=["x", "y", "kind"]), label, None
+    edges = np.linspace(float(finite.min()), float(finite.max()) or 1.0, bins + 1)
+    if edges[0] == edges[-1]:
+        edges = np.linspace(edges[0] - 0.5, edges[0] + 0.5, bins + 1)
+    centers = (edges[:-1] + edges[1:]) / 2
+    frames = [
+        pd.DataFrame({"x": centers, "y": _binned(scores[df["decoy"] == decoy], edges).astype(float), "kind": kind})
+        for decoy, kind in ((False, "target"), (True, "decoy"))
+    ]
+    return pd.concat(frames, ignore_index=True), label, None
+
+
+def fdr_cutoff(df: pd.DataFrame, fdr: float) -> float | None:
+    """The lowest target score that passes the PSM FDR (q-value ≤ fdr)."""
+    scores, _ = _score_axis(df)
+    passing = scores[(~df["decoy"]) & (df["q_value"] <= fdr)].dropna()
+    return float(passing.min()) if len(passing) and fdr < 1.0 else None
+
+
+def mass_error_histogram(df: pd.DataFrame, bins: int = 60) -> tuple[pd.DataFrame, float | None]:
+    """Target PSMs per precursor error bin (x, y) and the median error, for a line plot."""
+    errors = df.loc[~df["decoy"], "precursor_error_ppm"].dropna()
+    if errors.empty:
+        return pd.DataFrame(columns=["x", "y"]), None
+    radius = max(1.0, float(errors.abs().quantile(0.99))) * 1.05
+    edges = np.linspace(-radius, radius, bins + 1)
+    centers = (edges[:-1] + edges[1:]) / 2
+    return pd.DataFrame({"x": centers, "y": _binned(errors.clip(-radius, radius), edges).astype(float)}), float(errors.median())

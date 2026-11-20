@@ -73,6 +73,69 @@ def test_presets_are_valid_layouts():
     for preset in PRESETS:
         assert validate_layout([preset["layout"]], CATALOG) == "", preset["name"]
         assert preset.get("help")
-    # Every component is in at least one view, besides the clustered heatmap kept for Edit layout
+    assert [p["label"] for p in PRESETS] == ["Quantification", "Pathways", "Identification", "Quality control"]
+    # Components no ready-made view shows: offered for views of the user's own
     shown = {n for p in PRESETS for row in p["layout"] for n in row}
-    assert {c["name"] for c in CATALOG} - shown == {"clustered_heatmap"}
+    assert {c["name"] for c in CATALOG} - shown == {
+        "clustered_heatmap", "psms", "psms_rescored", "psms_search", "protein_abundance",
+        "run_summary", "id_quality", "protein_explorer",
+    }
+
+
+def test_each_summary_is_in_its_own_view_only():
+    views = {p["name"]: {n for row in p["layout"] for n in row} for p in PRESETS}
+    assert [v for v, names in views.items() if "dda_summary" in names] == ["identification"]
+    assert [v for v, names in views.items() if "quant_summary" in names] == ["quantification"]
+
+
+def test_every_view_and_component_is_explained():
+    from src.viewer.teaching import COMPONENTS, VIEWS, tooltip
+
+    assert set(VIEWS) == {p["name"] for p in PRESETS}
+    assert set(COMPONENTS) == set(LABELS)
+    assert "understand_results#protein-table" in tooltip("protein_table")
+
+
+def test_default_view_follows_the_groups():
+    from src.viewer.catalog import default_view
+
+    assert default_view({"identification", "quantification", "groups"}) == "quantification"
+    assert default_view({"identification", "quantification"}) == "identification"
+    assert default_view(None) == "identification"
+
+
+def test_earlier_views_are_moved_to_the_current_ones(tmp_path):
+    import json
+
+    from src.viewer.catalog import migrate_views
+
+    path = tmp_path / "viewer.json"
+    path.write_text(json.dumps({
+        "current": "differential", "layout": [[["group_comparison"]]],
+        "views": [
+            {"name": "overview", "in_bar": True}, {"name": "identification", "in_bar": True},
+            {"name": "custom-1", "label": "Mine", "rows": [["volcano"]]},
+            {"name": "differential", "in_bar": True}, {"name": "pathways", "in_bar": False},
+        ],
+    }))
+    migrate_views(path)
+    saved = json.loads(path.read_text())
+    assert [v["name"] for v in saved["views"]] == ["pathways", "identification", "custom-1"]
+    assert "current" not in saved and "layout" not in saved
+    before = path.read_text()
+    migrate_views(path)  # once only
+    assert path.read_text() == before
+
+
+def test_abundance_profile_table():
+    import pandas as pd
+
+    from src.viewer.panels.abundance_profile import profile_table
+
+    pivot = pd.DataFrame({"ProteinName": ["sp|P1|A_HUMAN", "sp|P2|B_HUMAN"], "s1": [4.0, 0.0], "s2": [8.0, 2.0]})
+    table = profile_table(pivot, "ProteinName", {"s1": "ctrl", "s2": "drug"})
+    p1 = table[table["accession"] == "sp|P1|A_HUMAN"]
+    assert p1["x"].tolist() == [1.0, 2.0] and p1["y"].tolist() == [2.0, 3.0]
+    assert p1["group"].tolist() == ["ctrl", "drug"]
+    # An abundance of 0 is not measured
+    assert table[table["accession"] == "sp|P2|B_HUMAN"]["sample"].tolist() == ["s2"]

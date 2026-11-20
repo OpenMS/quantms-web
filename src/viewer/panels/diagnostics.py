@@ -24,7 +24,7 @@ def render(ctx) -> None:
         extra_key=str(table["Expected (%)"].iloc[0]) if len(table) else "",
         title="Identification diagnostics",
         # A row with causes wraps to about three lines
-        height=min(600, 100 + sum(110 if c else 48 for c in table["Likely causes"])),
+        height=min(600, 100 + sum(110 if isinstance(c, str) and c.strip() else 48 for c in table["Likely causes"])),
         layout="fitColumns",
         # The causes are sentences: wrap them in a wide column rather than cut them off
         column_overrides={

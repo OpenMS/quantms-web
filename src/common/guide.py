@@ -13,11 +13,11 @@ from src.common.results_helpers import get_abundance_data, get_id_column, get_sa
 
 # Page paths, so links survive a page being renamed in one place only.
 PAGES = {
-    "home": ("content/quickstart.py", "Home", "🏠"),
+    "home": ("content/quickstart.py", "Quickstart", "👋"),
     "configure": ("content/workflow_configure.py", "Describe experiment", "⚙️"),
     "run": ("content/workflow_run.py", "Run analysis", "🚀"),
     # Every result is a component of the results page
-    "viewer": ("content/viewer.py", "Explore results", "👁️"),
+    "viewer": ("content/viewer.py", "Explore results", "👀"),
     "export": ("content/workflow_export.py", "Export results", "📤"),
 }
 
