@@ -16,6 +16,27 @@ from src.common.results_helpers import (
 from openms_insight import ClusteredHeatmap
 from src.viewer.scope import needs_results, scoped, shared_state
 
+# Group annotation-bar colors, assigned in sorted-group order (the order
+# ClusteredHeatmap._preprocess() gives the unique groups).
+GROUP_PALETTE = [
+    "#00BFC4",  # teal
+    "#F8766D",  # salmon
+    "#7CAE00",  # yellow-green
+    "#C77CFF",  # lavender purple
+    "#E7B800",  # gold/amber
+    "#619CFF",  # blue
+    "#FF61C3",  # pink/magenta
+    "#00BA38",  # green
+    "#FF8C42",  # orange
+    "#00B0F6",  # sky blue
+]
+
+
+def group_colors(sample_group_map: dict) -> dict:
+    """Group name -> annotation bar colour, the same in every clustered heatmap."""
+    groups = sorted(set(sample_group_map.values()))
+    return {g: GROUP_PALETTE[i % len(GROUP_PALETTE)] for i, g in enumerate(groups)}
+
 
 def render(ctx) -> None:
     params = ctx.params
@@ -52,22 +73,6 @@ def render(ctx) -> None:
         [{"sample_id": s, "group": sample_group_map[s]} for s in sample_cols if s in sample_group_map],
         schema={"sample_id": pl.String, "group": pl.String},
     )
-    # Assign group annotation-bar colors in sorted-group order (matching how
-    # ClusteredHeatmap._preprocess() orders unique groups internally).
-    group_palette = [
-        "#00BFC4",  # teal
-        "#F8766D",  # salmon
-        "#7CAE00",  # yellow-green
-        "#C77CFF",  # lavender purple
-        "#E7B800",  # gold/amber
-        "#619CFF",  # blue
-        "#FF61C3",  # pink/magenta
-        "#00BA38",  # green
-        "#FF8C42",  # orange
-        "#00B0F6",  # sky blue
-    ]
-    unique_groups = sorted(set(sample_group_map.values()))
-    group_colors = {g: group_palette[i % len(group_palette)] for i, g in enumerate(unique_groups)}
     heatmap_component = ClusteredHeatmap(
         **plot_cache("quantms_clustered_heatmap", heatmap_z),
         id_col=id_col,
@@ -79,7 +84,7 @@ def render(ctx) -> None:
         x_label="Samples",
         y_label="Proteins",
         intensity_label="Z-score",
-        group_colors=group_colors,
+        group_colors=group_colors(sample_group_map),
     )
     state_manager = shared_state()
     # Scale height with the number of proteins so row labels stay readable -
