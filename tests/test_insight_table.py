@@ -108,3 +108,23 @@ def test_to_polars_applies_column_overrides():
     assert by_title["a.b"]["formatter"] == "money"
     assert by_title["a.b"]["field"] == "a_b"
     assert by_title["c"]["visible"] is False
+
+
+def test_table_options_keeps_only_what_the_installed_table_takes(monkeypatch):
+    from src.common import insight_tables
+
+    class OlderTable:
+        def __init__(self, cache_id, cache_path=None, show_position=False):
+            pass
+
+    monkeypatch.setattr(insight_tables, "Table", OlderTable)
+    options = insight_tables.table_options(show_position=True, level=1, narrowed_labels={"protein": "Protein"})
+    # Options of a newer release are left out, not passed on as unknown settings
+    assert options == {"show_position": True}
+
+
+def test_table_options_passes_options_of_the_installed_table():
+    from src.common.insight_tables import table_options
+
+    assert table_options(page_size=50) == {"page_size": 50}
+    assert table_options() == {}

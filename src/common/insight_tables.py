@@ -5,6 +5,7 @@ full-scale runs. An openms-insight ``Table`` caches the data on disk once and
 sends one page at a time; its download button exports every row and column.
 """
 import hashlib
+import inspect
 import shutil
 import tempfile
 from pathlib import Path
@@ -17,6 +18,16 @@ from openms_insight import Table
 ROW_FIELD = "row"
 # Rows sampled when fingerprinting a dataframe that has no source files.
 _FINGERPRINT_SAMPLE_ROWS = 2000
+
+
+def table_options(**options) -> dict:
+    """The display options the installed openms-insight's ``Table`` takes.
+
+    An option of a newer release is left out on an older one rather than
+    passed on as an extra setting, which would end up in the table's cache.
+    """
+    accepted = inspect.signature(Table.__init__).parameters
+    return {name: value for name, value in options.items() if name in accepted}
 
 
 def _fingerprint_dataframe(df: pd.DataFrame) -> str:
@@ -108,6 +119,7 @@ def show_insight_table(
     page_size: int = 100,
     state_manager=None,
     column_overrides: dict | None = None,
+    display: dict | None = None,
     **table_kwargs,
 ) -> Table:
     """Render ``df`` as a server-side paginated openms-insight table, and return it.
@@ -137,6 +149,9 @@ def show_insight_table(
         column_overrides: Extra Tabulator column settings per column name,
             e.g. a ``formatter``. openms-insight stores floats as float32, so
             a column of rounded values needs one to display without noise.
+        display: Display options that are no part of the cache, such as
+            ``level`` or ``narrowed_labels``; those the installed
+            openms-insight does not have yet are left out.
         **table_kwargs: Passed on to ``Table`` (e.g. ``initial_sort``).
     """
     cache_dir = Path(cache_dir) if cache_dir else _default_cache_dir()
@@ -162,7 +177,9 @@ def show_insight_table(
         )
 
     # Every column stays; a table narrower than its columns scrolls sideways
-    table = Table(cache_id=cache_id, cache_path=str(cache_dir), collapse_columns=False)
+    table = Table(
+        cache_id=cache_id, cache_path=str(cache_dir), collapse_columns=False, **table_options(**(display or {}))
+    )
     from src.viewer.scope import scoped
 
     table(key=scoped(f"insight_table_{name}"), height=height, state_manager=state_manager)

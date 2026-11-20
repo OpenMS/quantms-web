@@ -115,6 +115,20 @@ def protein_count(data: ProteinData) -> int:
     return int((~data.proteins["contaminant"].astype(bool)).sum())
 
 
+# Proteins, their peptides and those peptides' PSMs: Enter (or a double click)
+# goes one table down, Backspace one up, each table says where its picked row
+# is ("3 of 132") and what the tables above narrow it to.
+LEVELS = {
+    "proteins": {"level": 0, "show_position": True},
+    "peptides": {"level": 1, "show_position": True, "narrowed_labels": {"protein": "Protein"}},
+    "psms": {
+        "level": 2,
+        "show_position": True,
+        "narrowed_labels": {"protein": "Protein", "peptide": "Peptide"},
+    },
+}
+
+
 def protein_table(data: ProteinData) -> None:
     """The identified proteins; picking one narrows the components below it."""
     proteins = data.proteins
@@ -133,6 +147,7 @@ def protein_table(data: ProteinData) -> None:
         height=420,
         state_manager=shared_state(),
         interactivity={"protein": "accession"},
+        display=LEVELS["proteins"],
         column_overrides={
             "coverage (%)": decimals(1),
             "contaminant": {"formatter": "tickCross", "sorter": "boolean", "visible": False},
@@ -167,6 +182,7 @@ def protein_peptides(data: ProteinData) -> None:
         state_manager=state_manager,
         filters={"protein": "accession"},
         interactivity={"peptide": "peptide"},
+        display=LEVELS["peptides"],
         column_overrides={"accession": HIDDEN},
     )
     # The coverage below the table, so the table starts level with the protein table
@@ -187,6 +203,7 @@ def protein_psms(data: ProteinData) -> None:
         state_manager=shared_state(),
         filters={"protein": "accession", "peptide": "peptide"},
         interactivity={"psm": "psm"},
+        display=LEVELS["psms"],
         extra_key="with-psm-id-v3",  # the cache follows the source files; name the newer psm column and layout
         column_overrides={
             "accession": HIDDEN,
