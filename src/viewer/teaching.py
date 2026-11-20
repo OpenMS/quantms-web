@@ -32,7 +32,8 @@ VIEWS = {
         "files: how many spectra each identified, and which fall short. The second checks the search: "
         "target and decoy scores should separate, and precursor errors should centre near zero. The "
         "last rows check the steps of the group comparison: missing values, normalization, the values "
-        "filled in for missing ones and the p-values."
+        "filled in for missing ones and the p-values. The sample correlation at the end shows whether "
+        "the replicates of a group resemble each other more than the other samples."
     ),
 }
 
@@ -123,6 +124,12 @@ COMPONENTS = {
         "Principal component analysis places each sample by its protein abundances, so that similar "
         "samples lie close together. Samples of one group should cluster; one far from its group may be "
         "an outlier."
+    ),
+    "sample_correlation": (
+        "How alike the measured protein abundances of every two samples are (Pearson correlation of the "
+        "log2 abundances), clustered so that similar samples sit together, with the group bar on top. "
+        "Replicates of one group should form a block; a sample correlating less with all others is "
+        "named below the plot as one to check. Each pair uses the proteins measured in both."
     ),
     "heatmap": "The abundance of the most variable proteins in every sample, scaled per protein.",
     "clustered_heatmap": "The heatmap with proteins and samples ordered by similarity, so groups of proteins that behave alike stand out.",

@@ -28,6 +28,7 @@ _COMPONENTS = [
     ("mass_shifts", "Mass shifts", "Identification", "mass_shifts"),
     ("protein_abundance", "Protein and peptide abundances", "Quantification", "abundance"),
     ("abundance_profile", "Abundance of the picked protein per sample", "Quantification", "abundance_profile"),
+    ("sample_correlation", "Sample correlation", "Quality control", "sample_correlation"),
     ("group_comparison", "Group comparison", "Quantification", "compare_groups"),
     ("volcano", "Volcano plot", "Quantification", "volcano"),
     ("pca", "Sample similarity (PCA)", "Quantification", "pca"),
@@ -67,6 +68,7 @@ NEEDS = {
     "protein_abundance": "quantification",
     "abundance_profile": "quantification",
     "pca": "quantification",
+    "sample_correlation": ["quantification", "samples"],
     "heatmap": ["quantification", "samples"],
     "clustered_heatmap": ["quantification", "samples"],
     "group_comparison": ["quantification", "groups"],
@@ -82,7 +84,7 @@ NEEDS = {
 # the runs that processed more files for it). The others show the files of one
 # run of it, picked above them.
 EXPERIMENT_WIDE = {
-    "quant_summary", "protein_abundance", "abundance_profile", "group_comparison", "volcano", "pca", "heatmap",
+    "quant_summary", "protein_abundance", "abundance_profile", "sample_correlation", "group_comparison", "volcano", "pca", "heatmap",
     "clustered_heatmap", "go_enrichment", "comparison_missing_values", "comparison_imputed_values",
     "comparison_normalization", "comparison_pvalues",
 }
@@ -133,6 +135,7 @@ PRESETS = [
             ["qc_scores", "qc_mass_error"],
             ["comparison_missing_values", "comparison_normalization"],
             ["comparison_imputed_values", "comparison_pvalues"],
+            ["sample_correlation"],
         ],
         "help": "Whether the identifications and the group comparison can be trusted.",
     },
