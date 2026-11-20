@@ -4,7 +4,9 @@ from pathlib import Path
 import streamlit as st
 
 from src.common.insight_tables import show_insight_table
-from src.common.qpx_export import app_version, export_run, provenance_table, qpx_paths, read_provenance
+from src.common.qpx_export import (
+    app_version, export_run, export_views, provenance_table, qpx_paths, read_provenance, view_paths,
+)
 from src.workflow.RunManager import RunManager
 
 
@@ -34,6 +36,16 @@ def provenance(runs: RunManager, run_id: str) -> None:
                     return
             st.rerun()
         return
+    views = view_paths(results_dir)
+    if not views["run"].is_file():
+        # Written before the run and protein group views existed: they come from
+        # the run's own tables, so add them without asking
+        try:
+            export_views(results_dir, runs.params(run_id))
+        except Exception as e:  # the provenance below still shows
+            st.caption(f"Could not add the QPX run and protein group views: {e}")
+    written = [n for n, p in {**paths, **views}.items() if p.is_file()]
+    st.caption("QPX views of this run: " + ", ".join(written) + f" (in {results_dir.name}/qpx/).")
     rows = read_provenance(paths["provenance"])
     table = provenance_table(rows)
     tools = [r for r in rows if r["tool_name"].startswith("OpenMS/")]
