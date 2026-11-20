@@ -32,7 +32,8 @@ VIEWS = {
         "files: how many spectra each identified, and which fall short. The second checks the search: "
         "target and decoy scores should separate, and precursor errors should centre near zero. The "
         "last rows check the steps of the group comparison: missing values, normalization, the values "
-        "filled in for missing ones and the p-values."
+        "filled in for missing ones and the p-values. The variation within groups at the end shows how "
+        "reproducibly the replicates of each group were measured."
     ),
 }
 
@@ -123,6 +124,13 @@ COMPONENTS = {
         "Principal component analysis places each sample by its protein abundances, so that similar "
         "samples lie close together. Samples of one group should cluster; one far from its group may be "
         "an outlier."
+    ),
+    "cv_distribution": (
+        "How much each protein's measured abundance varies between the samples of a group: its "
+        "coefficient of variation (CV), the standard deviation divided by the mean, in percent. One curve "
+        "per group shows how the proteins' CVs are distributed; replicates measured precisely put most "
+        "proteins below 20 %. A group whose curve lies far to the right holds a sample that differs, or "
+        "was measured less reproducibly. Only measured values count, so a protein needs two of them in a group."
     ),
     "heatmap": "The abundance of the most variable proteins in every sample, scaled per protein.",
     "clustered_heatmap": "The heatmap with proteins and samples ordered by similarity, so groups of proteins that behave alike stand out.",
