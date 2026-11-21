@@ -5,10 +5,8 @@ import json
 import shutil
 import sys
 import pandas as pd
-import plotly.express as px
 from streamlit_plotly_events import plotly_events
 import numpy as np
-import mygene
 
 from collections import defaultdict        
 from src.workflow.WorkflowManager import WorkflowManager
@@ -2037,6 +2035,9 @@ class WorkflowTest(WorkflowManager):
 
     @st.fragment
     def results(self) -> None:
+        # Only this page draws plotly express figures; importing it here keeps
+        # it off the first load of the other workflow pages.
+        import plotly.express as px
 
         st.title("📊 Results")
 
