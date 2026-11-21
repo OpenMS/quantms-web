@@ -751,6 +751,7 @@ class WorkflowTest(WorkflowManager):
                 flag_parameters=["post_processing_tdc"],
                 exclude_parameters=["out_type"],
             )
+            self.render_pooled_rescoring_widget()
             self.render_prediction_features_widget()
 
         with t[3]:
@@ -1015,6 +1016,7 @@ class WorkflowTest(WorkflowManager):
                 flag_parameters=["post_processing_tdc"],
                 tool_instance_name="PercolatorAdapter-TMT",
             )
+            self.render_pooled_rescoring_widget()
             self.render_prediction_features_widget()
 
         with t[4]:
@@ -1180,6 +1182,61 @@ class WorkflowTest(WorkflowManager):
                 for k in orphaned:
                     del self.params[k]
                 self.parameter_manager.save_parameters()
+
+    def render_pooled_rescoring_widget(self) -> None:
+        """Rescore each file on its own (default) or all files in one model."""
+        self.ui.input_widget(
+            key="rescore-pooled",
+            default=False,
+            name="Rescore all files together",
+            widget_type="checkbox",
+            help=(
+                "Trains one Percolator model on the matches of every file and computes the "
+                "PSM q-values and posterior error probabilities over all of them, so the FDR "
+                "threshold means the same in every file and small or sparse files get a model "
+                "learned from the whole study. Off, each file is rescored on its own, and a file "
+                "Percolator cannot learn from is left out while the others go on."
+            ),
+        )
+
+    def rescores_pooled(self, percolator_in: list) -> bool:
+        """Whether this start rescores its files together (needs two or more)."""
+        return bool(self.params.get("rescore-pooled", False)) and len(percolator_in) > 1
+
+    def rescore_pooled(
+        self,
+        percolator_in: list,
+        percolator_results: list,
+        decoy_string: str,
+        tool_instance_name: str = None,
+    ) -> bool:
+        """Run PercolatorAdapter once over every file, then write one result per file.
+
+        The study-wide result is kept in ``percolator_all_files/``, apart from the
+        per-file results the later steps and the result views read.
+        """
+        from src.common.pooled_fdr import split_pooled
+
+        pooled_dir = Path(self.results_dir, "percolator_all_files")
+        pooled_dir.mkdir(parents=True, exist_ok=True)
+        pooled = str(pooled_dir / "all_files_per.idXML")
+        self.logger.log(f"Rescoring the matches of all {len(percolator_in)} files together")
+        with st.spinner(f"PercolatorAdapter ({len(percolator_in)} files together)"):
+            if not self.executor.run_topp(
+                "PercolatorAdapter",
+                {"in": [list(percolator_in)], "out": [pooled]},
+                {"decoy_pattern": decoy_string},  # Always propagated from upstream
+                tool_instance_name=tool_instance_name,
+            ):
+                return False
+        try:
+            counts = split_pooled(pooled, percolator_in, percolator_results)
+        except (ValueError, RuntimeError) as err:
+            self.logger.log(f"ERROR: could not split the rescored matches per file: {err}", 0)
+            return False
+        for path, n in zip(percolator_results, counts):
+            self.logger.log(f"{Path(path).name}: {n} spectra with rescored matches", 1)
+        return True
 
     def render_prediction_features_widget(self) -> None:
         """Opt-in switch: AlphaPeptDeep features for Percolator (shared by both modes)."""
@@ -1550,28 +1607,33 @@ class WorkflowTest(WorkflowManager):
 
             # --- PercolatorAdapter ---
             self.logger.log("📊 Running rescoring...")
-            with st.spinner(f"PercolatorAdapter ({stem})"):
-                # A file Percolator cannot rescore (a blank, a run with too few
-                # matches to learn from) is left out; the others go on to
-                # filtering and quantification. The Run page names it.
-                if not self.executor.run_topp(
-                    "PercolatorAdapter",
-                    {
-                        "in": percolator_in,
-                        "out": percolator_results,
-                    },
-                    {"decoy_pattern": decoy_string},  # Always propagated from upstream
-                    allow_failed=True,
-                ):
+            if self.rescores_pooled(percolator_in):
+                if not self.rescore_pooled(percolator_in, percolator_results, decoy_string):
                     self.logger.log("Workflow stopped due to error")
                     return False
-                if self.executor.failed:
-                    keep = self.executor.keep_succeeded
-                    selected_inputs = keep(selected_inputs)
-                    in_mzML = keep(in_mzML)
-                    search_results = keep(search_results)
-                    percolator_results = keep(percolator_results)
-                    filter_results = keep(filter_results)
+            else:
+                with st.spinner(f"PercolatorAdapter ({stem})"):
+                    # A file Percolator cannot rescore (a blank, a run with too few
+                    # matches to learn from) is left out; the others go on to
+                    # filtering and quantification. The Run page names it.
+                    if not self.executor.run_topp(
+                        "PercolatorAdapter",
+                        {
+                            "in": percolator_in,
+                            "out": percolator_results,
+                        },
+                        {"decoy_pattern": decoy_string},  # Always propagated from upstream
+                        allow_failed=True,
+                    ):
+                        self.logger.log("Workflow stopped due to error")
+                        return False
+                    if self.executor.failed:
+                        keep = self.executor.keep_succeeded
+                        selected_inputs = keep(selected_inputs)
+                        in_mzML = keep(in_mzML)
+                        search_results = keep(search_results)
+                        percolator_results = keep(percolator_results)
+                        filter_results = keep(filter_results)
 
             if not self._has_identifications(percolator_results, "rescoring"):
                 return False
@@ -1881,18 +1943,26 @@ class WorkflowTest(WorkflowManager):
 
             # --- PercolatorAdapter ---
             self.logger.log("📊 Running rescoring...")
-            with st.spinner(f"PercolatorAdapter"):
-                if not self.executor.run_topp(
-                    "PercolatorAdapter",
-                    {
-                        "in": percolator_in,
-                        "out": percolator_results,
-                    },
-                    {"decoy_pattern": decoy_string},  # Always propagated from upstream
+            if self.rescores_pooled(percolator_in):
+                if not self.rescore_pooled(
+                    percolator_in, percolator_results, decoy_string,
                     tool_instance_name="PercolatorAdapter-TMT",
                 ):
                     self.logger.log("Workflow stopped due to error")
                     return False
+            else:
+                with st.spinner(f"PercolatorAdapter"):
+                    if not self.executor.run_topp(
+                        "PercolatorAdapter",
+                        {
+                            "in": percolator_in,
+                            "out": percolator_results,
+                        },
+                        {"decoy_pattern": decoy_string},  # Always propagated from upstream
+                        tool_instance_name="PercolatorAdapter-TMT",
+                    ):
+                        self.logger.log("Workflow stopped due to error")
+                        return False
             if not self._has_identifications(percolator_results, "rescoring"):
                 return False
 
