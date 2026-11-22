@@ -290,7 +290,7 @@ def test_export_views_write_qpx_pg_and_run_files(tmp_path):
     assert meta["file_type"] == "pg_file" and meta["identity_composite"] == "pg_accessions,grouped_runs,label"
     run = pq.read_table(out["run"])
     assert run.schema.equals(RUN_SCHEMA, check_metadata=False) and run.num_rows == 3
-    # An isobaric run has no pg view from this table, only the run view
+    # An isobaric run without its protein table gets the run view only
     iso = export_views(tmp_path / "iso", {"analysis-mode": "TMT", "mzML-files": ["x.mzML"]})
     assert "pg" not in iso and pq.read_table(iso["run"]).num_rows == 1
 
@@ -302,3 +302,84 @@ def test_run_enzyme_comes_from_the_search_step_of_the_provenance():
               "config": json.dumps({"Search:enzyme": "Lys-C"})}]
     rows = run_rows({"mzML-files": ["a.mzML"]}, None, None, steps)
     assert rows[0]["enzymes"] == ["Lys-C"] and rows[0]["samples"][0]["sample_accession"] == "a"
+
+
+ISOBARIC_TABLE = (
+    "# Protein abundances computed from file 'merged.consensusXML'\n"
+    "protein\tn_proteins\tprotein_score\tn_peptides\tabundance_sample1[unknown]\t"
+    "abundance_sample2[unknown]\tabundance_sample3[unknown]\tratio_sample2[unknown]/sample1[unknown]\n"
+    "P1/P2\t2\t0.99\t5\t100\t200\t0\t2\n"
+    "DECOY_P3\t1\t0.5\t1\t10\t20\t30\t2\n"
+    "CON__P4\t1\t0.9\t2\t1\tnan\t3\t1\n"
+)
+TMT_PARAMS = {
+    "analysis-mode": "TMT",
+    "mzML-files": ["set_F1.mzML", "set_F2.mzML"],
+    "IsobaricAnalyzer-TMT": {"type": "tmt11plex"},
+}
+
+
+def _isobaric_run(tmp_path):
+    quant = tmp_path / "quant_results"
+    quant.mkdir(parents=True)
+    (quant / "openms_design_protein_openms.csv").write_text(ISOBARIC_TABLE)
+    return tmp_path
+
+
+def test_isobaric_pg_rows_one_per_group_and_channel(tmp_path):
+    from src.common.qpx_export import derive_id, isobaric_pg_rows, read_isobaric_proteins
+
+    proteins = read_isobaric_proteins(_isobaric_run(tmp_path))
+    rows = isobaric_pg_rows(proteins, "tmt11plex", ["set_F2", "set_F1"])
+    assert len(rows) == 9  # three groups, three channels; the ratio column is not a channel
+    first = rows[:3]
+    assert [r["label"] for r in first] == ["TMT126", "TMT127N", "TMT127C"]
+    assert [r["intensity"] for r in first] == [100.0, 200.0, 0.0]
+    assert first[0]["pg_accessions"] == ["P1", "P2"] and first[0]["anchor_protein"] == "P1"
+    assert first[0]["grouped_runs"] == ["set_F1", "set_F2"]
+    assert first[0]["pg_id"] == derive_id([["P1", "P2"], ["set_F1", "set_F2"], "TMT126"])
+    assert len({r["pg_id"] for r in rows}) == 9 and len({r["pg_group_id"] for r in first}) == 1
+    assert first[0]["peptide_counts"] == {"unique_sequences": 5, "total_sequences": 5}
+    assert rows[3]["is_decoy"] and not rows[3]["contaminant"]
+    assert rows[6]["contaminant"] and rows[7]["intensity"] is None
+
+
+def test_itraq_channels_are_labelled_itraq():
+    import pandas as pd
+    from src.common.qpx_export import isobaric_channels
+
+    cols = ["protein", "abundance_sample2[unknown]", "abundance_sample1[unknown]"]
+    assert isobaric_channels(pd.Index(cols), "itraq4plex") == [
+        ("abundance_sample1[unknown]", 1, "iTRAQ114"),
+        ("abundance_sample2[unknown]", 2, "iTRAQ115"),
+    ]
+
+
+def test_export_views_write_an_isobaric_pg_and_channel_samples(tmp_path):
+    from src.common.qpx_export import PG_SCHEMA, export_views, views_missing
+
+    results = _isobaric_run(tmp_path)
+    assert views_missing(results, TMT_PARAMS)
+    out = export_views(results, TMT_PARAMS)
+    assert out["protein_groups"] == 9
+    pg = pq.read_table(out["pg"])
+    assert pg.schema.equals(PG_SCHEMA, check_metadata=False)
+    runs = pq.read_table(out["run"]).to_pylist()
+    assert [r["run_file_name"] for r in runs] == ["set_F1", "set_F2"]
+    assert [(s["sample_accession"], s["label"]) for s in runs[0]["samples"]] == [
+        ("sample1", "TMT126"), ("sample2", "TMT127N"), ("sample3", "TMT127C"),
+    ]
+    assert not views_missing(results, TMT_PARAMS)
+
+
+def test_isobaric_run_view_without_pg_is_completed(tmp_path):
+    from src.common.qpx_export import RUN_SCHEMA, view_paths, views_missing, write_table
+
+    results = _isobaric_run(tmp_path)
+    # A run exported before the isobaric pg view: the run view is there, the pg view not
+    write_table([], RUN_SCHEMA, view_paths(results)["run"], {})
+    assert views_missing(results, TMT_PARAMS)
+    # Without the protein table there is nothing to add
+    bare = tmp_path / "bare"
+    write_table([], RUN_SCHEMA, view_paths(bare)["run"], {})
+    assert not views_missing(bare, TMT_PARAMS)
