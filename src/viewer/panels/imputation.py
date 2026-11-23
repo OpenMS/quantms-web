@@ -4,7 +4,6 @@ import pandas as pd
 import polars as pl
 import streamlit as st
 from src.common.common import save_params
-from src.common.postprocessing_plots import imputed_value_preview, missingness_vs_intensity
 from src.common.insight_tables import show_insight_table
 from src.common.results_helpers import (
     clear_downstream_steps,
@@ -16,7 +15,7 @@ from src.common.results_helpers import (
     postprocessing_param,
 )
 from openms_insight.analysis.imputation import impute_mar, impute_smallest_value
-from src.viewer.scope import needs_results, show_fig
+from src.viewer.scope import needs_results
 
 
 def render(ctx) -> None:
@@ -107,9 +106,11 @@ def render(ctx) -> None:
         if not grouped_samples:
             st.info("Assign sample groups in Configure to see these plots.")
         else:
-            show_fig(missingness_vs_intensity(base_df, grouped_samples), "imputation-missingness")
+            from src.viewer.comparison_plots import draw_imputed, draw_missingness
+
+            draw_missingness(base_df, grouped_samples, "imputation-missingness")
             preview_df = run_imputation().collect().to_pandas()
-            show_fig(imputed_value_preview(base_df, preview_df, grouped_samples), "imputation-preview")
+            draw_imputed(base_df, preview_df, grouped_samples, "imputation-preview")
     # --- SECTION 3: Imputation Execution ---
     if st.button("Apply Imputation", type="primary"):
         imputed_lazy = run_imputation()

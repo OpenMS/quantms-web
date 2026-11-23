@@ -203,6 +203,23 @@ def lead_accession(protein_group) -> str:
     return members[0] if members else str(protein_group)
 
 
+# What counts as a changed protein: shown by the volcano plot, the comparison
+# table and the summary tiles. Not settings of the test, so changing them
+# never computes the comparison again.
+CHANGE_KEYS = ("postproc-change-fc", "postproc-change-padj")
+CHANGE_DEFAULTS = {"postproc-change-fc": 1.0, "postproc-change-padj": 0.05}
+
+
+def change_cutoffs(params: dict) -> tuple[float, float]:
+    """(minimum |log2 fold change|, maximum adjusted p-value) a changed protein reaches."""
+    fc = params.get("postproc-change-fc", CHANGE_DEFAULTS["postproc-change-fc"])
+    padj = params.get("postproc-change-padj", CHANGE_DEFAULTS["postproc-change-padj"])
+    try:
+        return float(fc), float(padj)
+    except (TypeError, ValueError):
+        return CHANGE_DEFAULTS["postproc-change-fc"], CHANGE_DEFAULTS["postproc-change-padj"]
+
+
 def raw_p_cutoff(statistics_df: pd.DataFrame, padj: float = 0.05) -> float:
     """The p-value at which the adjusted p-value crosses ``padj``.
 

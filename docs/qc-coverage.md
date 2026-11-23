@@ -9,15 +9,15 @@ Status: **shown**, **partly** (shown, but not per file or not in every mode), **
 
 | Metric | Status | Where |
 |---|---|---|
-| Target and decoy score distribution, FDR cutoff | shown | Identification quality |
-| PSMs per file | shown | Identification quality, Run summary |
-| ID rate per file (PSMs per MS2 spectrum) and files that fall short | shown | Run summary, Diagnostics |
-| PSMs, peptides and proteins per sample | shown | Per-sample counts |
-| Precursor mass error | partly | Identification quality (all files together; not per file, not over retention time) |
+| Target and decoy score distribution, FDR cutoff | shown | Score distribution |
+| PSMs per file | shown | Files, Identification summary |
+| ID rate per file (PSMs per MS2 spectrum) and files that fall short | shown | Files, Files with few identifications |
+| PSMs, peptides and proteins per sample | shown | Counts per sample |
+| Precursor mass error | partly | Precursor mass error (all files), Files (median per file); not over retention time |
 | Precursor mass shifts and the modifications they match | shown | Mass shifts |
 | Precursor charge states per file | shown | Charge states and missed cleavages |
 | Missed cleavages per file | shown | Charge states and missed cleavages |
-| Contaminants: share of PSMs per file | partly | Diagnostics (a cause); no share of intensity per file |
+| Contaminants: share of PSMs per file | partly | Files with few identifications (a cause); no share of intensity per file |
 | Fragment mass error | missing | |
 | Peptide length distribution | missing | |
 | Identifications over retention time (per file) | missing | |
@@ -28,7 +28,7 @@ Status: **shown**, **partly** (shown, but not per file or not in every mode), **
 
 | Metric | Status | Where |
 |---|---|---|
-| MS1 and MS2 spectra per file | partly | Run summary (MS2 counts) |
+| MS1 and MS2 spectra per file | partly | Files (MS2 counts) |
 | Total ion current over retention time, per file | missing | |
 | MS2 spectra over retention time (duty cycle) | missing | |
 | Ion injection time of MS1 and MS2 spectra | missing | |

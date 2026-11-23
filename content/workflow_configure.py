@@ -44,4 +44,5 @@ wf.show_parameter_section()
 
 # A bar at the bottom of the window: opens Run analysis and starts the analysis there
 wf.show_run_button(PAGES["run"][0], label="Run analysis", summary=wf.run_bar_summary(),
+                   name_label="Experiment name",
                    help="Save these settings, open Run analysis and start the analysis of the selected runs.")

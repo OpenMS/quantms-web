@@ -155,3 +155,11 @@ def open_dialog(runs: RunManager, run_id: str | None) -> None:
     if run_id is None:
         st.switch_page(EXPORT_PAGE)
     (_export_dialog if is_local() else _download_dialog)(runs, run_id)
+
+
+def viewer_button(runs: RunManager, run_id: str | None) -> None:
+    """The experiment row's button on Explore results: the shown run's export."""
+    if st.button(verb(), icon=":material/download:" if not is_local() else ":material/output:",
+                 key="viewer_export", type="primary", width="content",
+                 help=f"{verb()} the files of the run shown below"):
+        open_dialog(runs, run_id)

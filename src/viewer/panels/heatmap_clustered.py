@@ -5,7 +5,7 @@ import streamlit as st
 import numpy as np
 import polars as pl
 from src.common.insight_tables import plot_cache
-from src.common.guide import ensure_group_comparison, show_comparison_settings
+from src.common.guide import ensure_group_comparison
 from src.common.results_helpers import (
     get_abundance_data,
     get_active_table,
@@ -87,4 +87,3 @@ def render(ctx) -> None:
     # dendrogram+heatmap composite with more than a handful of rows.
     heatmap_height = max(600, min(1400, 300 + top_n * 20))
     heatmap_component(state_manager=state_manager, height=heatmap_height, key=scoped("clustered_heatmap"))
-    show_comparison_settings()
