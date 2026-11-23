@@ -61,11 +61,10 @@ def render(ctx) -> None:
     if result is None:
         return needs_results("No target PSMs in the filtered results.")
     per_file, charges, missed, enzymes = result
+    # How to read it is on Understand your Results (the title's tooltip)
     st.caption(
-        "Target PSMs at the PSM FDR. Most precursors of a tryptic digest carry two or three "
-        "charges; many singly charged ones point to contamination. Missed cleavages are counted "
-        f"per peptide for {', '.join(enzymes)}: a large share with one or more means an "
-        "incomplete digestion. Shares in %; MC: missed cleavages."
+        f"Target PSMs at the PSM FDR · missed cleavages per peptide for {', '.join(enzymes)} · "
+        "shares in %, MC: missed cleavages."
     )
 
     key = hashlib.sha1("|".join(f"{p}:{m}" for p, m in zip(idxmls, mtimes)).encode()).hexdigest()[:10]
