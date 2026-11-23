@@ -7,6 +7,7 @@ import polars as pl
 import streamlit as st
 from openms_insight import LinePlot, Table
 from src.common.guide import page_link
+from src.common.insight_tables import run_export_info
 from src.common.mass_shifts import MIN_PSMS, mass_shift_summary, psm_mass_shifts
 from src.common.results_helpers import get_run_dir, get_run_params, search_tolerances
 from src.viewer.scope import needs_results, scoped, shared_state, zoom
@@ -130,10 +131,10 @@ def render(ctx) -> None:
         key=scoped("mass_shift_histogram"), state_manager=state_manager, height=400
     )
     st.subheader("Shifts")
-    Table(cache_id=ids["shifts"], cache_path=str(cache_dir), collapse_columns=False)(
+    Table(cache_id=ids["shifts"], cache_path=str(cache_dir), collapse_columns=False, export_info=run_export_info())(
         key=scoped("mass_shift_table"), state_manager=state_manager, height=140 + 34 * min(len(shifts), 10)
     )
     st.subheader("PSMs of the selected shift")
-    Table(cache_id=ids["psms"], cache_path=str(cache_dir), collapse_columns=False)(
+    Table(cache_id=ids["psms"], cache_path=str(cache_dir), collapse_columns=False, export_info=run_export_info())(
         key=scoped("mass_shift_psm_table"), state_manager=state_manager, height=420
     )

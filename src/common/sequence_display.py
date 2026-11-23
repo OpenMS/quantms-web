@@ -14,6 +14,7 @@ import polars as pl
 import streamlit as st
 from openms_insight import Table
 
+from src.common.insight_tables import run_export_info
 from src.common.peptide_format import DISPLAY_MODES, format_sequence
 
 # The choice lives under MODE_KEY and is shared by every PSM table. Each table
@@ -47,6 +48,12 @@ def sequence_mode_selector(name: str) -> str:
     )
     st.session_state[MODE_KEY] = mode
     return mode
+
+
+def psm_table_title(table_id: str) -> str:
+    """The title (and download name) of a PSM table: "PSMs <file>"."""
+    stem = table_id.removeprefix("table_").removesuffix("_filter")
+    return f"PSMs {stem}" if stem else "PSMs"
 
 
 def display_table_id(cache_dir: Path, table_id: str, mode: str) -> str:
@@ -86,13 +93,19 @@ def display_table_id(cache_dir: Path, table_id: str, mode: str) -> str:
         go_to_fields=config.get("go_to_fields"),
         layout=config.get("layout", "fitDataFill"),
         page_size=config.get("page_size", 100),
+        title=psm_table_title(table_id),
     )
     return variant_id
 
 
 def psm_table(cache_dir: Path, table_id: str, mode: str, state_manager, height: int = 533) -> None:
     """Render the cached PSM table ``table_id`` with its sequences in ``mode``."""
-    table = Table(cache_id=display_table_id(cache_dir, table_id, mode), cache_path=str(cache_dir), collapse_columns=False)
+    table = Table(
+        cache_id=display_table_id(cache_dir, table_id, mode),
+        cache_path=str(cache_dir),
+        collapse_columns=False,
+        export_info=run_export_info(),
+    )
     table(state_manager=state_manager, height=height)
 
 
@@ -125,7 +138,7 @@ def filtered_table_id(
     generation = str(manifest.get("cache_generation", ""))[:8]
     q_suggestions = list(q_suggestions or [])
     digest = hashlib.sha1(f"{source_id}|{json.dumps(q_suggestions, sort_keys=True)}".encode()).hexdigest()[:8]
-    prefix = f"{table_id}__f3"  # bump when the variant's layout changes
+    prefix = f"{table_id}__f4"  # bump when the variant's layout changes
     variant_id = f"{prefix}{digest}_{generation}"
     if (Path(cache_dir) / variant_id).is_dir():
         return variant_id
@@ -171,6 +184,7 @@ def filtered_table_id(
         search=[c for c in SEARCH_FIELDS if c in data.columns],
         search_placeholder=SEARCH_PLACEHOLDER,
         numeric_filters={Q_FIELD: {"op": "<=", "suggestions": q_suggestions}},
+        title=psm_table_title(table_id),
     )
     return variant_id
 
@@ -181,5 +195,5 @@ def filtered_psm_table(
 ) -> None:
     """Render the PSM table with its search box, q-value thresholds and contaminant switch."""
     variant_id = filtered_table_id(cache_dir, table_id, mode, idxml_path, q_suggestions)
-    table = Table(cache_id=variant_id, cache_path=str(cache_dir), collapse_columns=False)
+    table = Table(cache_id=variant_id, cache_path=str(cache_dir), collapse_columns=False, export_info=run_export_info())
     table(state_manager=state_manager, height=height)
