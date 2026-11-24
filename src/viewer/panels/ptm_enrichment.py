@@ -49,6 +49,20 @@ def _chart(table: pd.DataFrame, key: str) -> None:
     show_fig(fig, f"ptm_enrichment_{key}")
 
 
+def _database(ctx) -> Path | None:
+    """The protein database the shown run searched (None: not found)."""
+    database = ctx.params.get("fasta-file")
+    if not isinstance(database, str) or not database:
+        return None
+    try:
+        from src.WorkflowTest import WorkflowTest
+
+        path = Path(WorkflowTest().file_manager.get_files([database])[0])
+    except Exception:  # pylint: disable=broad-except
+        path = Path(database)
+    return path if path.is_file() else None
+
+
 def _run_result(ctx, table: pd.DataFrame, organism: str, permutations: int) -> Path | None:
     """The run's own result, when it was computed on this ranking."""
     run = shown_run() or ctx.run_id
@@ -77,16 +91,31 @@ def render(ctx) -> None:
         return
     head = heading()
     st.markdown(f"**{head.get('title') or 'PTM enrichment'}**", help=head.get("help"))
-    on, organism, permutations = psea.settings(ctx.params)
-    if not ctx.params.get("ptm-organism"):
-        organism = psea.guess_organism(statistics_df.iloc[:, 0].astype(str)) or organism
-
+    on, _, permutations = psea.settings(ctx.params)
+    detected = psea.detect(_database(ctx)) or psea.guess_organism(statistics_df.iloc[:, 0].astype(str))
+    choice = ctx.params.get("ptm-organism") or psea.AUTO
     c1, c2, c3 = st.columns([3, 1, 1], vertical_alignment="bottom")
-    organism = c1.selectbox("Organism", psea.ORGANISMS, index=psea.ORGANISMS.index(organism)
-                            if organism in psea.ORGANISMS else 0, key=scoped("ptm_organism"),
-                            help=head.get("help"))
+    choice = c1.selectbox("Organism", psea.CHOICES,
+                          index=psea.CHOICES.index(choice) if choice in psea.CHOICES else 0,
+                          key=scoped("ptm_organism"), help=head.get("help"))
+    if choice == psea.AUTO:
+        organism = detected
+    elif choice == psea.OTHER:
+        organism = psea.organism_named(st.text_input(
+            "UniProt organism name", ctx.params.get("ptm-organism-other", ""),
+            key=scoped("ptm_organism_other"), placeholder="e.g. Homo sapiens (Human)"))
+    else:
+        organism = choice
     permutations = int(c2.number_input("Permutations", 10, 100000, permutations, 100,
                                        key=scoped("ptm_permutations")))
+    if choice == psea.AUTO:
+        if organism:
+            st.caption(f"Detected: **{organism}**")
+        else:
+            st.warning("Neither the protein database nor the protein names name an organism: "
+                       "choose it in **Organism**.", icon="⚠️")
+    if not organism:
+        return
     folder = _run_result(ctx, table, organism, permutations)
     cache = Path(ctx.workspace, "insight_tables", "ptm_enrichment")
     cached = cache / psea.digest(table, organism, permutations)

@@ -14,6 +14,7 @@ Viewer does.
 from __future__ import annotations
 
 import hashlib
+import re
 import shutil
 import subprocess
 from functools import lru_cache
@@ -26,32 +27,72 @@ RESULTS = "ptm_enrichment"
 SCORES_FILE = "protein_scores.csv"
 RESULTS_FILE = "psea_results.csv"
 
-# Organisms as UniProt names them (PEIMAN2 looks them up by this name)
-ORGANISMS = [
-    "Homo sapiens (Human)",
-    "Mus musculus (Mouse)",
-    "Rattus norvegicus (Rat)",
-    "Bos taurus (Bovine)",
-    "Danio rerio (Zebrafish)",
-    "Drosophila melanogaster (Fruit fly)",
-    "Caenorhabditis elegans",
-    "Arabidopsis thaliana (Mouse-ear cress)",
-    "Saccharomyces cerevisiae (strain ATCC 204508 / S288c) (Baker's yeast)",
-    "Escherichia coli (strain K12)",
+# Organisms as UniProt names them (PEIMAN2 looks them up by this name), with
+# the species code of their UniProt entry names (``ALBU_HUMAN``)
+_KNOWN = [
+    ("HUMAN", "Homo sapiens (Human)"),
+    ("MOUSE", "Mus musculus (Mouse)"),
+    ("RAT", "Rattus norvegicus (Rat)"),
+    ("BOVIN", "Bos taurus (Bovine)"),
+    ("PIG", "Sus scrofa (Pig)"),
+    ("CANLF", "Canis lupus familiaris (Dog)"),
+    ("CHICK", "Gallus gallus (Chicken)"),
+    ("XENLA", "Xenopus laevis (African clawed frog)"),
+    ("DANRE", "Danio rerio (Zebrafish)"),
+    ("DROME", "Drosophila melanogaster (Fruit fly)"),
+    ("CAEEL", "Caenorhabditis elegans"),
+    ("ARATH", "Arabidopsis thaliana (Mouse-ear cress)"),
+    ("ORYSJ", "Oryza sativa subsp. japonica (Rice)"),
+    ("YEAST", "Saccharomyces cerevisiae (strain ATCC 204508 / S288c) (Baker's yeast)"),
+    ("SCHPO", "Schizosaccharomyces pombe (strain 972 / ATCC 24843) (Fission yeast)"),
+    ("PLAF7", "Plasmodium falciparum (isolate 3D7)"),
+    ("ECOLI", "Escherichia coli (strain K12)"),
+    ("BACSU", "Bacillus subtilis (strain 168)"),
+    ("MYCTU", "Mycobacterium tuberculosis (strain ATCC 25618 / H37Rv)"),
 ]
+ORGANISMS = [name for _, name in _KNOWN]
 DEFAULT_ORGANISM = ORGANISMS[0]
 DEFAULT_PERMUTATIONS = 1000
-# Organism hints in UniProt entry names (``ALBU_HUMAN``) and FASTA file names
-_MNEMONICS = {
-    "HUMAN": ORGANISMS[0], "MOUSE": ORGANISMS[1], "RAT": ORGANISMS[2], "BOVIN": ORGANISMS[3],
-    "DANRE": ORGANISMS[4], "DROME": ORGANISMS[5], "CAEEL": ORGANISMS[6], "ARATH": ORGANISMS[7],
-    "YEAST": ORGANISMS[8], "ECOLI": ORGANISMS[9],
-}
+# The choices of the Organism menu besides the organisms
+AUTO = "Detect automatically"
+OTHER = "Other (type its UniProt name)"
+CHOICES = [AUTO, *ORGANISMS, OTHER]
+_MNEMONICS = dict(_KNOWN)
+_HEADERS_READ = 5000  # FASTA entries read to detect the organism
 
 
-def settings(params: dict) -> tuple[bool, str, int]:
-    """(switched on, organism, permutations) of a run's or the next run's settings."""
-    organism = params.get("ptm-organism") or DEFAULT_ORGANISM
+def _scientific(name: str) -> str:
+    """``Homo sapiens`` of ``Homo sapiens (Human)``, lower case."""
+    return re.split(r"\s*\(", str(name), maxsplit=1)[0].strip().lower()
+
+
+def organism_named(name) -> str | None:
+    """The UniProt organism name of ``name``: a listed organism when its
+    scientific name matches (``Homo sapiens`` → ``Homo sapiens (Human)``),
+    else ``name`` as it is (None: empty)."""
+    name = str(name or "").strip()
+    if not name:
+        return None
+    wanted = _scientific(name)
+    for organism in ORGANISMS:
+        if _scientific(organism) == wanted:
+            return organism
+    return name
+
+
+def settings(params: dict, database=None) -> tuple[bool, str | None, int]:
+    """(switched on, organism, permutations) of a run's or the next run's
+    settings. The organism is the one chosen in the Organism menu; with
+    *Detect automatically* (and in settings saved before the menu had it,
+    without a choice) the one ``database`` (the protein FASTA) names, None
+    when it names none."""
+    choice = params.get("ptm-organism") or AUTO
+    if choice == OTHER:
+        organism = organism_named(params.get("ptm-organism-other"))
+    elif choice == AUTO:
+        organism = detect(database)
+    else:
+        organism = choice
     try:
         permutations = max(1, int(params.get("ptm-permutations", DEFAULT_PERMUTATIONS)))
     except (TypeError, ValueError):
@@ -60,14 +101,61 @@ def settings(params: dict) -> tuple[bool, str, int]:
 
 
 def guess_organism(names) -> str | None:
-    """The organism UniProt entry names or a database file name point to (None: no hint)."""
+    """The organism UniProt entry names (``ALBU_HUMAN``, ``sp|P02768|ALBU_HUMAN``)
+    or a database file name point to, by majority (None: no hint)."""
     counts: dict = {}
     for name in names:
         upper = str(name).upper()
         for mnemonic, organism in _MNEMONICS.items():
-            if f"_{mnemonic}" in upper or upper.startswith(mnemonic):
+            if re.search(rf"(?:^|[_|]){mnemonic}(?:$|[^A-Z0-9])", upper) or upper.startswith(mnemonic + "_"):
                 counts[organism] = counts.get(organism, 0) + 1
     return max(counts, key=counts.get) if counts else None
+
+
+def fasta_organism(path) -> str | None:
+    """The organism most entries of a FASTA file belong to: the ``OS=`` field
+    of UniProt headers, else the species code of their entry names (None:
+    neither, or no readable file). Reads the first entries only."""
+    try:
+        handle = open(path, encoding="utf-8", errors="replace")
+    except (OSError, TypeError):
+        return None
+    species: dict = {}
+    entries = []
+    with handle:
+        for line in handle:
+            if not line.startswith(">"):
+                continue
+            header = line[1:].strip()
+            if header.upper().startswith(("DECOY", "REV_")):
+                continue
+            entries.append(header.split()[0] if header else "")
+            found = re.search(r"\bOS=(.+?)(?:\s+[A-Z]{2}=|$)", header)
+            if found:
+                species[found.group(1).strip()] = species.get(found.group(1).strip(), 0) + 1
+            if len(entries) >= _HEADERS_READ:
+                break
+    if species:
+        return organism_named(max(species, key=species.get))
+    return guess_organism(entries)
+
+
+def detect(database) -> str | None:
+    """The organism of a protein database: from its entries, else its file name."""
+    if not database:
+        return None
+    path = Path(str(database))
+    try:
+        stamp = path.stat().st_mtime_ns
+    except OSError:
+        stamp = None
+    return _detect(str(path), stamp)
+
+
+@lru_cache(maxsize=32)
+def _detect(path: str, stamp) -> str | None:
+    found = fasta_organism(path) if stamp is not None else None
+    return found or guess_organism([Path(path).name])
 
 
 def uniprot_accession(identifier) -> str:

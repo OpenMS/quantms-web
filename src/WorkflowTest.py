@@ -536,6 +536,17 @@ class WorkflowTest(WorkflowManager):
         names = [Path(f).name for f in self._selected_runs()]
         return [params[f"mzML-group-{n}"] for n in names if params.get(f"mzML-group-{n}")]
 
+    def _database_path(self, params: dict | None = None) -> Path | None:
+        """The protein database file of ``params`` (the current settings by default)."""
+        database = (params if params is not None else self.current_params()).get("fasta-file")
+        if not isinstance(database, str) or not database:
+            return None
+        try:
+            path = Path(self.file_manager.get_files([database])[0])
+        except Exception:  # pylint: disable=broad-except
+            path = Path(database)
+        return path if path.is_file() else None
+
     def render_ptm_tab(self) -> None:
         """PTM enrichment: the organism whose UniProt annotations are tested, and
         the permutations of the test."""
@@ -547,16 +558,31 @@ class WorkflowTest(WorkflowManager):
             "**Explore results** shows the modifications in **PTM enrichment** (view *Pathways*), "
             "and computes them again when you change the comparison."
         )
-        database = self.current_params().get("fasta-file")
-        guess = psea.guess_organism([Path(database).name]) if isinstance(database, str) and database else None
         c1, c2 = st.columns([3, 2])
         with c1:
             self.ui.input_widget(
-                key="ptm-organism", default=guess or psea.DEFAULT_ORGANISM, name="Organism",
-                widget_type="selectbox", options=psea.ORGANISMS,
-                help="The organism of your samples, as UniProt names it: its UniProt entries say "
-                     "which proteins carry which modification.",
+                key="ptm-organism", default=psea.AUTO, name="Organism",
+                widget_type="selectbox", options=psea.CHOICES, reactive=True,
+                help="The organism of your samples: its UniProt entries say which proteins carry "
+                     "which modification. **Detect automatically** reads it from the protein "
+                     "database (the OS= field of UniProt headers, or entry names such as ALBU_HUMAN).",
             )
+            params = self.current_params()
+            choice = params.get("ptm-organism") or psea.AUTO
+            if choice == psea.OTHER:
+                self.ui.input_widget(
+                    key="ptm-organism-other", default="", name="UniProt organism name",
+                    widget_type="text",
+                    help="As UniProt names it, e.g. 'Homo sapiens (Human)'. A scientific name of an "
+                         "organism in the list (e.g. 'Mus musculus') is completed.",
+                )
+            elif choice == psea.AUTO:
+                detected = psea.detect(self._database_path())
+                if detected:
+                    st.caption(f"Detected from the protein database: **{detected}**")
+                else:
+                    st.warning("The protein database names no organism. Choose it here, or PTM "
+                               "enrichment is left out of the run.", icon="⚠️")
         with c2:
             self.ui.input_widget(
                 key="ptm-permutations", default=psea.DEFAULT_PERMUTATIONS, name="Permutations",
@@ -1402,8 +1428,13 @@ class WorkflowTest(WorkflowManager):
         """PTM enrichment of the run's group comparison (recommended settings), when
         switched on in Your analysis. Best effort: a missing R, too few groups or a
         failure is logged, the run still succeeds, and the Viewer can compute it later."""
-        on, organism, permutations = psea.settings(self.params)
+        on, organism, permutations = psea.settings(self.params, self._database_path(self.params))
         if not on:
+            return
+        if not organism:
+            self.logger.log("⚠️ PTM enrichment skipped: the protein database names no organism. "
+                            "Choose it under PTM enrichment on Describe experiment, or compute it "
+                            "in Explore results.")
             return
         self.logger.log("🧪 PTM enrichment of the changed proteins...")
         try:
