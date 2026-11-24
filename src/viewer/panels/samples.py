@@ -8,6 +8,7 @@ from src.common.results_helpers import get_abundance_data, get_sample_group_map,
 from src.common.samples import COUNT_COLUMNS, channel_samples, condition_summary, lfq_samples, short_sample_names
 from openms_insight.core.settings import setting_value
 from src.viewer.scope import scoped, shared_state
+from src.viz.quantification import sample_counts
 
 
 def render(ctx) -> None:
@@ -77,8 +78,7 @@ def render(ctx) -> None:
     with plot_column:
         show_series(
             bars, f"samples_{metric.lower().replace(' ', '_')}",
-            height=max(260, row_height), x_column="Sample", y_column=metric, series_column="Condition",
-            mode="bars", orientation="h", x_label="Sample", y_label=metric, y_range_mode="nonnegative",
+            height=max(260, row_height), **sample_counts.settings(metric),
             state_manager=state_manager, toolbar_settings=[count_setting],
             note="Samples without a group are shown as Unassigned."
             if (samples["Condition"] == "Unassigned").any() else None,

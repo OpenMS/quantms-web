@@ -7,7 +7,7 @@ from src.common.differential import comparison_groups, lead_accession, raw_p_cut
 from src.common.guide import ensure_group_comparison
 from src.common.insight_tables import _default_cache_dir
 from src.common.results_helpers import get_abundance_data, get_id_column, get_sample_group_map
-from src.viz.volcano import short_label, show_volcano
+from src.viz.quantification.volcano import short_label, show_volcano
 from src.viewer.scope import GO_SET, heading, change_cutoffs, needs_results, scoped, shared_state, zoom
 
 

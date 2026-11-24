@@ -1,5 +1,4 @@
 """Helper functions for results pages."""
-import copy
 import json
 import re
 import pandas as pd
@@ -19,6 +18,7 @@ from src.common.fractions import fraction_samples, sample_of
 from src.common.contaminants import drop_contaminants, is_contaminant
 from src.common.peptide_format import to_proforma
 from src.common.isobaric import channel_column_names, label_type
+from src.viz.identification import psm_table
 
 UNASSIGNED = "Unassigned"
 # Columns the group comparison adds to a protein table
@@ -326,27 +326,13 @@ ID_DF_SCHEMA = {
 
 # Columns of the PSM tables. The ones with "visible": False start hidden and can
 # be shown from the table's column menu; the CSV download has every column.
-PSM_TABLE_COLUMNS = [
-    {"field": "sequence", "title": "Sequence"},
-    {"field": "charge", "title": "Z", "sorter": "number"},
-    {"field": "mz", "title": "m/z", "sorter": "number"},
-    {"field": "rt", "title": "RT", "sorter": "number"},
-    {"field": "score", "title": "Score", "sorter": "number"},
-    # Only decoys get a mark (a tick, no cross on targets), so they stand out. Next to
-    # the score, so it stays in view when a narrow table folds the last columns away.
-    {"field": "decoy", "title": "Decoy", "formatter": "tickCross", "formatterParams": {"crossElement": False},
-     "sorter": "boolean", "hozAlign": "center"},
-    {"field": "protein_accession", "title": "Proteins"},
-    {"field": "contaminant", "title": "Contaminant", "formatter": "tickCross", "sorter": "boolean"},
-    {"field": "proforma", "title": "ProForma", "visible": False},
-    {"field": "filename", "title": "File", "visible": False},
-    {"field": "scan_id", "title": "Scan", "sorter": "number", "visible": False},
-]
+# The PSM table's columns live with the library component
+PSM_TABLE_COLUMNS = psm_table.COLUMNS
 
 
 def psm_table_columns() -> list[dict]:
     """A fresh copy of PSM_TABLE_COLUMNS for one Table."""
-    return copy.deepcopy(PSM_TABLE_COLUMNS)
+    return psm_table.columns()
 
 
 def is_decoy_hit(hit) -> bool:

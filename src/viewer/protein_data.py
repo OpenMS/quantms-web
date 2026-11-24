@@ -19,12 +19,9 @@ from src.common.result_filters import add_protein_flags, file_conditions, max_re
 from src.common.results_helpers import get_run_dir, get_run_params
 from src.viewer.scope import heading, retitle, scoped, shared_state
 
-# Columns the linked tables filter on: already shown by the selection above them
-HIDDEN = {"visible": False}
-
-
-def decimals(n: int) -> dict:
-    return {"formatter": "money", "formatterParams": {"thousand": False, "precision": n}}
+from src.viz.identification import protein_peptides as protein_peptides_view
+from src.viz.identification import protein_psms as protein_psms_view
+from src.viz.identification import protein_table as protein_table_view
 
 
 @st.cache_data(show_spinner="Reading the identifications...")
@@ -138,31 +135,20 @@ def protein_table(data: ProteinData) -> None:
     if proteins.empty:
         st.info("No target proteins were identified.")
         return
+    shown = proteins.assign(not_contaminant=~proteins["contaminant"])
     show_insight_table(
-        proteins.assign(not_contaminant=~proteins["contaminant"]),
+        shown,
         name="proteins",
         cache_dir=data.cache_dir,
         source_files=data.source_files,
         extra_key=f"menu-v1|{'per-sample' if data.sample_of else ''}|{sorted(data.conditions.items())}",
-        title="Proteins",
         height=420,
         state_manager=shared_state(),
-        interactivity={"protein": "accession"},
-        column_overrides={
-            "coverage (%)": decimals(1),
-            "contaminant": {"formatter": "tickCross", "sorter": "boolean", "visible": False},
-            "not_contaminant": HIDDEN,
-            **(
-                {"replicates": {"headerTooltip": "Most files of one condition with a PSM of this protein"}}
-                if "replicates" in proteins.columns
-                else {}
+        **protein_table_view.settings(
+            list(shown.columns),
+            protein_numeric_filters(
+                max_replicates(data.conditions, data.sample_of) if "replicates" in proteins.columns else 0
             ),
-        },
-        toggle_filters=[{"label": "Hide contaminants", "column": "not_contaminant", "default": True}],
-        search=[c for c in ("accession", "gene", "description") if c in proteins.columns],
-        search_placeholder="Accession, gene or name",
-        numeric_filters=protein_numeric_filters(
-            max_replicates(data.conditions, data.sample_of) if "replicates" in proteins.columns else 0
         ),
     )
 
@@ -177,12 +163,9 @@ def protein_peptides(data: ProteinData) -> None:
         cache_dir=data.cache_dir,
         source_files=data.source_files,
         extra_key="per-sample" if data.sample_of else "",
-        title="Peptides",
         height=420,
         state_manager=state_manager,
-        filters={"protein": "accession"},
-        interactivity={"peptide": "peptide"},
-        column_overrides={"accession": HIDDEN},
+        **protein_peptides_view.settings(),
     )
     # The coverage below the table, so the table starts level with the protein table
     if selected in data.coverage and selected in data.fasta_entries:
@@ -197,19 +180,10 @@ def protein_psms(data: ProteinData) -> None:
         name="protein_psms",
         cache_dir=data.cache_dir,
         source_files=data.source_files,
-        title="PSMs",
         height=860,
         state_manager=shared_state(),
-        filters={"protein": "accession", "peptide": "peptide"},
-        interactivity={"psm": "psm"},
         extra_key="with-psm-id-v3",  # the cache follows the source files; name the newer psm column and layout
-        column_overrides={
-            "accession": HIDDEN,
-            "peptide": HIDDEN,
-            "psm": HIDDEN,
-            "RT (s)": decimals(1),
-            "m/z": decimals(4),
-        },
+        **protein_psms_view.settings(),
     )
 
 

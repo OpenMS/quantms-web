@@ -148,6 +148,27 @@ COMPONENTS = {
         "The distribution of the comparison's p-values. Flat with a peak near zero means some proteins "
         "differ; flat only means none do; a peak elsewhere hints at a test that does not fit the data."
     ),
+    "file_chromatogram": (
+        "The run's total ion chromatogram (TIC, the summed intensity of each MS1 spectrum) and base "
+        "peak chromatogram (its highest peak) over retention time. Click a point to pick that spectrum. "
+        "Gaps or a sudden drop point at a spray or chromatography problem."
+    ),
+    "file_scans": (
+        "Every spectrum of the run: its scan number, MS level, retention time, precursor mass (MS2) "
+        "and number of peaks. Pick a row to show the spectrum beside it."
+    ),
+    "file_spectrum": (
+        "The picked spectrum as recorded, m/z against intensity, with its highest peaks labelled. "
+        "Zoom in by dragging."
+    ),
+    "file_peak_map": (
+        "The MS1 peaks of the run, retention time against mass, coloured by intensity. Peptides show "
+        "as short streaks; zoom in to see their isotope patterns. The picked spectrum is marked."
+    ),
+    "file_psms": (
+        "The peptide-spectrum matches (PSMs) of this run after the false discovery rate filter, with "
+        "the annotated spectrum of the picked one."
+    ),
 }
 
 
