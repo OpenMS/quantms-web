@@ -373,13 +373,97 @@ def test_export_views_write_an_isobaric_pg_and_channel_samples(tmp_path):
 
 
 def test_isobaric_run_view_without_pg_is_completed(tmp_path):
-    from src.common.qpx_export import RUN_SCHEMA, view_paths, views_missing, write_table
+    from src.common.qpx_export import RUN_SCHEMA, SAMPLE_SCHEMA, view_paths, views_missing, write_table
 
     results = _isobaric_run(tmp_path)
-    # A run exported before the isobaric pg view: the run view is there, the pg view not
+    # A run exported before the isobaric pg view: the run and sample views are there, the pg view not
     write_table([], RUN_SCHEMA, view_paths(results)["run"], {})
+    write_table([], SAMPLE_SCHEMA, view_paths(results)["sample"], {})
     assert views_missing(results, TMT_PARAMS)
     # Without the protein table there is nothing to add
     bare = tmp_path / "bare"
     write_table([], RUN_SCHEMA, view_paths(bare)["run"], {})
+    write_table([], SAMPLE_SCHEMA, view_paths(bare)["sample"], {})
     assert not views_missing(bare, TMT_PARAMS)
+
+
+# ----------------------------------------------------------------------------- sample view
+
+FASTA = (
+    ">sp|P1|A_HUMAN Protein A OS=Homo sapiens OX=9606 GN=A PE=1 SV=1\nPEPTIDEK\n"
+    ">sp|P2|B_HUMAN Protein B OS=Homo sapiens OX=9606 GN=B PE=1 SV=1\nPEPTIDER\n"
+    ">sp|P3|C_YEAST Protein C OS=Saccharomyces cerevisiae (strain ATCC 204508 / S288c) OX=559292 PE=1 SV=1\nKEDITPEP\n"
+    ">DECOY_sp|P1|A_HUMAN\nKEDITPEP\n"
+)
+SDRF = (
+    "source name\tcharacteristics[organism]\tcharacteristics[organism part]\tcharacteristics[disease]\t"
+    "characteristics[sex]\tcomment[label]\tcomment[data file]\n"
+    "patient 1\tHomo sapiens\tliver\thepatocellular carcinoma\tfemale\tlabel free sample\ta_F1.raw\n"
+    "patient 1\tHomo sapiens\tliver\thepatocellular carcinoma\tfemale\tlabel free sample\ta_F2.raw\n"
+    "patient 2\tHomo sapiens\tliver\tnormal\tnot available\tlabel free sample\tb.raw\n"
+)
+
+
+def test_the_database_names_the_organism(tmp_path):
+    from src.common.qpx_export import fasta_organism
+
+    fasta = tmp_path / "db.fasta"
+    fasta.write_text(FASTA)
+    assert fasta_organism(fasta) == "Homo sapiens"
+    (tmp_path / "plain.fasta").write_text(">P1\nPEPTIDEK\n")
+    assert fasta_organism(tmp_path / "plain.fasta") is None
+    assert fasta_organism(tmp_path / "missing.fasta") is None
+
+
+def test_sample_rows_take_condition_replicate_and_sdrf_characteristics(tmp_path):
+    from src.common.qpx_export import SAMPLE_SCHEMA, run_rows, sample_rows, sdrf_samples
+
+    sdrf = tmp_path / "PXD1.sdrf.tsv"
+    sdrf.write_text(SDRF)
+    params = {"mzML-files": ["a_F1.mzML", "a_F2.mzML", "b.mzML"],
+              "mzML-group-a_F1.mzML": "A", "mzML-group-b.mzML": "B"}
+    runs = run_rows(params, _msstats(), FRACTIONS)
+    rows = {r["sample_accession"]: r for r in sample_rows(runs, params, FRACTIONS, sdrf_samples([sdrf]), "Mus musculus")}
+    assert set(rows) == {"A_1", "B_1"}  # the two fractions of A_1 are one sample
+    a, b = rows["A_1"], rows["B_1"]
+    assert a["organism"] == "Homo sapiens" and a["organism_part"] == "liver"
+    assert a["disease"] == "hepatocellular carcinoma" and a["sex"] == "female"
+    assert a["condition"] == "A" and a["biological_replicate"] == 1 and a["source_name"] == "patient 1"
+    assert b["condition"] == "B" and b["biological_replicate"] == 2
+    assert b["sex"] is None  # "not available" in the SDRF
+    assert pa_table(list(rows.values()), SAMPLE_SCHEMA).num_rows == 2
+
+
+def test_sample_rows_without_sdrf_take_the_database_organism():
+    from src.common.qpx_export import NOT_AVAILABLE, run_rows, sample_rows
+
+    params = {"mzML-files": ["a.mzML", "b.mzML"], "mzML-group-a.mzML": "ctrl"}
+    rows = sample_rows(run_rows(params), params, organism="Homo sapiens")
+    assert [r["sample_accession"] for r in rows] == ["a", "b"]
+    assert rows[0]["organism"] == "Homo sapiens" and rows[0]["organism_part"] == NOT_AVAILABLE
+    assert rows[0]["condition"] == "ctrl" and rows[1]["condition"] is None
+    assert sample_rows(run_rows(params), params)[0]["organism"] == NOT_AVAILABLE
+
+
+def test_isobaric_samples_are_the_channels_with_their_groups(tmp_path):
+    from src.common.qpx_export import SAMPLE_SCHEMA, export_views
+
+    results = _isobaric_run(tmp_path / "wf" / "runs" / "r1" / "results")
+    sdrf_dir = tmp_path / "wf" / "pride-import" / "sdrf"
+    sdrf_dir.mkdir(parents=True)
+    (sdrf_dir / "PXD2.sdrf.tsv").write_text(
+        "source name\tcharacteristics[organism]\tcharacteristics[organism part]\tcomment[label]\tcomment[data file]\n"
+        "pool\tMus musculus\tbrain\tTMT126\tset_F1.raw\n"
+        "treated\tMus musculus\tbrain\tTMT127N\tset_F1.raw\n"
+    )
+    params = {**TMT_PARAMS, "TMT-group-sample1": "ref", "TMT-group-sample2": "drug"}
+    out = export_views(results, params)
+    table = pq.read_table(out["sample"])
+    assert table.schema.equals(SAMPLE_SCHEMA, check_metadata=False)
+    meta = {k.decode(): v.decode() for k, v in table.schema.metadata.items()}
+    assert meta["file_type"] == "sample_file" and meta["primary_key"] == "sample_accession"
+    rows = table.to_pylist()
+    assert [r["sample_accession"] for r in rows] == ["sample1", "sample2", "sample3"]
+    assert [r["condition"] for r in rows] == ["ref", "drug", None]
+    assert [r["source_name"] for r in rows] == ["pool", "treated", None]
+    assert rows[1]["organism"] == "Mus musculus" and rows[2]["organism"] == "not available"
