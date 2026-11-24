@@ -47,9 +47,19 @@ def test_steps_follow_the_analysis():
     wf = object.__new__(WorkflowTest)
     wf.mode = lambda: "LFQ"
     wf.library = lambda: False
+    wf.ptm_enrichment_on = lambda: False
     assert WorkflowTest.steps(wf) == ["Samples and groups", "Database search", "Rescoring",
                                       "False discovery rate", "Quantification"]
     wf.library = lambda: True
     assert WorkflowTest.steps(wf)[-1] == "Spectral library"
     wf.mode = lambda: "TMT"
     assert WorkflowTest.steps(wf)[1] == "Labels and decoys"
+    wf.ptm_enrichment_on = lambda: True
+    assert WorkflowTest.steps(wf)[-1] == "PTM enrichment"
+
+
+def test_summary_names_the_ptm_enrichment():
+    text = WorkflowTest.summary("LFQ", 4, None, CLOSED_SEARCH, None, ptm=True)
+    assert text.endswith("and the modifications enriched among the changed proteins.")
+    text = WorkflowTest.summary("LFQ", 4, None, CLOSED_SEARCH, None, library=True, ptm=True)
+    assert "modifications enriched among the changed proteins and a spectral library" in text

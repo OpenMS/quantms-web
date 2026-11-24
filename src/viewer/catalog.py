@@ -36,6 +36,7 @@ _COMPONENTS = [
     ("heatmap", "Heatmap", QUANTIFICATION, "heatmap"),
     ("clustered_heatmap", "Clustered heatmap", QUANTIFICATION, "heatmap_clustered"),
     ("go_enrichment", "GO enrichment", QUANTIFICATION, "enrichment"),
+    ("ptm_enrichment", "PTM enrichment", QUANTIFICATION, "ptm_enrichment"),
     ("comparison_missing_values", "Missing values", QUANTIFICATION, "comparison_missing_values"),
     ("comparison_imputed_values", "Imputed values", QUANTIFICATION, "comparison_imputed_values"),
     ("comparison_normalization", "Normalization", QUANTIFICATION, "comparison_normalization"),
@@ -66,6 +67,7 @@ NEEDS = {
     "group_comparison": ["quantification", "groups"],
     "volcano": ["quantification", "groups"],
     "go_enrichment": ["quantification", "groups"],
+    "ptm_enrichment": ["quantification", "groups"],
     "comparison_missing_values": ["quantification", "groups"],
     "comparison_imputed_values": ["quantification", "groups"],
     "comparison_normalization": ["quantification", "groups"],
@@ -77,7 +79,7 @@ NEEDS = {
 # run of it, picked above them.
 EXPERIMENT_WIDE = {
     "quant_summary", "protein_abundance", "abundance_profile", "group_comparison", "volcano", "pca", "heatmap",
-    "clustered_heatmap", "go_enrichment", "comparison_missing_values", "comparison_imputed_values",
+    "clustered_heatmap", "go_enrichment", "ptm_enrichment", "comparison_missing_values", "comparison_imputed_values",
     "comparison_normalization", "comparison_pvalues",
 }
 
@@ -104,8 +106,8 @@ PRESETS = [
     },
     {
         "name": "pathways", "label": "Pathways",
-        "layout": [["volcano", "group_comparison"], ["go_enrichment"]],
-        "help": "What the differing proteins have in common (GO enrichment).",
+        "layout": [["volcano", "group_comparison"], ["go_enrichment"], ["ptm_enrichment"]],
+        "help": "What the differing proteins have in common (GO terms and protein modifications).",
     },
     {
         "name": "identification", "label": "Identification",

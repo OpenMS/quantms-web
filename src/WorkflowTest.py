@@ -27,6 +27,7 @@ from src.common.qpx_export import app_version, export_run
 from src.workflow.ExperimentalDesign import design_path, load_design, save_design, to_openms_design
 from src.common import instrument
 from src.pride_ui import pride_import_section
+from src import psea
 
 # Accession prefixes that mark decoy entries in a FASTA database.
 DECOY_PREFIXES = ("DECOY_", "decoy_", "rev_", "REV_", "XXX_", "reversed_")
@@ -158,6 +159,8 @@ EXAMPLE_MZML = {
 }
 EXAMPLE_FASTA = [str(f) for f in sorted(Path("example-data", "db").glob("*.fasta"))]
 
+# The step tab of PTM enrichment (src/psea)
+PTM_STEP = "PTM enrichment"
 MODE_LABELS = {"LFQ": "Label-free (LFQ)", "TMT": "Isobaric labels (TMT, iTRAQ)"}
 # The label kits of the isobaric analysis (IsobaricAnalyzer's type)
 TMT_INSTANCE = "IsobaricAnalyzer-TMT"
@@ -283,15 +286,22 @@ class WorkflowTest(WorkflowManager):
         """Whether a spectral library is built (label-free only)."""
         return self.mode() == "LFQ" and bool(self.current_params().get("generate-library", False))
 
+    def ptm_enrichment_on(self) -> bool:
+        """Whether the modifications of the changed proteins are tested (PTM enrichment)."""
+        return bool(self.current_params().get("ptm-enrichment", False))
+
     def steps(self) -> list:
         """The step tabs of Describe experiment for the analysis chosen in Your analysis."""
         if self.mode() == "TMT":
-            return ["Samples and groups", "Labels and decoys", "Database search", "Rescoring",
-                    "False discovery rate", "Proteins and quantification"]
-        steps = ["Samples and groups", "Database search", "Rescoring", "False discovery rate",
-                 "Quantification"]
-        if self.library():
-            steps.append("Spectral library")
+            steps = ["Samples and groups", "Labels and decoys", "Database search", "Rescoring",
+                     "False discovery rate", "Proteins and quantification"]
+        else:
+            steps = ["Samples and groups", "Database search", "Rescoring", "False discovery rate",
+                     "Quantification"]
+            if self.library():
+                steps.append("Spectral library")
+        if self.ptm_enrichment_on():
+            steps.append(PTM_STEP)
         return steps
 
     # --- Instrument and search: presets of presets.json, read back from the settings ---
@@ -435,6 +445,13 @@ class WorkflowTest(WorkflowManager):
                              "for analysing data-independent acquisition (DIA) runs of the same "
                              "samples later. Not needed for the protein comparison.",
                     )
+                self.ui.choice(
+                    "ptm-enrichment", [False, True], {False: "Off", True: "On"}, False,
+                    "PTM enrichment",
+                    help="Tests which protein modifications (phosphorylation, acetylation, "
+                         "glycosylation and the others UniProt annotates) are enriched among the "
+                         "proteins that change between your groups. Needs samples in two groups.",
+                )
             current_instrument = self.current_instrument(mode)
             current_search = self.current_search(mode)
             c1, c2 = st.columns([3, 2])
@@ -462,6 +479,7 @@ class WorkflowTest(WorkflowManager):
             mode, len(self._selected_runs()), self.current_instrument(mode), self.current_search(mode),
             Path(database).name if isinstance(database, str) and database else None,
             plex=self.plex() if mode == "TMT" else None, library=self.library(),
+            ptm=self.ptm_enrichment_on(),
         )
 
     def run_bar_summary(self) -> str:
@@ -470,7 +488,8 @@ class WorkflowTest(WorkflowManager):
 
     @staticmethod
     def summary(mode: str, runs: int, instrument_preset: str | None, search: str,
-                database: str | None, plex: str | None = None, library: bool = False) -> str:
+                database: str | None, plex: str | None = None, library: bool = False,
+                ptm: bool = False) -> str:
         """What a start does, in one paragraph."""
         if not runs:
             return "Choose the runs to analyse with **📂 Browse**."
@@ -490,8 +509,11 @@ class WorkflowTest(WorkflowManager):
         text += ("quantification across the runs, then the comparison of your groups"
                  if mode == "LFQ" else
                  "reporter ion quantification, then the comparison of your groups")
-        text += ", and a spectral library of the identified peptides." if library else "."
-        return text
+        extras = (["the modifications enriched among the changed proteins"] if ptm else []) + (
+            ["a spectral library of the identified peptides"] if library else [])
+        if extras:
+            text += ", " + ("" if len(extras) == 1 else ", ".join(extras[:-1]) + " ") + "and " + extras[-1]
+        return text + "."
 
     @st.fragment
     def configure(self) -> None:
@@ -501,6 +523,50 @@ class WorkflowTest(WorkflowManager):
             self.render_lfq_tabs()
         else:
             self.render_tmt_tabs()
+        if PTM_STEP in self._tabs:
+            with self._tabs[PTM_STEP]:
+                self.render_ptm_tab()
+
+    def _groups_of_selection(self) -> list:
+        """The groups the samples of the next run are in (as set in Samples and groups)."""
+        params = self.current_params()
+        if self.mode() == "TMT":
+            return [v for k, v in params.items()
+                    if k.startswith("TMT-group-") and v and str(v).lower() != "skip"]
+        names = [Path(f).name for f in self._selected_runs()]
+        return [params[f"mzML-group-{n}"] for n in names if params.get(f"mzML-group-{n}")]
+
+    def render_ptm_tab(self) -> None:
+        """PTM enrichment: the organism whose UniProt annotations are tested, and
+        the permutations of the test."""
+        st.markdown(
+            "At the end of the run, the proteins of the group comparison are ranked by their "
+            "log2 fold change, and each protein modification UniProt annotates for the organism "
+            "is tested for proteins with it at the top (higher in the compared group) or the "
+            "bottom of the list: protein set enrichment analysis (PSEA). "
+            "**Explore results** shows the modifications in **PTM enrichment** (view *Pathways*), "
+            "and computes them again when you change the comparison."
+        )
+        database = self.current_params().get("fasta-file")
+        guess = psea.guess_organism([Path(database).name]) if isinstance(database, str) and database else None
+        c1, c2 = st.columns([3, 2])
+        with c1:
+            self.ui.input_widget(
+                key="ptm-organism", default=guess or psea.DEFAULT_ORGANISM, name="Organism",
+                widget_type="selectbox", options=psea.ORGANISMS,
+                help="The organism of your samples, as UniProt names it: its UniProt entries say "
+                     "which proteins carry which modification.",
+            )
+        with c2:
+            self.ui.input_widget(
+                key="ptm-permutations", default=psea.DEFAULT_PERMUTATIONS, name="Permutations",
+                widget_type="number", min_value=10, max_value=100000, step_size=100,
+                help="How often the ranking is shuffled to tell an enrichment from chance. More "
+                     "permutations give finer p-values and take longer.",
+            )
+        if len(set(self._groups_of_selection())) < 2:
+            st.info("PTM enrichment compares two groups: give your samples two groups in "
+                    "**Samples and groups**.", icon="ℹ️")
 
     def preselect_all_inputs(self, key: str) -> None:
         """Select every uploaded file of ``key`` until the user makes a choice.
@@ -703,7 +769,7 @@ class WorkflowTest(WorkflowManager):
         )
 
     def render_lfq_tabs(self):
-        t = self.ui.step_tabs(self.steps())
+        t = self._tabs = self.ui.step_tabs(self.steps())
 
         with t["Samples and groups"]:
             self.render_lfq_groups()
@@ -940,7 +1006,8 @@ class WorkflowTest(WorkflowManager):
     def render_tmt_tabs(self):
         # The steps in order: Samples and groups, Labels and decoys, Database search,
         # Rescoring, False discovery rate, Proteins and quantification
-        t = list(self.ui.step_tabs(self.steps()).values())
+        self._tabs = self.ui.step_tabs(self.steps())
+        t = list(self._tabs.values())
 
         with t[0]:
             self.render_tmt_groups()
@@ -1330,6 +1397,36 @@ class WorkflowTest(WorkflowManager):
             self.logger.log(f"✅ QPX export: {out['psms']} PSMs in {Path(out['psm']).name}")
         except Exception as e:  # an export must not fail the run
             self.logger.log(f"⚠️ QPX export failed: {e}")
+
+    def ptm_enrichment(self) -> None:
+        """PTM enrichment of the run's group comparison (recommended settings), when
+        switched on in Your analysis. Best effort: a missing R, too few groups or a
+        failure is logged, the run still succeeds, and the Viewer can compute it later."""
+        on, organism, permutations = psea.settings(self.params)
+        if not on:
+            return
+        self.logger.log("🧪 PTM enrichment of the changed proteins...")
+        try:
+            run_dir = Path(self.results_dir).parent
+            table = psea.run_scores(Path(self.workflow_dir).parent, run_dir.name, self.params)
+            if table.empty:
+                self.logger.log("⚠️ PTM enrichment skipped: the samples are not in two groups, "
+                                "so no protein has a fold change.")
+                return
+            out_dir = Path(self.results_dir, psea.RESULTS)
+            scores_csv = psea.write_scores(table, out_dir)
+            why = psea.missing()
+            if why:
+                self.logger.log(f"⚠️ PTM enrichment skipped: {why}")
+                return
+            self.logger.log(f"{len(table)} proteins ranked by log2 fold change, {organism}, "
+                            f"{permutations} permutations", 1)
+            if self.executor.run_command(psea.command(out_dir, scores_csv, organism, permutations)):
+                self.logger.log("✅ PTM enrichment complete")
+            else:
+                self.logger.log("⚠️ PTM enrichment failed; the run's other results are complete.")
+        except Exception as err:  # pylint: disable=broad-except
+            self.logger.log(f"⚠️ PTM enrichment failed ({err}); the run's other results are complete.")
 
     def prepare_viewer(self) -> None:
         """Compute what the Viewer shows, so it opens on finished results."""
@@ -1796,6 +1893,7 @@ class WorkflowTest(WorkflowManager):
             self.prepare_go_terms(quant_dir)
             self.write_identified_spectra(in_mzML, filter_results)
             self.prepare_viewer()
+            self.ptm_enrichment()
 
             # ================================
             # 5️⃣ Final report
@@ -2065,6 +2163,7 @@ class WorkflowTest(WorkflowManager):
             self.prepare_go_terms(quant_dir)
             self.write_identified_spectra(in_mzML, psm_filtered)
             self.prepare_viewer()
+            self.ptm_enrichment()
 
             self.logger.log("🎉 WORKFLOW FINISHED")
             return True
