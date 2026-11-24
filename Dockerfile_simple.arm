@@ -86,6 +86,8 @@ RUN touch /tmp/app-env/conda-requirements.txt \
         mamba install -y -n streamlit-env -c conda-forge --file /tmp/app-env/conda-specs.txt "python=${py}=*_cpython"; \
     fi && rm -rf /tmp/app-env
 RUN python -m pip install --upgrade pip
+# TEMPORARY: the openms-insight development build requirements.txt names; remove before release.
+COPY dev-wheels/ ./dev-wheels/
 RUN python -m pip install -r requirements.txt
 # Packages whose own pins conflict with the app's (numpy<2 next to pyOpenMS
 # 3.6, for example), one per line in the app's optional requirements-nodeps.txt,

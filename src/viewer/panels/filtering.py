@@ -4,8 +4,9 @@ import pandas as pd
 import polars as pl
 import streamlit as st
 from src.common.common import save_params
-from src.common.postprocessing_plots import filter_threshold_curve
-from src.common.insight_tables import show_insight_table
+from src.common.insight_tables import _default_cache_dir, show_insight_table
+from src.viz.quantification import filter_threshold
+from src.viz.series import show_series
 from src.common.results_helpers import (
     clear_downstream_steps,
     get_abundance_data,
@@ -20,7 +21,7 @@ from openms_insight.analysis.filter import (
     filter_low_repeatability,
     filter_low_variance,
 )
-from src.viewer.scope import needs_results, show_fig
+from src.viewer.scope import needs_results
 
 
 def render(ctx) -> None:
@@ -117,19 +118,16 @@ def render(ctx) -> None:
         )
 
     with st.expander("📈 Help me choose a threshold", expanded=True):
-        show_fig(
-            filter_threshold_curve(
-                lambda t: run_filter(t).select(pl.len()).collect().item(),
-                thresholds=[float(t) for t in range(0, 101, 5)],
-                current=threshold,
-                total=pivot_df.shape[0],
-                x_label=(
-                    "Max missing values per group (%)"
-                    if filter_method == "Low Repeatability"
-                    else "Threshold percentile (%)"
-                ),
+        thresholds = [float(t) for t in range(0, 101, 5)]
+        kept = [run_filter(t).select(pl.len()).collect().item() for t in thresholds]
+        kept_now = run_filter(threshold).select(pl.len()).collect().item()
+        show_series(
+            filter_threshold.rows(thresholds, kept, pivot_df.shape[0], float(threshold), kept_now),
+            "filter-threshold", cache_path=_default_cache_dir(), key="postproc-filter-threshold", height=360,
+            **filter_threshold.settings(
+                "Max missing values per group (%)" if filter_method == "Low Repeatability"
+                else "Threshold percentile (%)"
             ),
-            "filter-threshold-curve",
         )
     # --- SECTION 3: Filter Execution and Collected Results View ---
     if st.button("Apply Filter", type="primary"):

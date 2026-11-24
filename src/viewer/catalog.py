@@ -13,7 +13,6 @@ from src.viewer.scope import experiment
 _COMPONENTS = [
     ("dda_summary", "Identification summary", "Summaries", "dda_summary"),
     ("quant_summary", "Quantification summary", "Summaries", "quant_summary"),
-    ("files_table", "Files", "Quality control", "files_table"),
     ("sample_counts", "Counts per sample", "Quality control", "samples"),
     ("id_diagnostics", "Files with few identifications", "Quality control", "diagnostics"),
     ("qc_scores", "Score distribution", "Quality control", "qc_scores"),
@@ -38,28 +37,29 @@ _COMPONENTS = [
     ("comparison_imputed_values", "Imputed values", "Quality control", "comparison_imputed_values"),
     ("comparison_normalization", "Normalization", "Quality control", "comparison_normalization"),
     ("comparison_pvalues", "p-value distribution", "Quality control", "comparison_pvalues"),
-    # Earlier components, kept for views saved with them
-    ("run_summary", "Run summary (summary and files)", "Earlier components", "overview"),
-    ("id_quality", "Identification quality (scores, mass error, PSMs per file)", "Earlier components", "qc"),
-    ("protein_explorer", "Proteins, peptides and spectra in one", "Earlier components", "proteins"),
+    # Single run: one LC-MS run (mzML file) of the experiment
+    ("file_chromatogram", "Chromatogram", "MS data", "file_chromatogram"),
+    ("file_scans", "Scan table", "MS data", "file_scans"),
+    ("file_spectrum", "Spectrum of the picked scan", "MS data", "file_spectrum"),
+    ("file_peak_map", "Peak map (MS1)", "MS data", "file_peak_map"),
+    ("file_psms", "PSMs of this run", "Identification", "file_psms"),
 ]
+
+# What Single run offers (one mzML file); the rest is the experiment's Comparison
+FILE_COMPONENTS = ("file_chromatogram", "file_scans", "file_spectrum", "file_peak_map", "file_psms")
 
 # Components that need more than every run has: the analysis each needs (src/viewer/analyses.py)
 NEEDS = {
     "dda_summary": "identification",
     "quant_summary": "quantification",
-    "files_table": "identification",
-    "run_summary": "identification",
     "sample_counts": "identification",
     "qc_scores": "search",
     "qc_mass_error": "identification",
-    "id_quality": "search",
     "id_diagnostics": "identification",
     "protein_table": "identification",
     "protein_peptides": "identification",
     "protein_psms": "identification",
     "psm_spectrum": "identification",
-    "protein_explorer": "identification",
     "psms": "identification",
     "psms_rescored": "rescoring",
     "psms_search": "search",
@@ -76,6 +76,7 @@ NEEDS = {
     "comparison_imputed_values": ["quantification", "groups"],
     "comparison_normalization": ["quantification", "groups"],
     "comparison_pvalues": ["quantification", "groups"],
+    "file_psms": "identification",
 }
 
 # Components computed over the samples of every run of an experiment (a run and
@@ -87,12 +88,15 @@ EXPERIMENT_WIDE = {
     "comparison_normalization", "comparison_pvalues",
 }
 
-CATALOG = [
+_ALL = [
     {"name": name, "label": label, "group": group, **({"needs": NEEDS[name]} if name in NEEDS else {})}
     for name, label, group, _ in _COMPONENTS
 ]
+# The components of an experiment shown as a whole (Comparison), and of one of its runs (Single run)
+CATALOG = [c for c in _ALL if c["name"] not in FILE_COMPONENTS]
+FILE_CATALOG = [c for c in _ALL if c["name"] in FILE_COMPONENTS]
 MODULES = {name: module for name, _, _, module in _COMPONENTS}
-LABELS = {c["name"]: c["label"] for c in CATALOG}
+LABELS = {c["name"]: c["label"] for c in _ALL}
 
 # Ready-made views, one per question users bring to their results. Each opens
 # with its own summary, then components that narrow what follows them: a
@@ -128,8 +132,10 @@ PRESETS = [
     {
         "name": "quality_control", "label": "Quality control",
         "layout": [
-            ["files_table"],
-            ["sample_counts", "id_diagnostics"],
+            # Both need the full width: the counts put their plot beside their tables, and
+            # the likely causes of a file falling short are sentences
+            ["sample_counts"],
+            ["id_diagnostics"],
             ["qc_scores", "qc_mass_error"],
             ["comparison_missing_values", "comparison_normalization"],
             ["comparison_imputed_values", "comparison_pvalues"],
@@ -138,6 +144,21 @@ PRESETS = [
     },
 ]
 DEFAULT_LAYOUT = PRESETS[0]["layout"]
+
+# Ready-made views of one run (Single run): its spectra, then what was identified in them
+FILE_PRESETS = [
+    {
+        "name": "spectra", "label": "Spectra",
+        "layout": [["file_chromatogram"], ["file_scans", "file_spectrum"], ["file_peak_map"]],
+        "help": "The spectra of this run: pick one in the chromatogram, the scan table or the peak map.",
+    },
+    {
+        "name": "psms", "label": "PSMs",
+        "layout": [["file_psms"]],
+        "help": "The peptide-spectrum matches of this run after FDR, down to the annotated spectrum of each.",
+    },
+]
+FILE_DEFAULT_LAYOUT = FILE_PRESETS[0]["layout"]
 # Views of earlier releases: a saved file naming one opens on the default view
 REMOVED_PRESETS = ("overview", "differential", "comparison_checks")
 
@@ -198,6 +219,12 @@ class ViewerContext:
     run_id: str
     index: int = 0
     params: dict = field(default_factory=dict)
+    # The run of the experiment shown on its own (Single run); None: the whole experiment
+    member: str | None = None
+    # Shown on its own: what compares samples covers this run's files only
+    single: bool = False
+    # Single run: the stem of the mzML file shown (run_id is the workflow run that processed it)
+    file: str | None = None
 
 
 def panel(module: str) -> Callable:
@@ -211,67 +238,51 @@ def draw(module: str, ctx: ViewerContext, name: str = "") -> None:
     A component that shows one run's files, in an experiment of several runs,
     shows the run picked above it (the first run unless picked).
     """
-    if name in LABELS:
-        _title(name)
+    import streamlit as st
+
+    from src.viewer.scope import COMPONENT_KEY
+
+    # The component's main Insight view takes its title and help (scope.heading);
+    # a component that has none gets its title above it
+    slot = st.empty() if name in LABELS else None
+    if slot is not None:
+        st.session_state[COMPONENT_KEY] = name
     run_id = ctx.run_id
     if name and name not in EXPERIMENT_WIDE:
         run_id = experiment_member(ctx, name)
-    with experiment(run_id, ctx.index):
-        panel(module)(replace(ctx, run_id=run_id) if run_id != ctx.run_id else ctx)
+    try:
+        with experiment(run_id, ctx.index, single=ctx.single):
+            panel(module)(replace(ctx, run_id=run_id) if run_id != ctx.run_id else ctx)
+    finally:
+        if slot is not None and st.session_state.pop(COMPONENT_KEY, None) == name:
+            with slot.container():
+                _title(name)
 
 
 def _title(name: str) -> None:
     """The component's title, with a tooltip linking to its section on Understand your Results."""
     import streamlit as st
 
-    from src.viewer.teaching import tooltip
+    from src.viewer.teaching import help_text
 
-    st.markdown(f"**{LABELS[name]}**", help=tooltip(name))
-
-
-def _member_key(run_id: str, index: int) -> str:
-    return f"viewer-member-{run_id}-e{index}"
+    st.markdown(f"**{LABELS[name]}**", help=help_text(name))
 
 
 def experiment_member(ctx: ViewerContext, name: str = "") -> str:
     """The run of ``ctx.run_id``'s experiment whose files the components that
-    show one run's files show (picked with ``member_picker``, else the first)."""
-    import streamlit as st
-
+    show one run's files show: the one shown on its own (the Viewer's
+    ``ctx.member``), else the first."""
     from src.common.results_helpers import get_runs
 
     members = get_runs(ctx.workspace).experiment(ctx.run_id)
-    picked = st.session_state.get(_member_key(ctx.run_id, ctx.index))
-    return picked if picked in members else ctx.run_id
+    return ctx.member if ctx.member in members else ctx.run_id
 
 
-def member_picker(workspace, run_id: str, index: int) -> None:
-    """**Files of**: which run of an experiment of several runs the components
-    that show one run's files (PSMs, identified proteins, QC) show. Drawn once
-    per experiment, next to its run selector; nothing for a run alone."""
-    import streamlit as st
-
-    from src.common.results_helpers import get_runs
-
-    runs = get_runs(workspace)
-    members = runs.experiment(run_id)
-    if len(members) < 2:
-        return
-
-    def label(member: str) -> str:
-        files = runs.params(member).get("mzML-files") or []
-        count = 1 if isinstance(files, str) else len(files)
-        return f"{(runs.get(member) or {}).get('name') or member} ({count} {'file' if count == 1 else 'files'})"
-
-    key = _member_key(run_id, index)
-    if st.session_state.get(key) not in members:
-        st.session_state[key] = members[0]
-    st.segmented_control(
-        "Files of", members, key=key, format_func=label,
-        help="This experiment's files were processed in several runs (Process more files). "
-             "Abundances, the group comparison, PCA and the heatmaps cover all of them; "
-             "identifications and quality control show the files of the run picked here.",
-    )
+MEMBER_HELP = (
+    "Comparison: the experiment as a whole, its samples compared (abundances, group comparison, "
+    "PCA, heatmaps) and its identifications and quality control. Single run: one LC-MS run of it, "
+    "its chromatogram, spectra, peak map and PSMs."
+)
 
 
 def renderers(ctx: ViewerContext) -> Dict[str, Callable[[], None]]:

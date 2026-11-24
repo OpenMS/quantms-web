@@ -58,7 +58,8 @@
         "enabled": true,
         "source_dirs": [
             "example-data/workspaces"
-        ]
+        ],
+        "new_workspace": "default"
     },
     "pride_import": {
         "max_download_gb_online": 50
