@@ -8,41 +8,44 @@ from pathlib import Path
 from typing import Callable, Dict
 
 from src.viewer.scope import experiment
+from src.workflow.guide import COMPONENT_GROUPS, IDENTIFICATION, MS_DATA, QUANTIFICATION
 
-# name, label, group, module in src/viewer/panels
+# name, label, group, module in src/viewer/panels. The groups are the template's
+# (src/workflow/guide.py), in the order an analysis runs; quality control and
+# functional analysis go with the data they are about.
 _COMPONENTS = [
-    ("dda_summary", "Identification summary", "Summaries", "dda_summary"),
-    ("quant_summary", "Quantification summary", "Summaries", "quant_summary"),
-    ("sample_counts", "Counts per sample", "Quality control", "samples"),
-    ("id_diagnostics", "Files with few identifications", "Quality control", "diagnostics"),
-    ("qc_scores", "Score distribution", "Quality control", "qc_scores"),
-    ("qc_mass_error", "Precursor mass error", "Quality control", "qc_mass_error"),
-    ("protein_table", "Proteins", "Identification", "protein_table"),
-    ("protein_peptides", "Peptides of the picked protein", "Identification", "protein_peptides"),
-    ("protein_psms", "PSMs of the picked peptide", "Identification", "protein_psms"),
-    ("psm_spectrum", "Annotated spectrum of the picked PSM", "Identification", "psm_spectrum"),
-    ("psms", "PSM explorer (after FDR)", "Identification", "filtered"),
-    ("psms_rescored", "Rescored hits (Percolator)", "Identification", "rescoring"),
-    ("psms_search", "Raw search hits", "Identification", "database_search"),
-    ("mass_shifts", "Mass shifts", "Identification", "mass_shifts"),
-    ("protein_abundance", "Protein and peptide abundances", "Quantification", "abundance"),
-    ("abundance_profile", "Abundance of the picked protein per sample", "Quantification", "abundance_profile"),
-    ("group_comparison", "Group comparison", "Quantification", "compare_groups"),
-    ("volcano", "Volcano plot", "Quantification", "volcano"),
-    ("pca", "Sample similarity (PCA)", "Quantification", "pca"),
-    ("heatmap", "Heatmap", "Quantification", "heatmap"),
-    ("clustered_heatmap", "Clustered heatmap", "Quantification", "heatmap_clustered"),
-    ("go_enrichment", "GO enrichment", "Pathways", "enrichment"),
-    ("comparison_missing_values", "Missing values", "Quality control", "comparison_missing_values"),
-    ("comparison_imputed_values", "Imputed values", "Quality control", "comparison_imputed_values"),
-    ("comparison_normalization", "Normalization", "Quality control", "comparison_normalization"),
-    ("comparison_pvalues", "p-value distribution", "Quality control", "comparison_pvalues"),
+    ("dda_summary", "Identification summary", IDENTIFICATION, "dda_summary"),
+    ("quant_summary", "Quantification summary", QUANTIFICATION, "quant_summary"),
+    ("sample_counts", "Counts per sample", IDENTIFICATION, "samples"),
+    ("id_diagnostics", "Files with few identifications", IDENTIFICATION, "diagnostics"),
+    ("qc_scores", "Score distribution", IDENTIFICATION, "qc_scores"),
+    ("qc_mass_error", "Precursor mass error", IDENTIFICATION, "qc_mass_error"),
+    ("protein_table", "Proteins", IDENTIFICATION, "protein_table"),
+    ("protein_peptides", "Peptides of the picked protein", IDENTIFICATION, "protein_peptides"),
+    ("protein_psms", "PSMs of the picked peptide", IDENTIFICATION, "protein_psms"),
+    ("psm_spectrum", "Annotated spectrum of the picked PSM", IDENTIFICATION, "psm_spectrum"),
+    ("psms", "PSM explorer (after FDR)", IDENTIFICATION, "filtered"),
+    ("psms_rescored", "Rescored hits (Percolator)", IDENTIFICATION, "rescoring"),
+    ("psms_search", "Raw search hits", IDENTIFICATION, "database_search"),
+    ("mass_shifts", "Mass shifts", IDENTIFICATION, "mass_shifts"),
+    ("protein_abundance", "Protein and peptide abundances", QUANTIFICATION, "abundance"),
+    ("abundance_profile", "Abundance of the picked protein per sample", QUANTIFICATION, "abundance_profile"),
+    ("group_comparison", "Group comparison", QUANTIFICATION, "compare_groups"),
+    ("volcano", "Volcano plot", QUANTIFICATION, "volcano"),
+    ("pca", "Sample similarity (PCA)", QUANTIFICATION, "pca"),
+    ("heatmap", "Heatmap", QUANTIFICATION, "heatmap"),
+    ("clustered_heatmap", "Clustered heatmap", QUANTIFICATION, "heatmap_clustered"),
+    ("go_enrichment", "GO enrichment", QUANTIFICATION, "enrichment"),
+    ("comparison_missing_values", "Missing values", QUANTIFICATION, "comparison_missing_values"),
+    ("comparison_imputed_values", "Imputed values", QUANTIFICATION, "comparison_imputed_values"),
+    ("comparison_normalization", "Normalization", QUANTIFICATION, "comparison_normalization"),
+    ("comparison_pvalues", "p-value distribution", QUANTIFICATION, "comparison_pvalues"),
     # Single run: one LC-MS run (mzML file) of the experiment
-    ("file_chromatogram", "Chromatogram", "MS data", "file_chromatogram"),
-    ("file_scans", "Scan table", "MS data", "file_scans"),
-    ("file_spectrum", "Spectrum of the picked scan", "MS data", "file_spectrum"),
-    ("file_peak_map", "Peak map (MS1)", "MS data", "file_peak_map"),
-    ("file_psms", "PSMs of this run", "Identification", "file_psms"),
+    ("file_chromatogram", "Chromatogram", MS_DATA, "file_chromatogram"),
+    ("file_scans", "Scan table", MS_DATA, "file_scans"),
+    ("file_spectrum", "Spectrum of the picked scan", MS_DATA, "file_spectrum"),
+    ("file_peak_map", "Peak map (MS1)", MS_DATA, "file_peak_map"),
+    ("file_psms", "PSMs of this run", IDENTIFICATION, "file_psms"),
 ]
 
 # What Single run offers (one mzML file); the rest is the experiment's Comparison
@@ -88,10 +91,10 @@ EXPERIMENT_WIDE = {
     "comparison_normalization", "comparison_pvalues",
 }
 
-_ALL = [
+_ALL = sorted((
     {"name": name, "label": label, "group": group, **({"needs": NEEDS[name]} if name in NEEDS else {})}
     for name, label, group, _ in _COMPONENTS
-]
+), key=lambda c: COMPONENT_GROUPS.index(c["group"]))
 # The components of an experiment shown as a whole (Comparison), and of one of its runs (Single run)
 CATALOG = [c for c in _ALL if c["name"] not in FILE_COMPONENTS]
 FILE_CATALOG = [c for c in _ALL if c["name"] in FILE_COMPONENTS]
