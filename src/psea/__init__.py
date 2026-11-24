@@ -27,7 +27,8 @@ RESULTS = "ptm_enrichment"
 SCORES_FILE = "protein_scores.csv"
 RESULTS_FILE = "psea_results.csv"
 
-# Organisms as UniProt names them (PEIMAN2 looks them up by this name), with
+# Organisms exactly as PEIMAN2's bundled table names them (its OS column; psea.R
+# also resolves other spellings), with
 # the species code of their UniProt entry names (``ALBU_HUMAN``)
 _KNOWN = [
     ("HUMAN", "Homo sapiens (Human)"),
@@ -35,14 +36,14 @@ _KNOWN = [
     ("RAT", "Rattus norvegicus (Rat)"),
     ("BOVIN", "Bos taurus (Bovine)"),
     ("PIG", "Sus scrofa (Pig)"),
-    ("CANLF", "Canis lupus familiaris (Dog)"),
+    ("CANLF", "Canis lupus familiaris (Dog) (Canis familiaris)"),
     ("CHICK", "Gallus gallus (Chicken)"),
     ("XENLA", "Xenopus laevis (African clawed frog)"),
-    ("DANRE", "Danio rerio (Zebrafish)"),
+    ("DANRE", "Danio rerio (Zebrafish) (Brachydanio rerio)"),
     ("DROME", "Drosophila melanogaster (Fruit fly)"),
     ("CAEEL", "Caenorhabditis elegans"),
     ("ARATH", "Arabidopsis thaliana (Mouse-ear cress)"),
-    ("ORYSJ", "Oryza sativa subsp. japonica (Rice)"),
+    ("ORYSJ", "Oryza sativa subsp japonica (Rice)."),
     ("YEAST", "Saccharomyces cerevisiae (strain ATCC 204508 / S288c) (Baker's yeast)"),
     ("SCHPO", "Schizosaccharomyces pombe (strain 972 / ATCC 24843) (Fission yeast)"),
     ("PLAF7", "Plasmodium falciparum (isolate 3D7)"),
@@ -62,8 +63,9 @@ _HEADERS_READ = 5000  # FASTA entries read to detect the organism
 
 
 def _scientific(name: str) -> str:
-    """``Homo sapiens`` of ``Homo sapiens (Human)``, lower case."""
-    return re.split(r"\s*\(", str(name), maxsplit=1)[0].strip().lower()
+    """``homo sapiens`` of ``Homo sapiens (Human)``: lower case, without
+    full stops (UniProt writes ``subsp.``, PEIMAN2's table ``subsp``)."""
+    return re.split(r"\s*\(", str(name), maxsplit=1)[0].replace(".", "").strip().lower()
 
 
 def organism_named(name) -> str | None:

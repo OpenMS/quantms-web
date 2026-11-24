@@ -79,3 +79,15 @@ def test_settings_follow_the_organism_menu(tmp_path):
 def test_guess_organism_from_protein_names():
     assert psea.guess_organism(["sp|P1|A_HUMAN;sp|P2|B_HUMAN", "C_MOUSE"]) == "Homo sapiens (Human)"
     assert psea.guess_organism(["RATIO_1", "PIGMENT"]) is None
+
+
+def test_uniprot_names_map_to_peiman2_spelling(tmp_path):
+    # FASTA headers write the scientific name only, PEIMAN2's table its own
+    # spelling (checked against PEIMAN2 1.2.0's bundled table)
+    for os_field, expected in [
+        ("Oryza sativa subsp. japonica", "Oryza sativa subsp japonica (Rice)."),
+        ("Danio rerio", "Danio rerio (Zebrafish) (Brachydanio rerio)"),
+        ("Canis lupus familiaris", "Canis lupus familiaris (Dog) (Canis familiaris)"),
+    ]:
+        fasta = _fasta(tmp_path, f"{os_field[:5]}.fasta", [f"sp|P00001|X_Y Protein OS={os_field} OX=1"])
+        assert psea.detect(fasta) == expected
