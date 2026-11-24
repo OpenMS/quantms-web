@@ -62,7 +62,7 @@ def render_desktop_download_box() -> None:
     )
 
 
-page_setup(page="main")
+page_setup(page="main", captcha=False)
 
 title_col, logo_col = st.columns([6, 1], vertical_alignment="center")
 with title_col:
