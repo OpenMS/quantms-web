@@ -14,6 +14,10 @@ def render(ctx) -> None:
     if run is None:
         return
     head = heading()
+    if not run.has_ms1():
+        # An empty plot would only clear the spectrum picked in the scan table
+        run.no_ms1(head.get("title", "Chromatogram (MS1)"), head.get("help"))
+        return
     settings = chromatogram.settings(SERIES, level=1, spectrum="scan")
     if head.get("title"):
         settings["title"] = head["title"]

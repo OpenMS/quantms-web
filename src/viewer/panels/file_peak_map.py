@@ -12,6 +12,10 @@ def render(ctx) -> None:
     if run is None:
         return
     head = heading()
+    if not run.has_ms1():
+        # An empty plot would only clear the spectrum picked in the scan table
+        run.no_ms1(head.get("title", "Peak map (MS1)"), head.get("help"))
+        return
     settings = raw_heatmap.settings(title=head.get("title", "Peak map (MS1)"), spectrum="scan",
                                     zoom_identifier=f"file_peak_map_zoom_{run.stem}")
     plot = component(Heatmap, run.cache_dir, run.cache_id("ms1"),

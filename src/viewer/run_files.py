@@ -136,6 +136,19 @@ class Shown:
     def tables(self) -> dict[str, pl.DataFrame]:
         return _tables(str(self.path), self.version)
 
+    def has_ms1(self) -> bool:
+        """Whether the file holds MS1 spectra (only the identified spectra,
+        all MS2, are there when the input file is not in the workspace)."""
+        return not self.tables()["chromatogram"].is_empty()
+
+    def no_ms1(self, title: str, help_text=None) -> None:
+        """Say that a component of the MS1 spectra has nothing to show."""
+        import streamlit as st
+
+        st.markdown(f"**{title}**", help=help_text)
+        st.info("This run's file holds no MS1 spectra: the input file is not in this workspace, "
+                "only the spectra the run identified.")
+
     def note(self) -> None:
         """Say when only the identified spectra of the file are there."""
         import streamlit as st
