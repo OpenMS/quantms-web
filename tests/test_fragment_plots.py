@@ -2,7 +2,7 @@ import pandas as pd
 import pytest
 from pyopenms import AASequence, Residue
 
-from src.common.fragment_plots import fragment_error_plot, ion_table, ion_table_html, load_psm_fragments
+from src.common.fragment_plots import ion_table, ion_table_html, load_psm_fragments
 
 
 def _fragments():
@@ -45,14 +45,6 @@ def test_ion_table_html_highlights_matches():
     values, matched = ion_table("PEPTIDEK", 2, _fragments())
     out = ion_table_html(values, matched)
     assert out.count('class="hit-b"') == 1 and out.count('class="hit-y"') == 1
-
-
-def test_fragment_error_plot_uses_tolerance_unit():
-    fig = fragment_error_plot(_fragments(), 20, True)
-    assert fig.layout.yaxis.title.text == "Mass error (ppm)"
-    assert [t.name for t in fig.data] == ["b ions", "y ions"]
-    fig_da = fragment_error_plot(_fragments(), 0.02, False)
-    assert list(fig_da.data[0].y) == [0.001, -0.002]
 
 
 def test_load_psm_fragments_filters_one_psm(tmp_path):

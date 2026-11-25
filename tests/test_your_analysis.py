@@ -34,3 +34,22 @@ def test_converted_runs_keep_their_groups(tmp_path):
     assert stored["mzML-group-a.mzML"] == "ctrl"
     assert stored["mzML-group-b.mzML"] == "drug"
     assert wf.params["mzML-group-a.mzML"] == "ctrl"
+
+
+def test_summary_names_the_labels_and_the_library():
+    text = WorkflowTest.summary("TMT", 4, "Orbitrap HCD", CLOSED_SEARCH, "human.fasta", plex="tmt16plex")
+    assert text.startswith("**An isobaric (TMT/iTRAQ) analysis of 4 runs** labelled with TMT 16")
+    text = WorkflowTest.summary("LFQ", 2, None, CLOSED_SEARCH, None, library=True)
+    assert text.endswith("and a spectral library of the identified peptides.")
+
+
+def test_steps_follow_the_analysis():
+    wf = object.__new__(WorkflowTest)
+    wf.mode = lambda: "LFQ"
+    wf.library = lambda: False
+    assert WorkflowTest.steps(wf) == ["Samples and groups", "Database search", "Rescoring",
+                                      "False discovery rate", "Quantification"]
+    wf.library = lambda: True
+    assert WorkflowTest.steps(wf)[-1] == "Spectral library"
+    wf.mode = lambda: "TMT"
+    assert WorkflowTest.steps(wf)[1] == "Labels and decoys"
