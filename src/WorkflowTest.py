@@ -14,6 +14,7 @@ from src.common.common import page_setup
 from src.common.results_helpers import get_abundance_data
 from src.common.results_helpers import load_idxml, search_results_dir, write_spectra_cache
 from src.common.identified_spectra import SPECTRA_DIR, write_identified_spectra
+from src.common.final_results import FINAL_ONLY_KEY, drop_intermediates, keeps_final_only, size_label
 from src.common.psm_views import build_psm_views
 from src.common.contaminants import CONTAMINANT_PREFIX, append_fasta, write_contaminants
 from src.common.fdr_display import FDR_QUICK_CHOICES, fdr_applied, fdr_label, matching_quick_choice, percent_label, q_label
@@ -763,6 +764,7 @@ class WorkflowTest(WorkflowManager):
                 },
                 exclude_parameters=["type_protein", "type_peptide", "score:psm"],
             )
+            self.render_final_only_widget()
 
         if "Spectral library" in t:
             with t["Spectral library"]:
@@ -1015,6 +1017,7 @@ class WorkflowTest(WorkflowManager):
                 exclude_parameters=["type_peptide", "score:psm"],
                 tool_instance_name="IDFilter-strict",
             )
+            self.render_final_only_widget()
         with t[5]:
             st.info(
                 "These steps turn the identified peptides into one abundance per protein and channel. "
@@ -1171,6 +1174,22 @@ class WorkflowTest(WorkflowManager):
                     del self.params[k]
                 self.parameter_manager.save_parameters()
 
+    def render_final_only_widget(self) -> None:
+        """Opt-in switch: delete the search and rescoring hits once the run has finished."""
+        self.ui.input_widget(
+            key=FINAL_ONLY_KEY,
+            default=False,
+            name="Keep only final results",
+            widget_type="checkbox",
+            help=(
+                "Deletes the raw database search hits and the rescored hits (and the viewer data made "
+                "from them) when the run has finished, to save disk on large studies. The filtered "
+                "PSMs, the proteins and the abundances stay. The views of the raw and rescored hits, "
+                "the score distributions and the identification quality are then not available for "
+                "this run; Explore results offers to run it again keeping every result."
+            ),
+        )
+
     def render_prediction_features_widget(self) -> None:
         """Opt-in switch: AlphaPeptDeep features for Percolator (shared by both modes)."""
         st.markdown("**Rescore with predicted spectra and retention times** (AlphaPeptDeep)")
@@ -1323,6 +1342,23 @@ class WorkflowTest(WorkflowManager):
             self.logger.log(f"✅ QPX export: {out['psms']} PSMs in {Path(out['psm']).name}")
         except Exception as e:  # an export must not fail the run
             self.logger.log(f"⚠️ QPX export failed: {e}")
+
+    def keep_final_results_only(self) -> None:
+        """With **Keep only final results** on, delete the search and rescoring hits.
+
+        Runs after everything that reads them (protein inference, QPX export,
+        the kept spectra). A failure only costs the disk, so it is logged.
+        """
+        if not keeps_final_only(self.params):
+            return
+        try:
+            files, freed = drop_intermediates(self.results_dir)
+            self.logger.log(
+                f"🧹 Keep only final results: deleted {files} search and rescoring result files "
+                f"and their viewer data ({size_label(freed)} freed)"
+            )
+        except OSError as error:
+            self.logger.log(f"⚠️ Could not delete the search and rescoring results: {error}")
 
     def prepare_viewer(self) -> None:
         """Compute what the Viewer shows, so it opens on finished results."""
@@ -1789,6 +1825,7 @@ class WorkflowTest(WorkflowManager):
             self.prepare_go_terms(quant_dir)
             self.write_identified_spectra(in_mzML, filter_results)
             self.prepare_viewer()
+            self.keep_final_results_only()
 
             # ================================
             # 5️⃣ Final report
@@ -2058,6 +2095,7 @@ class WorkflowTest(WorkflowManager):
             self.prepare_go_terms(quant_dir)
             self.write_identified_spectra(in_mzML, psm_filtered)
             self.prepare_viewer()
+            self.keep_final_results_only()
 
             self.logger.log("🎉 WORKFLOW FINISHED")
             return True

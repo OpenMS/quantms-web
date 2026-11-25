@@ -154,3 +154,17 @@ def test_more_files_join_the_experiment_and_its_comparison(tmp_path):
     # The experiment is listed once
     runs = RunManager(Path(tmp_path, "topp-workflow"))
     assert [r["id"] for r in runs.experiments()] == [first]
+
+
+def test_a_run_that_kept_only_final_results_offers_to_keep_everything(tmp_path):
+    lean = _run(tmp_path, "Lean", {"mzML-files": ["/in/a.mzML"], "keep-final-only": True})
+    full = _run(tmp_path, "Full", {"mzML-files": ["/in/a.mzML"]})
+    labels = [o["label"] for o in analyses.options(tmp_path, lean, [analyses.SEARCH])]
+    assert labels == ["Run again keeping every result", "Process more files with these settings"]
+    labels = [o["label"] for o in analyses.options(tmp_path, lean, analyses.RESCORING)]
+    assert labels[0] == "Run again keeping every result"
+    # Only for what it deleted, and only for that run
+    assert [o["label"] for o in analyses.options(tmp_path, lean, [analyses.GROUPS])] == [
+        "Process more files with these settings"]
+    assert [o["label"] for o in analyses.options(tmp_path, full, [analyses.SEARCH])] == [
+        "Process more files with these settings"]
