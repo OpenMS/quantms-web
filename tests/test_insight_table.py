@@ -162,8 +162,3 @@ def test_run_export_info_is_empty_without_a_run(monkeypatch):
     assert run_export_info() == {}
 
 
-def test_psm_tables_are_named_after_their_file():
-    from src.common.sequence_display import psm_table_title
-
-    assert psm_table_title("table_Control_1_filter") == "PSMs Control_1"
-    assert psm_table_title("table_all_files") == "PSMs all_files"

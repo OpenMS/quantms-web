@@ -11,6 +11,7 @@ import pandas as pd
 import plotly.graph_objects as go
 
 from src.common.results_helpers import extract_filename_from_idxml, load_idxml
+from src.common.disk_cache import per_file
 
 # Spacing of the 13C isotope peaks (Da): the precursor may have been picked on one of them
 C13_C12_DIFF = 1.0033548
@@ -57,6 +58,7 @@ def precursor_error_ppm(observed_mz: float, theoretical_mz: float, charge: int) 
     return (observed_mz - theoretical_mz) / theoretical_mz * 1e6
 
 
+@per_file
 def psm_qc_table(idxml_path: Path, mzml_names=None) -> pd.DataFrame:
     """One row per spectrum (its top hit) of an idXML file."""
     _, peptides = load_idxml(idxml_path)

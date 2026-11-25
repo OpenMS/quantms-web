@@ -139,6 +139,7 @@ def show_insight_table(
     state_manager=None,
     column_overrides: dict | None = None,
     export_info: dict | None = None,
+    note: str | None = None,
     **table_kwargs,
 ) -> Table:
     """Render ``df`` as a server-side paginated openms-insight table, and return it.
@@ -171,8 +172,12 @@ def show_insight_table(
         export_info: What the About sheet of the Excel download says besides
             the table, its sort and filters. Defaults to the shown run
             (``run_export_info``); ``{}`` leaves it out.
+        note: Figures of the shown run, added to the info icon.
         **table_kwargs: Passed on to ``Table`` (e.g. ``initial_sort``).
     """
+    from src.viewer.scope import heading, retitle
+
+    head = heading(title or name, note=note)
     cache_dir = Path(cache_dir) if cache_dir else _default_cache_dir()
     if not source_files:
         extra_key = f"{extra_key}|{_fingerprint_dataframe(df)}"
@@ -196,15 +201,11 @@ def show_insight_table(
         )
 
     # Every column stays; a table narrower than its columns scrolls sideways
-    table = Table(
-        cache_id=cache_id,
-        cache_path=str(cache_dir),
-        collapse_columns=False,
-        export_info=run_export_info() if export_info is None else export_info,
-    )
+    table = retitle(Table(cache_id=cache_id, cache_path=str(cache_dir), collapse_columns=False,
+                           export_info=run_export_info() if export_info is None else export_info), head.get("title"))
     from src.viewer.scope import scoped
 
-    table(key=scoped(f"insight_table_{name}"), height=height, state_manager=state_manager)
+    table(key=scoped(f"insight_table_{name}"), height=height, state_manager=state_manager, help=head.get("help"))
     return table
 
 
@@ -218,10 +219,13 @@ def show_series(df: pd.DataFrame, name: str, height: int = 360, state_manager=No
     """
     from openms_insight import SeriesPlot
 
-    from src.viewer.scope import scoped
+    from src.viewer.scope import heading, scoped
 
+    head = heading(plot_kwargs.pop("title", None), detail=plot_kwargs.pop("detail", None), note=plot_kwargs.pop("note", None))
+    help_text = head.pop("help", None)
+    plot_kwargs.update(head)
     settings = hashlib.sha1(repr(sorted(plot_kwargs.items())).encode()).hexdigest()[:8]
     cache = plot_cache(f"{name}_{settings}", df)
     plot = SeriesPlot(**cache, data=pl.from_pandas(df).lazy(), **plot_kwargs)
-    plot(key=scoped(f"series_{name}"), state_manager=state_manager, height=height)
+    plot(key=scoped(f"series_{name}"), state_manager=state_manager, height=height, help=help_text)
     return plot

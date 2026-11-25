@@ -1,0 +1,10 @@
+{
+  "mzML-files": {
+    "B000248_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA.mzML": "UPS2_ratio01",
+    "B000264_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA.mzML": "UPS2_ratio10",
+    "B000272_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_2.mzML": "UPS2_ratio01",
+    "B000288_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_2.mzML": "UPS2_ratio10",
+    "B000296_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_3.mzML": "UPS2_ratio01",
+    "B000312_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_3.mzML": "UPS2_ratio10"
+  }
+}

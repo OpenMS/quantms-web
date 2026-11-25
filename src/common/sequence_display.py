@@ -16,6 +16,7 @@ from openms_insight import Table
 
 from src.common.insight_tables import run_export_info
 from src.common.peptide_format import DISPLAY_MODES, format_sequence
+from src.viz.identification import psm_table as psm_table_view
 
 # The choice lives under MODE_KEY and is shared by every PSM table. Each table
 # has its own radio (several can be on one page), seeded from MODE_KEY on each
@@ -48,12 +49,6 @@ def sequence_mode_selector(name: str) -> str:
     )
     st.session_state[MODE_KEY] = mode
     return mode
-
-
-def psm_table_title(table_id: str) -> str:
-    """The title (and download name) of a PSM table: "PSMs <file>"."""
-    stem = table_id.removeprefix("table_").removesuffix("_filter")
-    return f"PSMs {stem}" if stem else "PSMs"
 
 
 def display_table_id(cache_dir: Path, table_id: str, mode: str) -> str:
@@ -93,26 +88,25 @@ def display_table_id(cache_dir: Path, table_id: str, mode: str) -> str:
         go_to_fields=config.get("go_to_fields"),
         layout=config.get("layout", "fitDataFill"),
         page_size=config.get("page_size", 100),
-        title=psm_table_title(table_id),
     )
     return variant_id
 
 
-def psm_table(cache_dir: Path, table_id: str, mode: str, state_manager, height: int = 533) -> None:
+def psm_table(
+    cache_dir: Path, table_id: str, mode: str, state_manager, height: int = 533, title: str | None = "PSMs",
+) -> None:
     """Render the cached PSM table ``table_id`` with its sequences in ``mode``."""
-    table = Table(
-        cache_id=display_table_id(cache_dir, table_id, mode),
-        cache_path=str(cache_dir),
-        collapse_columns=False,
-        export_info=run_export_info(),
-    )
+    table = Table(cache_id=display_table_id(cache_dir, table_id, mode), cache_path=str(cache_dir), collapse_columns=False,
+                  export_info=run_export_info())
+    if title:
+        table._title = title
     table(state_manager=state_manager, height=height)
 
 
 # The PSM page's table menu: a q-value column with thresholds, a contaminant
 # switch, and a search over the sequence (in every written form) and proteins
-Q_FIELD = "q_value"
-CLEAN_FIELD = "not_contaminant"
+Q_FIELD = psm_table_view.Q_FIELD
+CLEAN_FIELD = psm_table_view.CLEAN_FIELD
 SEARCH_FIELDS = ("sequence", DISPLAY_FIELD, "proforma", "protein_accession")
 SEARCH_PLACEHOLDER = "Peptide or protein"
 
@@ -138,7 +132,7 @@ def filtered_table_id(
     generation = str(manifest.get("cache_generation", ""))[:8]
     q_suggestions = list(q_suggestions or [])
     digest = hashlib.sha1(f"{source_id}|{json.dumps(q_suggestions, sort_keys=True)}".encode()).hexdigest()[:8]
-    prefix = f"{table_id}__f4"  # bump when the variant's layout changes
+    prefix = f"{table_id}__f3"  # bump when the variant's layout changes
     variant_id = f"{prefix}{digest}_{generation}"
     if (Path(cache_dir) / variant_id).is_dir():
         return variant_id
@@ -156,19 +150,9 @@ def filtered_table_id(
     )
 
     config = manifest["config"]
-    # Rounded for display (the cache holds float32 noise like 494.2902526855469),
-    # which keeps the table narrow enough not to fold columns into the rows
-    rounding = {"mz": 4, "rt": 1}
-    column_definitions = [
-        {**c, "formatter": "money", "formatterParams": {"thousand": False, "precision": rounding[c["field"]]}}
-        if c.get("field") in rounding and "formatter" not in c else c
-        for c in config["column_definitions"]
-    ]
-    q_column = {"field": Q_FIELD, "title": "q-value", "sorter": "number",
-                "formatter": "money", "formatterParams": {"thousand": False, "precision": 5},
-                "headerTooltip": "Percolator's q-value: the lowest FDR at which this match is accepted"}
-    after = next((i for i, c in enumerate(column_definitions) if c.get("field") == "score"), len(column_definitions) - 1)
-    column_definitions.insert(after + 1, q_column)
+    # Rounded for display, which keeps the table narrow enough not to fold columns into the rows
+    column_definitions = psm_table_view.with_q_value(
+        config["column_definitions"], "Percolator's q-value: the lowest FDR at which this match is accepted")
     Table(
         cache_id=variant_id,
         data=data.lazy(),
@@ -180,20 +164,18 @@ def filtered_table_id(
         go_to_fields=config.get("go_to_fields"),
         layout=config.get("layout", "fitDataFill"),
         page_size=config.get("page_size", 100),
-        toggle_filters=[{"label": "Hide contaminants", "column": CLEAN_FIELD, "default": False}],
-        search=[c for c in SEARCH_FIELDS if c in data.columns],
-        search_placeholder=SEARCH_PLACEHOLDER,
-        numeric_filters={Q_FIELD: {"op": "<=", "suggestions": q_suggestions}},
-        title=psm_table_title(table_id),
+        **psm_table_view.menu(data.columns, q_suggestions, SEARCH_FIELDS, SEARCH_PLACEHOLDER),
     )
     return variant_id
 
 
 def filtered_psm_table(
     cache_dir: Path, table_id: str, mode: str, state_manager, idxml_path: Path,
-    q_suggestions: list | None = None, height: int = 533,
+    q_suggestions: list | None = None, height: int = 533, title: str | None = "PSMs",
 ) -> None:
     """Render the PSM table with its search box, q-value thresholds and contaminant switch."""
     variant_id = filtered_table_id(cache_dir, table_id, mode, idxml_path, q_suggestions)
     table = Table(cache_id=variant_id, cache_path=str(cache_dir), collapse_columns=False, export_info=run_export_info())
+    if title:
+        table._title = title
     table(state_manager=state_manager, height=height)
