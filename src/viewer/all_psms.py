@@ -17,16 +17,18 @@ from pathlib import Path
 import polars as pl
 
 from src.common.peptide_format import format_sequence
+from src.viz.identification import psm_table
 
-# The merged table's own row id, picked under this identifier
-ROW_FIELD = "psm_row"
-SELECTION = "psm_all"
-FILE_FIELD = "file_name"
+# The merged table's own row id, picked under this identifier (the library's
+# PSM table over several files)
+ROW_FIELD = psm_table.ROW_FIELD
+SELECTION = psm_table.ALL_FILES_SELECTION
+FILE_FIELD = psm_table.FILE_FIELD
 SOURCE_FIELD = "source"
 DISPLAY_FIELD = "sequence_display"
 CLEAN_FIELD = "not_contaminant"
 PREFIX = "psms_all2_"  # change when the table's layout changes
-SEARCH_FIELDS = (FILE_FIELD, "sequence", DISPLAY_FIELD, "protein_accession")
+SEARCH_FIELDS = ("sequence", DISPLAY_FIELD, "protein_accession")
 
 
 def file_label(idxml: Path) -> str:
@@ -90,15 +92,6 @@ def all_files_table_id(cache_dir: Path, idxml_files: list, mode: str = "OpenMS")
             .alias(DISPLAY_FIELD)
         )
         columns = [{**c, "field": DISPLAY_FIELD} if c.get("field") == "sequence" else c for c in columns]
-    # Rounded for display, as the one-file table, so the File column fits
-    # without folding other columns into the rows
-    rounding = {"mz": 4, "rt": 1}
-    columns = [
-        {**c, "formatter": "money", "formatterParams": {"thousand": False, "precision": rounding[c["field"]]}}
-        if c.get("field") in rounding and "formatter" not in c else c
-        for c in columns
-    ]
-    columns.insert(0, {"field": FILE_FIELD, "title": "File", "headerTooltip": "The input file of this PSM"})
     data = data.with_columns(
         (~pl.col("contaminant")).alias(CLEAN_FIELD) if "contaminant" in data.columns
         else pl.lit(True).alias(CLEAN_FIELD)
@@ -107,15 +100,10 @@ def all_files_table_id(cache_dir: Path, idxml_files: list, mode: str = "OpenMS")
         cache_id=table_id,
         data=data.lazy(),
         cache_path=str(cache_dir),
-        interactivity={SELECTION: ROW_FIELD},
-        column_definitions=columns,
         initial_sort=config.get("initial_sort"),
-        index_field=ROW_FIELD,
         layout=config.get("layout", "fitDataFill"),
         page_size=config.get("page_size", 100),
-        toggle_filters=[{"label": "Hide contaminants", "column": CLEAN_FIELD, "default": False}],
-        search=[c for c in SEARCH_FIELDS if c in data.columns],
-        search_placeholder="File, peptide or protein",
+        **psm_table.all_files_settings(columns, data.columns, SEARCH_FIELDS),
     )
     return table_id
 

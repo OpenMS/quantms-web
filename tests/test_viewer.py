@@ -39,7 +39,8 @@ def test_default_layout_uses_catalog_components():
 
 
 def test_every_panel_is_used():
-    used = set(MODULES.values()) | {m for m, _ in COMPARISON_STEPS}
+    # overview and qc hold what the summary and QC components share
+    used = set(MODULES.values()) | {m for m, _ in COMPARISON_STEPS} | {"overview", "qc"}
     on_disk = {p.stem for p in PANELS.glob("*.py") if p.stem != "__init__"}
     assert on_disk == used
 
@@ -73,6 +74,83 @@ def test_presets_are_valid_layouts():
     for preset in PRESETS:
         assert validate_layout([preset["layout"]], CATALOG) == "", preset["name"]
         assert preset.get("help")
-    # Every component is in at least one view, besides the clustered heatmap kept for Edit layout
+    assert [p["label"] for p in PRESETS] == ["Quantification", "Pathways", "Identification", "Quality control"]
+    # Components no ready-made view shows: offered for views of the user's own
     shown = {n for p in PRESETS for row in p["layout"] for n in row}
-    assert {c["name"] for c in CATALOG} - shown == {"clustered_heatmap"}
+    assert {c["name"] for c in CATALOG} - shown == {
+        "clustered_heatmap", "psms", "psms_rescored", "psms_search", "protein_abundance",
+    }
+
+
+def test_each_summary_is_in_its_own_view_only():
+    views = {p["name"]: {n for row in p["layout"] for n in row} for p in PRESETS}
+    assert [v for v, names in views.items() if "dda_summary" in names] == ["identification"]
+    assert [v for v, names in views.items() if "quant_summary" in names] == ["quantification"]
+
+
+def test_every_view_and_component_is_explained():
+    from src.viewer.teaching import COMPONENTS, VIEWS, tooltip
+
+    assert set(VIEWS) == {p["name"] for p in PRESETS}
+    assert set(COMPONENTS) == set(LABELS)
+    assert "understand_results#protein-table" in tooltip("protein_table")
+
+
+def test_default_view_follows_the_groups():
+    from src.viewer.catalog import default_view
+
+    assert default_view({"identification", "quantification", "groups"}) == "quantification"
+    assert default_view({"identification", "quantification"}) == "identification"
+    assert default_view(None) == "identification"
+
+
+def test_earlier_views_are_moved_to_the_current_ones(tmp_path):
+    import json
+
+    from src.viewer.catalog import migrate_views
+
+    path = tmp_path / "viewer.json"
+    path.write_text(json.dumps({
+        "current": "differential", "layout": [[["group_comparison"]]],
+        "views": [
+            {"name": "overview", "in_bar": True}, {"name": "identification", "in_bar": True},
+            {"name": "custom-1", "label": "Mine", "rows": [["volcano"]]},
+            {"name": "differential", "in_bar": True}, {"name": "pathways", "in_bar": False},
+        ],
+    }))
+    migrate_views(path)
+    saved = json.loads(path.read_text())
+    assert [v["name"] for v in saved["views"]] == ["pathways", "identification", "custom-1"]
+    assert "current" not in saved and "layout" not in saved
+    before = path.read_text()
+    migrate_views(path)  # once only
+    assert path.read_text() == before
+
+
+def test_abundance_profile_table():
+    import pandas as pd
+
+    from src.viewer.panels.abundance_profile import profile_table
+
+    pivot = pd.DataFrame({"ProteinName": ["sp|P1|A_HUMAN", "sp|P2|B_HUMAN"], "s1": [4.0, 0.0], "s2": [8.0, 2.0]})
+    table = profile_table(pivot, "ProteinName", {"s1": "ctrl", "s2": "drug"})
+    p1 = table[(table["accession"] == "sp|P1|A_HUMAN") & ~table["series"].str.endswith(" mean")]
+    assert p1["x"].tolist() == [1.0, 2.0] and p1["y"].tolist() == [2.0, 3.0]
+    assert p1["series"].tolist() == ["ctrl", "drug"]
+    # An abundance of 0 is not measured
+    p2 = table[(table["accession"] == "sp|P2|B_HUMAN") & ~table["series"].str.endswith(" mean")]
+    assert p2["sample"].tolist() == ["s2"]
+
+
+def test_abundance_profile_groups_side_by_side_with_means():
+    import pandas as pd
+
+    from src.viewer.panels.abundance_profile import profile_table
+
+    pivot = pd.DataFrame({"ProteinName": ["P1"], "a1": [2.0], "b1": [8.0], "a2": [8.0], "b2": [32.0]})
+    table = profile_table(pivot, "ProteinName", {"a1": "a", "b1": "b", "a2": "a", "b2": "b"})
+    points = table[~table["series"].str.endswith(" mean")]
+    assert dict(zip(points["sample"], points["x"])) == {"a1": 1.0, "a2": 2.0, "b1": 3.0, "b2": 4.0}
+    mean_a = table[table["series"] == "a mean"]
+    assert mean_a["x"].tolist() == [1.0, 2.0] and mean_a["y"].tolist() == [2.0, 2.0]
+    assert table[table["series"] == "b mean"]["y"].tolist() == [4.0, 4.0]

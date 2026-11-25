@@ -13,6 +13,7 @@ from pyopenms import AASequence, MSExperiment, MzMLFile, PeakFileOptions, Spectr
 
 from src.common.contaminants import CONTAMINANT_PREFIX
 from src.common.results_helpers import extract_filename_from_idxml, load_idxml
+from src.common.disk_cache import per_file
 
 # Mass difference between the 13C and 12C isotopes; precursor picks up to
 # three isotope peaks off the monoisotope are corrected before the error is taken
@@ -41,6 +42,7 @@ DIAGNOSIS_COLUMNS = ["Profile MS2 (%)", "Contaminant PSMs (%)", "At window edge 
 EDGE_OF_WINDOW = 0.9
 
 
+@per_file
 def ms2_summary(mzml_path) -> tuple[int | None, float | None]:
     """MS2 spectra of an mzML and the share (%) stored as profile data, read without peaks.
 
@@ -95,6 +97,7 @@ def _is_contaminant(hit) -> bool:
 PSM_COLUMNS = ["sequence", "decoy", "ppm", "contaminant"]
 
 
+@per_file
 def read_psms(idxml_path) -> pd.DataFrame:
     """Top hit of every spectrum in an idXML: sequence, decoy flag, precursor error, contaminant flag."""
     _, peptides = load_idxml(idxml_path)

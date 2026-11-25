@@ -1,4 +1,4 @@
-"""The PSM table over every file of a run (src/common/all_psms.py)."""
+"""The PSM table over every file of a run (src/viewer/all_psms.py)."""
 import pytest
 
 from tests.test_identified_spectra import _write_idxml, _write_mzml
@@ -30,7 +30,7 @@ def test_one_table_holds_every_file(tmp_path):
     pytest.importorskip("openms_insight")
     import polars as pl
 
-    from src.common.all_psms import all_files_hit, all_files_table_id, FILE_FIELD, ROW_FIELD
+    from src.viewer.all_psms import all_files_hit, all_files_table_id, FILE_FIELD, ROW_FIELD
 
     cache, idxmls = _run(tmp_path, {"a": [3, 5], "b": [2, 3, 4]})
     table_id = all_files_table_id(cache, idxmls)
@@ -54,7 +54,7 @@ def test_one_table_holds_every_file(tmp_path):
 
 def test_files_without_a_table_are_left_out(tmp_path):
     pytest.importorskip("openms_insight")
-    from src.common.all_psms import all_files_table_id, file_label
+    from src.viewer.all_psms import all_files_table_id, file_label
 
     cache, idxmls = _run(tmp_path, {"a": [3]})
     assert all_files_table_id(cache, [idxmls[0].with_name("c_filter.idXML")]) is None

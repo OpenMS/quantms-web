@@ -5,19 +5,20 @@ import streamlit as st
 
 from src.common import result_export as rx
 from src.common.common import export_folder_input, page_setup
-from src.common.guide import needs_results
-from src.common.provenance_ui import has_provenance, provenance
+from src.common.guide import needs_results, page_intro
 from src.common.results_helpers import get_runs
-from src.workflow.report_ui import report_buttons
+from src.viewer.history_ui import history_section
 from src.workflow.RunManager import FINISHED, MAX_NAME_LENGTH, RUNNING, format_time
 from src.workflow.run_widgets import run_import
 
 page_setup()
 local = rx.is_local()
 st.title("Export results" if local else "Download results")
-st.markdown(
-    "One folder per run: its results, settings and logs." if local
-    else "One ZIP per run: its results, settings and logs."
+page_intro(
+    ("One folder per run: its results, settings and logs." if local
+     else "One ZIP per run: its results, settings and logs.")
+    + " **History** on each run says how it came about and which settings it used, with its "
+    "processing report. The button beside **History** on **Explore results** exports the run shown there."
 )
 
 runs = get_runs(Path(st.session_state["workspace"]))
@@ -77,10 +78,7 @@ for i, run in enumerate(all_runs):
         with st.expander("Files"):
             rx.file_table(files)
         if status == FINISHED:
-            with st.expander("Processing report"):
-                report_buttons(runs.workflow_dir, run_id, key=f"export-report-{run_id}")
-            if has_provenance(runs, run_id):
-                with st.expander("Provenance"):
-                    provenance(runs, run_id)
+            with st.expander("History"):
+                history_section(runs, run_id, key=f"export-history-{run_id}")
 
 run_import(runs)

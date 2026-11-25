@@ -3,9 +3,8 @@
 from pathlib import Path
 import streamlit as st
 from src.common.empty_result import fdr_summary
-from src.common.insight_tables import show_insight_table
-from src.common.overview import PER_FILE_COLUMNS, run_overview
-from src.common.results_helpers import get_abundance_data, get_run_dir, get_run_params, search_tolerances
+from src.common.overview import run_overview
+from src.common.results_helpers import get_run_dir, get_run_params, search_tolerances
 from src.viewer.scope import needs_results
 
 
@@ -36,63 +35,28 @@ def load_overview(ctx):
     return per_file, figures, workflow_params, run_dir / "results" / "insight_cache", sources
 
 
-def render(ctx) -> None:
+def dda_tiles(ctx) -> None:
+    """Identification summary as tiles, with the run's filters as a grey line."""
+    from src.viewer import protein_data
+
     loaded = load_overview(ctx)
     if loaded is None:
         return needs_results()
-    per_file, figures, workflow_params, cache_dir, sources = loaded
-    abundance = get_abundance_data(ctx.workspace)
-    proteins = samples = conditions = None
-    if abundance is not None:
-        pivot_df, expr_df, group_map = abundance
-        proteins = len(pivot_df)
-        samples = len(expr_df.columns)
-        conditions = len({str(g) for g in group_map.values() if str(g).strip()}) or None
+    _, figures, workflow_params, _, _ = loaded
+    data = protein_data.load(ctx)
+    proteins = protein_data.protein_count(data) if data is not None else None
     fdr = float(workflow_params.get("psm-fdr-percent", 1.0))
+    tiles = [
+        ("Files", _show(figures["Files"]), f"Filters of this run: {fdr_summary(workflow_params)}."),
+        ("Target PSMs", _show(figures["Target PSMs"]), f"At {fdr:g} % PSM FDR, over all files."),
+        ("Peptides", _show(figures["Peptides"]), "Distinct target peptide sequences."),
+        ("Proteins", _show(proteins), "Identified target proteins, without contaminants."),
+        ("PSMs per MS2 spectrum", _show(figures["PSMs per MS2 (%)"], " %"), None),
+        ("Median precursor error", _show(figures["Median precursor error (ppm)"], " ppm"), None),
+    ]
+    for col, (label, value, help_text) in zip(st.columns(len(tiles)), tiles):
+        col.metric(label, value, help=help_text)
 
-    def _show(value, unit: str = "") -> str:
-        return "–" if value is None else f"{value:,}{unit}"
 
-    st.subheader("Key figures")
-    st.caption(f"Filters of this run: {fdr_summary(workflow_params)}.")
-    row1 = st.columns(4)
-    row1[0].metric("Quantified proteins", _show(proteins), help="Proteins in the quantification result.")
-    row1[1].metric(
-        "Peptides",
-        _show(figures["Peptides"]),
-        help=f"Distinct target peptide sequences at {fdr:g} % PSM FDR, over all files.",
-    )
-    row1[2].metric(
-        "Target PSMs", _show(figures["Target PSMs"]), help=f"Target PSMs at {fdr:g} % PSM FDR, over all files."
-    )
-    row1[3].metric(
-        "PSMs per MS2 spectrum",
-        _show(figures["PSMs per MS2 (%)"], " %"),
-        help="Target PSMs divided by the MS2 spectra of all files.",
-    )
-    row2 = st.columns(4)
-    row2[0].metric(
-        "Median precursor error",
-        _show(figures["Median precursor error (ppm)"], " ppm"),
-        help="Median m/z error of the target PSMs, after correcting picks of a 13C isotope peak.",
-    )
-    row2[1].metric("Files", _show(figures["Files"]))
-    row2[2].metric("Samples", _show(samples), help="Sample columns of the quantification result.")
-    row2[3].metric("Conditions", _show(conditions), help="Distinct groups set on the Describe experiment page.")
-    st.subheader("Files")
-    st.caption(f"Counts at {fdr:g} % PSM FDR.")
-    # One row per file; the fractional columns go as text, since the table stores
-    # floats as float32 and would show 36.8 as 36.79999923706055
-    per_file_view = per_file[PER_FILE_COLUMNS].copy()
-    for col in ("ID rate (%)", "Mass error (ppm)"):
-        per_file_view[col] = per_file_view[col].map(lambda v: "" if v is None or v != v else f"{v:g}")
-    show_insight_table(
-        per_file_view,
-        name="overview_files",
-        cache_dir=cache_dir,
-        source_files=sources,
-        title="run_overview",
-        height=300,
-        # Share the page width between the columns rather than folding the last ones away
-        layout="fitColumns",
-    )
+def _show(value, unit: str = "") -> str:
+    return "–" if value is None else f"{value:,}{unit}"
