@@ -19,7 +19,7 @@ VIEWS = {
     "pathways": (
         "What the proteins that differ between your groups have in common. The volcano plot and the "
         "group comparison table show the differing proteins; GO enrichment tests which biological "
-        "processes, molecular functions and cellular components are over-represented among them."
+        "processes, molecular functions and cellular components are over-represented among them, and PTM enrichment which protein modifications are."
     ),
     "identification": (
         "Which proteins and peptides were identified, down to the spectrum behind each match. Read "
@@ -130,6 +130,14 @@ COMPONENTS = {
         "with a small adjusted p-value is shared by more picked proteins than chance would give. "
         "With nothing picked, it counts the terms of all compared proteins. The GO category and "
         "the number of terms in the chart are in the chart's settings (gear)."
+    ),
+    "ptm_enrichment": (
+        "Protein modifications (PTMs: phosphorylation, acetylation, glycosylation and the others "
+        "UniProt annotates) enriched among the proteins that change between your groups. The compared "
+        "proteins are ranked by their log2 fold change, and protein set enrichment analysis (PSEA, "
+        "with the PEIMAN2 R package) tests for each modification whether its proteins gather at the "
+        "top (higher in the compared group) or the bottom of the ranking. A positive enrichment score "
+        "means higher, a negative one lower; a small adjusted p-value means more than chance would give."
     ),
     "comparison_missing_values": (
         "How many abundances are missing per sample and protein. Missing values are common in "
