@@ -108,3 +108,57 @@ def test_to_polars_applies_column_overrides():
     assert by_title["a.b"]["formatter"] == "money"
     assert by_title["a.b"]["field"] == "a_b"
     assert by_title["c"]["visible"] is False
+
+
+def _patch_run(monkeypatch, run_id, params, run=None):
+    import streamlit as st
+
+    from src.common import results_helpers
+
+    class _Runs:
+        def get(self, _run_id):
+            return run
+
+    monkeypatch.setitem(st.session_state, "workspace", "ws")
+    monkeypatch.setattr(results_helpers, "get_run_id", lambda _ws: run_id)
+    monkeypatch.setattr(results_helpers, "get_runs", lambda _ws: _Runs())
+    monkeypatch.setattr(results_helpers, "get_run_params", lambda _ws, _run_id=None: params)
+
+
+def test_run_export_info_names_the_run_and_its_search(monkeypatch):
+    from src.common.insight_tables import run_export_info
+
+    params = {
+        "analysis-mode": "TMT",
+        "ProSE-TMT": {
+            "Search:precursor:mass_tolerance_lower": 10.0,
+            "Search:precursor:mass_tolerance_upper": 10.0,
+            "Search:fragment:mass_tolerance": 0.02,
+            "Search:fragment:mass_tolerance_unit": "Da",
+        },
+    }
+    _patch_run(monkeypatch, "20261123-0600", params, {"name": "TMT 10-plex"})
+    assert run_export_info() == {
+        "Run": "TMT 10-plex",
+        "Analysis": "TMT",
+        "Precursor tolerance": "10 ppm",
+        "Fragment tolerance": "0.02 Da",
+    }
+
+
+def test_run_export_info_falls_back_to_the_run_id(monkeypatch):
+    from src.common.insight_tables import run_export_info
+
+    _patch_run(monkeypatch, "20261123-0600", {}, {})
+    info = run_export_info()
+    assert info["Run"] == "20261123-0600"
+    assert info["Analysis"] == "Label-free"
+
+
+def test_run_export_info_is_empty_without_a_run(monkeypatch):
+    from src.common.insight_tables import run_export_info
+
+    _patch_run(monkeypatch, None, {})
+    assert run_export_info() == {}
+
+

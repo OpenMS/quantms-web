@@ -2,7 +2,8 @@
 
 ``st.dataframe`` ships the whole table to the browser, which stalls on
 full-scale runs. An openms-insight ``Table`` caches the data on disk once and
-sends one page at a time; its download button exports every row and column.
+sends one page at a time; its download button exports every row and column,
+as CSV or as an Excel workbook whose About sheet names the run.
 """
 import hashlib
 import shutil
@@ -97,6 +98,35 @@ def _to_polars(df: pd.DataFrame, column_overrides: dict | None = None) -> tuple[
     return pl_df, column_definitions
 
 
+def run_export_info() -> dict:
+    """What the Excel download's About sheet says about the run a table comes from.
+
+    The shown run's name, its analysis and the search tolerances; empty outside
+    a run (a workspace without results, a page that shows no run).
+    """
+    from src.common.results_helpers import get_run_id, get_run_params, get_runs, search_tolerances
+
+    workspace = st.session_state.get("workspace")
+    if not workspace:
+        return {}
+    try:
+        run_id = get_run_id(workspace)
+        if run_id is None:
+            return {}
+        run = get_runs(workspace).get(run_id) or {}
+        params = get_run_params(workspace, run_id)
+        tolerances = search_tolerances(params)
+    except Exception:  # pylint: disable=broad-except
+        return {}
+    fragment_unit = "ppm" if tolerances["fragment_ppm"] else "Da"
+    return {
+        "Run": run.get("name") or run_id,
+        "Analysis": "TMT" if params.get("analysis-mode") == "TMT" else "Label-free",
+        "Precursor tolerance": f"{tolerances['precursor']:g} {tolerances['precursor_unit']}",
+        "Fragment tolerance": f"{tolerances['fragment']:g} {fragment_unit}",
+    }
+
+
 def show_insight_table(
     df: pd.DataFrame,
     name: str,
@@ -108,6 +138,7 @@ def show_insight_table(
     page_size: int = 100,
     state_manager=None,
     column_overrides: dict | None = None,
+    export_info: dict | None = None,
     note: str | None = None,
     **table_kwargs,
 ) -> Table:
@@ -138,6 +169,9 @@ def show_insight_table(
         column_overrides: Extra Tabulator column settings per column name,
             e.g. a ``formatter``. openms-insight stores floats as float32, so
             a column of rounded values needs one to display without noise.
+        export_info: What the About sheet of the Excel download says besides
+            the table, its sort and filters. Defaults to the shown run
+            (``run_export_info``); ``{}`` leaves it out.
         note: Figures of the shown run, added to the info icon.
         **table_kwargs: Passed on to ``Table`` (e.g. ``initial_sort``).
     """
@@ -167,7 +201,8 @@ def show_insight_table(
         )
 
     # Every column stays; a table narrower than its columns scrolls sideways
-    table = retitle(Table(cache_id=cache_id, cache_path=str(cache_dir), collapse_columns=False), head.get("title"))
+    table = retitle(Table(cache_id=cache_id, cache_path=str(cache_dir), collapse_columns=False,
+                           export_info=run_export_info() if export_info is None else export_info), head.get("title"))
     from src.viewer.scope import scoped
 
     table(key=scoped(f"insight_table_{name}"), height=height, state_manager=state_manager, help=head.get("help"))

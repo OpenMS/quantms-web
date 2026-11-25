@@ -6,6 +6,7 @@ from pathlib import Path
 import polars as pl
 import streamlit as st
 from openms_insight import LinePlot, Table
+from src.common.insight_tables import run_export_info
 from src.common.mass_shifts import MATCH_TOLERANCE, MIN_PSMS, mass_shift_summary, psm_mass_shifts
 from src.common.results_helpers import get_run_dir, get_run_params, search_tolerances
 from src.viewer.scope import heading, needs_results, retitle, scoped, shared_state, zoom
@@ -103,9 +104,9 @@ def render(ctx) -> None:
         f"{int((shifts['Interpretation'] == '').sum()):,}",
         help="Shifts with no Unimod modification within 0.02 Da.",
     )
-    retitle(Table(cache_id=ids["shifts"], cache_path=str(cache_dir), collapse_columns=False), "Shifts")(
+    retitle(Table(cache_id=ids["shifts"], cache_path=str(cache_dir), collapse_columns=False, export_info=run_export_info()), "Shifts")(
         key=scoped("mass_shift_table"), state_manager=state_manager, height=mass_shift_table.height(len(shifts))
     )
-    retitle(Table(cache_id=ids["psms"], cache_path=str(cache_dir), collapse_columns=False), "PSMs of the selected shift")(
+    retitle(Table(cache_id=ids["psms"], cache_path=str(cache_dir), collapse_columns=False, export_info=run_export_info()), "PSMs of the selected shift")(
         key=scoped("mass_shift_psm_table"), state_manager=state_manager, height=420
     )
