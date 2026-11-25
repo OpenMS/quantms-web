@@ -2,7 +2,8 @@ import pandas as pd
 import pyopenms as poms
 import pytest
 
-from src.common.charge_cleavage import ALL_FILES, read_psms, searched_enzyme, summary
+from src.viewer.charge_cleavage_source import read_psms, searched_enzyme
+from src.viz.identification.charge_cleavage import ALL_FILES, summary
 
 try:  # pyOpenMS >= 3.5.0
     from pyopenms import PeptideIdentificationList
@@ -88,7 +89,7 @@ def test_summary_per_file_and_all_files(tmp_path):
     assert row_a["0 missed (%)"] == pytest.approx(66.7)
     assert row_a["Mean missed"] == pytest.approx(0.33)
     assert per_file[per_file["File"] == "b.mzML"].iloc[0]["2+ missed (%)"] == 50.0
-    shares = charges[charges["file_id"] == 1].set_index("bin")["share"]
+    shares = charges[charges["file"] == "a.mzML"].set_index("bin")["share"]
     assert shares.sum() == pytest.approx(100.0)
-    assert sorted(charges["bin"].unique()) == [1, 2, 3, 4]
-    assert sorted(missed["bin"].unique()) == [0, 1, 2]
+    assert charges["bin"].unique().tolist() == ["1", "2", "3", "4+"]
+    assert missed["bin"].unique().tolist() == ["0", "1", "2+"]
