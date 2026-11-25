@@ -5,12 +5,14 @@ import pandas as pd
 import polars as pl
 import streamlit as st
 from openms_insight import SeriesPlot
+
+from src.viz.identification import precursor_mass_error, score_distribution
 from src.common.insight_tables import plot_cache
 from src.common.qc_plots import (
-    DECOY_COLOR, TARGET_COLOR, fdr_cutoff, mass_error_histogram, psm_qc_table, psms_per_file, score_histogram,
+    fdr_cutoff, mass_error_histogram, psm_qc_table, psms_per_file, score_histogram,
 )
 from src.common.results_helpers import get_run_dir, get_run_params, search_results_dir
-from src.viewer.scope import needs_results, scoped, shared_state, zoom
+from src.viewer.scope import heading, needs_results, scoped, shared_state, zoom
 
 
 @st.cache_data(show_spinner="Reading identifications...")
@@ -42,10 +44,11 @@ def load_qc(ctx):
     return all_psms, filtered, fdr
 
 
-def _series(name: str, data: pd.DataFrame, **kwargs) -> None:
+def _series(name: str, data: pd.DataFrame, settings: dict, detail=None, note=None) -> None:
+    """Draw a library series component; the Viewer's heading replaces its title."""
     SeriesPlot(
         **plot_cache(f"quantms_{name}", data), **zoom(SeriesPlot, name),
-        data=pl.from_pandas(data).lazy(), x_column="x", y_column="y", mode="lines", **kwargs,
+        **(settings | heading(detail=detail, note=note)), data=pl.from_pandas(data).lazy(),
     )(key=scoped(name), state_manager=shared_state(), height=340)
 
 
@@ -58,17 +61,14 @@ def scores(ctx) -> None:
     data, label, _ = score_histogram(all_psms)
     cutoff = fdr_cutoff(all_psms, fdr)
     targets, decoys = int((~all_psms["decoy"]).sum()), int(all_psms["decoy"].sum())
-    line = f"{targets:,} target and {decoys:,} decoy PSMs"
-    if cutoff is not None:
-        line += f" · PSM FDR {fdr * 100:.3g} % passes {label} ≥ {cutoff:.3g}"
-    st.caption(line + ".")
+    note = f"This run: {targets:,} target and {decoys:,} decoy PSMs."
+    detail = f"{fdr * 100:.3g} % PSM FDR at {label} ≥ {cutoff:.3g}" if cutoff is not None else None
     if not decoys:
         st.warning("No decoy PSMs found, so the score distribution cannot show the incorrect matches.")
     _series(
-        "qc_scores", data, series_column="kind",
-        series_names={"target": "Targets", "decoy": "Decoys"},
-        series_colors={"target": TARGET_COLOR, "decoy": DECOY_COLOR},
-        x_label=label, y_label="PSMs",
+        "qc_scores", data,
+        score_distribution.settings(2 if decoys else 1, x_label=label, y_label="PSMs", fixed_y_range=False),
+        detail=detail, note=note,
     )
 
 
@@ -81,27 +81,7 @@ def mass_error(ctx) -> None:
     data, median = mass_error_histogram(filtered)
     if median is None:
         return needs_results("No precursor errors in this run.")
-    st.caption(f"Target PSMs at {fdr * 100:.3g} % PSM FDR · median {median:+.2f} ppm, isotope errors removed.")
     _series(
-        "qc_mass_error", data, series_colors=None, x_label="Precursor error (ppm)", y_label="PSMs",
-        show_legend=False, y_range_mode="nonnegative",
+        "qc_mass_error", data, precursor_mass_error.settings(), detail=f"median {median:+.2f} ppm",
+        note=f"Target PSMs at {fdr * 100:.3g} % PSM FDR, isotope errors removed.",
     )
-
-
-def render(ctx) -> None:
-    """The former Identification quality component (kept for saved views)."""
-    loaded = load_qc(ctx)
-    if loaded is None:
-        return needs_results()
-    scores(ctx)
-    mass_error(ctx)
-    filtered = loaded[1]
-    if filtered is not None and not filtered.empty:
-        from src.common.insight_tables import show_series
-
-        per_file = psms_per_file(filtered).assign(kind="target")
-        show_series(
-            per_file, "qc-psms-per-file", height=max(250, 36 * len(per_file) + 120), x_column="file",
-            y_column="PSMs", series_column="kind", mode="bars", orientation="h", series_colors={"target": TARGET_COLOR}, x_label="File",
-            y_label="Target PSMs", show_legend=False, y_range_mode="nonnegative",
-        )

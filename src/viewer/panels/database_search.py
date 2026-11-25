@@ -5,7 +5,7 @@ from src.common.results_helpers import get_run_dir, get_run_params, search_resul
 from src.common.spectrum_view import ensure_psm_views, psm_mzml_files, show_selected_psm_spectrum
 from src.common.sequence_display import psm_table, sequence_mode_selector
 from openms_insight import Heatmap, SequenceView
-from src.viewer.scope import needs_results, scoped, shared_state, PSM_PRIVATE
+from src.viewer.scope import needs_results, scoped, shared_state, PSM_PRIVATE, heading, retitle
 
 
 def render(ctx) -> None:
@@ -33,14 +33,13 @@ def render(ctx) -> None:
     heatmap = Heatmap(cache_id=f"heatmap_{cache_id_prefix}", cache_path=str(cache_dir))
     seq_view = SequenceView(cache_id=f"seqview_{cache_id_prefix}", cache_path=str(cache_dir))
     # Render components
-    st.subheader("PSM Overview")
-    heatmap(state_manager=state_manager, height=350, key=scoped("search_map"))
-    st.subheader("PSM Table")
+    head = heading("PSM overview")
+    retitle(heatmap, head.get("title"))(
+        state_manager=state_manager, height=350, key=scoped("search_map"), help=head.get("help")
+    )
     mode = sequence_mode_selector("search")
     psm_table(cache_dir, f"table_{cache_id_prefix}", mode, state_manager)
-    st.subheader("Peptide Sequence")
-    seq_view(key=scoped(f"seqview_{cache_id_prefix}"), state_manager=state_manager, height=533)
-    st.subheader("MS2 spectrum")
+    retitle(seq_view, "Peptide sequence")(key=scoped(f"seqview_{cache_id_prefix}"), state_manager=state_manager, height=533)
     show_selected_psm_spectrum(
         cache_dir,
         selected_file,
