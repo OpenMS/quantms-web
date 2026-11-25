@@ -35,8 +35,47 @@ def _index_path(folder: Path, proteins) -> Path:
     return Path(folder, f"go-index-{digest}.parquet")
 
 
+ALL_PROTEINS = "go-index-all.parquet"
+
+
+def _from_all(folder: Path, wanted: set) -> pl.DataFrame | None:
+    """The rows of ``wanted`` from the index the workflow built, when it holds all of them."""
+    path = Path(folder, ALL_PROTEINS)
+    if not path.is_file():
+        return None
+    index = pl.read_parquet(path)
+    if not wanted <= set(index["accession"].unique().to_list()):
+        return None
+    return index.filter(pl.col("accession").is_in(sorted(wanted)))
+
+
+def prepare(folder: Path, proteins, fetch=fetch_go_annotations) -> str | None:
+    """Look up the GO terms of ``proteins`` once, while the workflow runs.
+
+    Adds them to the workspace's index of every protein processed so far
+    (``ALL_PROTEINS``), so the GO enrichment component finds them without a
+    network call. Returns an error message, or None.
+    """
+    wanted = {clean(p) for p in proteins if p}
+    path = Path(folder, ALL_PROTEINS)
+    known = pl.read_parquet(path) if path.is_file() else None
+    missing = sorted(wanted - (set(known["accession"].unique().to_list()) if known is not None else set()))
+    if not missing:
+        return None
+    try:
+        annotations = fetch(missing)
+    except Exception as err:  # the network, MyGene.info  # pylint: disable=broad-except
+        return f"The GO terms could not be looked up at MyGene.info ({err})."
+    index = go_term_index(annotations, missing)
+    if known is not None:
+        index = pl.concat([known, index.cast(known.schema)], how="vertical")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    index.write_parquet(path)
+    return None
+
+
 def index_ready(folder: Path, proteins) -> bool:
-    return _index_path(folder, proteins).is_file()
+    return _index_path(folder, proteins).is_file() or _from_all(folder, {clean(p) for p in proteins}) is not None
 
 
 def term_index(folder: Path, proteins, fetch=fetch_go_annotations) -> tuple[pl.DataFrame | None, str | None]:
@@ -44,6 +83,9 @@ def term_index(folder: Path, proteins, fetch=fetch_go_annotations) -> tuple[pl.D
     path = _index_path(folder, proteins)
     if path.is_file():
         return pl.read_parquet(path), None
+    index = _from_all(folder, {clean(p) for p in proteins})
+    if index is not None:
+        return index, None
     try:
         annotations = fetch(sorted({clean(p) for p in proteins}))
     except Exception as err:  # the network, MyGene.info  # pylint: disable=broad-except

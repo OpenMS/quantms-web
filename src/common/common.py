@@ -26,6 +26,7 @@ except ImportError:
 from src.common.developer import render_developer_toggle
 from src.common.other_apps import render_other_apps_sidebar
 from src.common.captcha_ import captcha_control
+from src.common.download_tracking import tracker_script, tracking_enabled
 from src.common.admin import (
     is_admin_configured,
     verify_admin_password,
@@ -700,7 +701,7 @@ def apply_theme_css() -> None:
     )
 
 
-def page_setup(page: str = "") -> dict[str, Any]:
+def page_setup(page: str = "", captcha: bool = True) -> dict[str, Any]:
     """
     Set up the Streamlit page configuration and determine the workspace for the current session.
 
@@ -708,6 +709,10 @@ def page_setup(page: str = "") -> dict[str, Any]:
 
     Args:
         page (str, optional): The name of the current page, by default "".
+        captcha (bool, optional): Online, ask for the captcha (and the
+            tracking consent) before the page is drawn, once per session.
+            Pages that only explain the app (Quick Start, Documentation)
+            pass False, so they open without it; the workflow pages keep it.
 
     Returns:
         dict[str, Any]: A dictionary containing the parameters loaded from the parameter file.
@@ -814,6 +819,12 @@ def page_setup(page: str = "") -> dict[str, Any]:
                 width=1,
                 height=1,
             )
+            if tracking_enabled(st.session_state.settings):
+                html(
+                    tracker_script(st.session_state.settings.get("app-name", "")),
+                    width=1,
+                    height=1,
+                )
 
     # Determine the workspace for the current session
     if ("workspace" not in st.session_state) or (
@@ -922,19 +933,10 @@ def page_setup(page: str = "") -> dict[str, Any]:
     if st.session_state.location == "local":
         st.session_state["controllo"] = True
 
-    captcha_control(privacy_policy_url=get_legal_links()["privacy"])
-
-    # If run in hosted mode, show captcha as long as it has not been solved
-    # if not "local" in sys.argv:
-    #    if "controllo" not in st.session_state:
-    #        # Apply captcha by calling the captcha_control function
-    #        captcha_control()
-
-    # If run in hosted mode, show captcha as long as it has not been solved
-    if "controllo" not in st.session_state or (
-        "controllo" in params.keys() and params["controllo"] == False
-    ):
-        # Apply captcha by calling the captcha_control function
+    # Online, ask for the captcha once per session (it sets "controllo"),
+    # unless the page only explains the app.
+    # captcha_control() itself returns at once when "controllo" is set.
+    if captcha:
         captcha_control(privacy_policy_url=get_legal_links()["privacy"])
 
     return params
