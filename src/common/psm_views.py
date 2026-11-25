@@ -14,9 +14,9 @@ from openms_insight import Heatmap, LinePlot, SequenceView, Table
 from src.common.identified_spectra import has_spectra, spectra_sources
 from src.common.plot_style import spectrum_styling
 from src.common.results_helpers import (
-    build_spectra_cache, extract_filename_from_idxml, parse_idxml, peaks_for_identifications, psm_table_columns,
-    write_psm_exports,
+    build_spectra_cache, extract_filename_from_idxml, parse_idxml, peaks_for_identifications, write_psm_exports,
 )
+from src.viz.identification import annotated_spectrum, peptide_sequence_view, psm_map, psm_table
 
 CACHE_DIR = "insight_cache"
 # Folder of the raw database search hits; their score (ProSE's ln(hyperscore))
@@ -51,48 +51,21 @@ def build_psm_views(idxml_path: Path, cache_dir: Path, spectra_df: pl.DataFrame 
         cache_id=f"table_{prefix}",
         data=id_df.lazy(),
         cache_path=str(cache_dir),
-        interactivity={"file": "file_index", "spectrum": "scan_id", "identification": "id_idx"},
-        column_definitions=psm_table_columns(),
-        initial_sort=[{"column": "score", "dir": score_sort(idxml_path)}],
-        index_field="id_idx",
+        **psm_table.settings(ascending=score_sort(idxml_path) == "asc"),
     )
-    Heatmap(
-        cache_id=f"heatmap_{prefix}",
-        data=id_df.lazy(),
-        cache_path=str(cache_dir),
-        x_column="rt",
-        y_column="mz",
-        intensity_column="score",
-        interactivity={"identification": "id_idx"},
-    )
+    Heatmap(cache_id=f"heatmap_{prefix}", data=id_df.lazy(), cache_path=str(cache_dir), **psm_map.settings())
     seq_view = SequenceView(
         cache_id=f"seqview_{prefix}",
-        sequence_data=id_df.lazy().select(["id_idx", "sequence", "charge", "file_index", "scan_id"]).rename({
-            "id_idx": "sequence_id",
-            "charge": "precursor_charge",
-        }),
+        sequence_data=peptide_sequence_view.sequence_rows(id_df.lazy()),
         peaks_data=peaks_for_identifications(spectra_df, id_df),
-        filters={
-            "identification": "sequence_id",
-            "file": "file_index",
-            "spectrum": "scan_id",
-        },
-        interactivity={"peak": "peak_id"},
         cache_path=str(cache_dir),
-        deconvolved=False,
-        annotation_config={
-            "ion_types": ["b", "y"],
-            "neutral_losses": True,
-            "tolerance": tolerance,
-            "tolerance_ppm": ppm,
-        },
+        **peptide_sequence_view.settings(tolerance, ppm),
     )
     LinePlot.from_sequence_view(
         seq_view,
         cache_id=f"lineplot_{prefix}",
         cache_path=str(cache_dir),
-        title="Annotated Spectrum",
-        styling=spectrum_styling(),
+        **annotated_spectrum.settings(styling=spectrum_styling()),
     )
     if export_dir is not None:
         # Downloadable exports: every PSM, and every PSM's matched fragment

@@ -1,11 +1,12 @@
-"""compare_groups as a Viewer component."""
+"""The group comparison table (the template's library panel)."""
 
 import streamlit as st
 from src.common.differential import comparison_groups, lead_accession
 from src.common.guide import ensure_group_comparison, page_link
-from src.common.insight_tables import show_insight_table
+from src.common.insight_tables import _default_cache_dir
 from src.common.results_helpers import get_abundance_data, get_id_column, get_sample_group_map
-from src.viewer.scope import GO_SET, change_cutoffs, needs_results, shared_state
+from src.viewer.scope import GO_SET, change_cutoffs, heading, needs_results, scoped, shared_state
+from src.viz.quantification.comparison_table import comparison_title, show_comparison_table
 
 
 def render(ctx) -> None:
@@ -25,40 +26,17 @@ def render(ctx) -> None:
         return
     direction = comparison_groups(sample_group_map, sample_cols)
     fc, padj = change_cutoffs(params)
-    table = statistics_df.sort_values("p-adj", na_position="last")[[id_col, "log2FC", "p-adj", "p-value"]].copy()
-    if direction:
-        sig = (table["p-adj"] <= padj) & (table["log2FC"].abs() >= fc)
-        table.insert(1, "Change", "–")
-        table.loc[sig & (table["log2FC"] > 0), "Change"] = f"higher in {direction[1]}"
-        table.loc[sig & (table["log2FC"] < 0), "Change"] = f"lower in {direction[1]}"
-    for col in ("p-adj", "p-value"):
-        # As text with three significant digits: the table stores floats as float32,
-        # which would show 0.155 as 0.1550000011920929. Rows are already in p-value order.
-        table[col] = table[col].map(lambda v: "" if v != v else f"{v:.3g}")
-    table = table.rename(
-        columns={
-            id_col: "Protein",
-            "log2FC": "log2 fold change",
-            "p-adj": "adjusted p-value",
-        }
-    )
+    reference, compared = direction or (None, None)
+    table = statistics_df[[id_col, "log2FC", "p-adj", "p-value"]].copy()
     # Picking a row picks its lead protein in every component of the run
     # (the Identification tables, the volcano plot), and the other way round
-    table["accession"] = table["Protein"].map(lead_accession)
-    show_insight_table(
-        table,
-        name="compare-groups",
-        # Rebuilt for the check boxes, which earlier caches of the same rows lack
-        extra_key="multi-select",
-        title=f"{direction[1]} vs. {direction[0]}" if direction else "Group comparison",
-        height=534,
-        layout="fitColumns",
-        state_manager=shared_state(),
+    table["accession"] = table[id_col].map(lead_accession)
+    head = heading(comparison_title(reference, compared), detail=comparison_title(reference, compared) if direction else None)
+    show_comparison_table(
+        table, id_col, "Protein", "quantms_compare_groups", cache_path=_default_cache_dir(),
+        key=scoped("compare_groups"), state_manager=shared_state(), reference=reference, compared=compared,
+        fc=fc, padj=padj, title=head.get("title"), help=head.get("help"),
         interactivity={"protein": "accession"},
         # The check boxes pick proteins for the GO enrichment, like the volcano plot
         multi_select={GO_SET: "accession"},
-        column_overrides={
-            "log2 fold change": {"formatter": "money", "formatterParams": {"thousand": False, "precision": 2}},
-            "accession": {"visible": False},
-        },
     )
