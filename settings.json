@@ -1,7 +1,7 @@
 {
     "app-name": "OpenDDA",
     "github-user": "OpenMS",
-    "version": "1.3.0",
+    "version": "2.0.0-alpha.1",
     "repository-name": "quantms-web",
     "branding": {
         "page_icon": "assets/opendda-icon-small-light.svg",
@@ -36,7 +36,8 @@
         "matomo": {
             "enabled": true,
             "url": "https://cdn.matomo.cloud/openms.matomo.cloud",
-            "tag": "yDGK8bfY"
+            "tag": "yDGK8bfY",
+            "track_downloads": true
         }
     },
     "contributors": {
@@ -57,7 +58,8 @@
         "enabled": true,
         "source_dirs": [
             "example-data/workspaces"
-        ]
+        ],
+        "new_workspace": "default"
     },
     "pride_import": {
         "max_download_gb_online": 50

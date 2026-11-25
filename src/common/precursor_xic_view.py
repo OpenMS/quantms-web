@@ -11,6 +11,7 @@ from openms_insight import SeriesPlot
 from src.common import precursor_xic as xic
 from src.common.spectrum_view import psm_lookup
 from src.viewer.scope import zoom
+from src.viz.features import precursor_xic
 
 KEEP_CACHES = 30  # XIC plots kept on disk per run; older ones are removed
 ISOTOPE_COLORS = {"M": "#1f77b4", "M+1": "#ff7f0e", "M+2": "#2ca02c", xic.MS2_SERIES: "#d62728"}
@@ -36,13 +37,12 @@ def _plot(cache_dir: Path, cache_id: str, data, series_colors: dict, title: str,
         caches = sorted((p for p in root.iterdir() if p.is_dir()), key=lambda p: p.stat().st_mtime)
         for stale in caches[: max(0, len(caches) - KEEP_CACHES + 1)]:
             shutil.rmtree(stale, ignore_errors=True)
+        settings = precursor_xic.settings(
+            filters={}, series_names={name: name for name in series_colors},
+            series_colors=series_colors, title=title, y_range_mode="nonnegative", svg_filename=cache_id,
+        )
         return SeriesPlot(
-            cache_id=cache_id, data=pl.from_pandas(data).lazy(), cache_path=str(root),
-            x_column="rt", y_column="intensity", series_column="series",
-            series_names={name: name for name in series_colors},
-            series_colors=series_colors, mode="lines+markers", title=title,
-            x_label="Retention time (s)", y_label="Intensity", y_range_mode="nonnegative",
-            svg_filename=cache_id, **zoomed,
+            cache_id=cache_id, data=pl.from_pandas(data).lazy(), cache_path=str(root), **settings, **zoomed,
         )
     return SeriesPlot(cache_id=cache_id, cache_path=str(root), **zoomed)
 

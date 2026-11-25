@@ -8,43 +8,67 @@ from pathlib import Path
 from typing import Callable, Dict
 
 from src.viewer.scope import experiment
+from src.workflow.guide import COMPONENT_GROUPS, IDENTIFICATION, MS_DATA, QUANTIFICATION
 
-# name, label, group, module in src/viewer/panels
+# name, label, group, module in src/viewer/panels. The groups are the template's
+# (src/workflow/guide.py), in the order an analysis runs; quality control and
+# functional analysis go with the data they are about.
 _COMPONENTS = [
-    ("run_summary", "Run summary: key figures and files", "Run", "overview"),
-    ("sample_counts", "Per-sample counts", "Run", "samples"),
-    ("id_quality", "Identification quality", "Run", "qc"),
-    ("id_diagnostics", "Diagnostics: files with few identifications", "Run", "diagnostics"),
-    ("protein_explorer", "Identified proteins, peptides and spectra", "Identification", "proteins"),
-    ("psms", "Peptide-spectrum matches (after FDR)", "Identification", "filtered"),
-    ("psms_rescored", "Rescored hits (Percolator)", "Identification", "rescoring"),
-    ("psms_search", "Raw search hits", "Identification", "database_search"),
-    ("mass_shifts", "Mass shifts", "Identification", "mass_shifts"),
-    ("protein_abundance", "Protein and peptide abundances", "Quantification", "abundance"),
-    ("group_comparison", "Group comparison: groups, counts and table", "Group comparison", "compare_groups"),
-    ("volcano", "Volcano plot", "Group comparison", "volcano"),
-    ("pca", "Sample similarity (PCA)", "Group comparison", "pca"),
-    ("heatmap", "Heatmap", "Group comparison", "heatmap"),
-    ("clustered_heatmap", "Clustered heatmap", "Group comparison", "heatmap_clustered"),
-    ("go_enrichment", "GO enrichment", "Group comparison", "enrichment"),
-    ("comparison_missing_values", "Missing values", "Group comparison", "comparison_missing_values"),
-    ("comparison_imputed_values", "Imputed values", "Group comparison", "comparison_imputed_values"),
-    ("comparison_normalization", "Normalization", "Group comparison", "comparison_normalization"),
-    ("comparison_pvalues", "p-value distribution", "Group comparison", "comparison_pvalues"),
+    ("dda_summary", "Identification summary", IDENTIFICATION, "dda_summary"),
+    ("quant_summary", "Quantification summary", QUANTIFICATION, "quant_summary"),
+    ("sample_counts", "Counts per sample", IDENTIFICATION, "samples"),
+    ("id_diagnostics", "Files with few identifications", IDENTIFICATION, "diagnostics"),
+    ("qc_scores", "Score distribution", IDENTIFICATION, "qc_scores"),
+    ("qc_mass_error", "Precursor mass error", IDENTIFICATION, "qc_mass_error"),
+    ("protein_table", "Proteins", IDENTIFICATION, "protein_table"),
+    ("protein_peptides", "Peptides of the picked protein", IDENTIFICATION, "protein_peptides"),
+    ("protein_psms", "PSMs of the picked peptide", IDENTIFICATION, "protein_psms"),
+    ("psm_spectrum", "Annotated spectrum of the picked PSM", IDENTIFICATION, "psm_spectrum"),
+    ("psms", "PSM explorer (after FDR)", IDENTIFICATION, "filtered"),
+    ("psms_rescored", "Rescored hits (Percolator)", IDENTIFICATION, "rescoring"),
+    ("psms_search", "Raw search hits", IDENTIFICATION, "database_search"),
+    ("mass_shifts", "Mass shifts", IDENTIFICATION, "mass_shifts"),
+    ("protein_abundance", "Protein and peptide abundances", QUANTIFICATION, "abundance"),
+    ("abundance_profile", "Abundance of the picked protein per sample", QUANTIFICATION, "abundance_profile"),
+    ("group_comparison", "Group comparison", QUANTIFICATION, "compare_groups"),
+    ("volcano", "Volcano plot", QUANTIFICATION, "volcano"),
+    ("pca", "Sample similarity (PCA)", QUANTIFICATION, "pca"),
+    ("heatmap", "Heatmap", QUANTIFICATION, "heatmap"),
+    ("clustered_heatmap", "Clustered heatmap", QUANTIFICATION, "heatmap_clustered"),
+    ("go_enrichment", "GO enrichment", QUANTIFICATION, "enrichment"),
+    ("comparison_missing_values", "Missing values", QUANTIFICATION, "comparison_missing_values"),
+    ("comparison_imputed_values", "Imputed values", QUANTIFICATION, "comparison_imputed_values"),
+    ("comparison_normalization", "Normalization", QUANTIFICATION, "comparison_normalization"),
+    ("comparison_pvalues", "p-value distribution", QUANTIFICATION, "comparison_pvalues"),
+    # Single run: one LC-MS run (mzML file) of the experiment
+    ("file_chromatogram", "Chromatogram", MS_DATA, "file_chromatogram"),
+    ("file_scans", "Scan table", MS_DATA, "file_scans"),
+    ("file_spectrum", "Spectrum of the picked scan", MS_DATA, "file_spectrum"),
+    ("file_peak_map", "Peak map (MS1)", MS_DATA, "file_peak_map"),
+    ("file_psms", "PSMs of this run", IDENTIFICATION, "file_psms"),
 ]
+
+# What Single run offers (one mzML file); the rest is the experiment's Comparison
+FILE_COMPONENTS = ("file_chromatogram", "file_scans", "file_spectrum", "file_peak_map", "file_psms")
 
 # Components that need more than every run has: the analysis each needs (src/viewer/analyses.py)
 NEEDS = {
-    "run_summary": "identification",
+    "dda_summary": "identification",
+    "quant_summary": "quantification",
     "sample_counts": "identification",
-    "id_quality": "search",
+    "qc_scores": "search",
+    "qc_mass_error": "identification",
     "id_diagnostics": "identification",
-    "protein_explorer": "identification",
+    "protein_table": "identification",
+    "protein_peptides": "identification",
+    "protein_psms": "identification",
+    "psm_spectrum": "identification",
     "psms": "identification",
     "psms_rescored": "rescoring",
     "psms_search": "search",
     "mass_shifts": "identification",
     "protein_abundance": "quantification",
+    "abundance_profile": "quantification",
     "pca": "quantification",
     "heatmap": ["quantification", "samples"],
     "clustered_heatmap": ["quantification", "samples"],
@@ -55,64 +79,131 @@ NEEDS = {
     "comparison_imputed_values": ["quantification", "groups"],
     "comparison_normalization": ["quantification", "groups"],
     "comparison_pvalues": ["quantification", "groups"],
+    "file_psms": "identification",
 }
 
 # Components computed over the samples of every run of an experiment (a run and
 # the runs that processed more files for it). The others show the files of one
 # run of it, picked above them.
 EXPERIMENT_WIDE = {
-    "protein_abundance", "group_comparison", "volcano", "pca", "heatmap",
+    "quant_summary", "protein_abundance", "abundance_profile", "group_comparison", "volcano", "pca", "heatmap",
     "clustered_heatmap", "go_enrichment", "comparison_missing_values", "comparison_imputed_values",
     "comparison_normalization", "comparison_pvalues",
 }
 
-CATALOG = [
+_ALL = sorted((
     {"name": name, "label": label, "group": group, **({"needs": NEEDS[name]} if name in NEEDS else {})}
     for name, label, group, _ in _COMPONENTS
-]
+), key=lambda c: COMPONENT_GROUPS.index(c["group"]))
+# The components of an experiment shown as a whole (Comparison), and of one of its runs (Single run)
+CATALOG = [c for c in _ALL if c["name"] not in FILE_COMPONENTS]
+FILE_CATALOG = [c for c in _ALL if c["name"] in FILE_COMPONENTS]
 MODULES = {name: module for name, _, _, module in _COMPONENTS}
-LABELS = {c["name"]: c["label"] for c in CATALOG}
+LABELS = {c["name"]: c["label"] for c in _ALL}
 
-# Ready-made views, one per question users bring to their results, picked with
-# the View selector above the Viewer. The first is the default layout.
+# Ready-made views, one per question users bring to their results. Each opens
+# with its own summary, then components that narrow what follows them: a
+# protein picked in one is picked in all of them. The first is the default.
 PRESETS = [
     {
-        "name": "overview", "label": "Overview",
-        "layout": [["run_summary"], ["id_quality"], ["protein_abundance"]],
-        "help": "Did the run work: key figures, identification quality and the protein abundances.",
-    },
-    {
-        "name": "identification", "label": "Identification",
-        "layout": [["protein_explorer"], ["psms"], ["psms_rescored"], ["mass_shifts"]],
-        "help": "Which proteins and peptides were found, down to the annotated spectra.",
-    },
-    {
-        "name": "quality_control", "label": "Quality control",
-        "layout": [["sample_counts"], ["id_diagnostics"], ["id_quality"], ["psms_search"], ["pca"]],
-        "help": "Whether the samples and identifications can be trusted.",
-    },
-    {
-        "name": "differential", "label": "Differential abundance",
-        "layout": [["group_comparison"], ["volcano"], ["heatmap"]],
-        "help": "Which proteins differ between your groups.",
-    },
-    {
-        "name": "comparison_checks", "label": "Comparison checks",
+        "name": "quantification", "label": "Quantification",
         "layout": [
+            ["quant_summary"],
+            ["volcano", "abundance_profile"],
             ["group_comparison"],
-            ["comparison_missing_values", "comparison_imputed_values"],
-            ["comparison_normalization", "comparison_pvalues"],
+            ["pca", "heatmap"],
         ],
-        "help": "Whether the group comparison's settings fit the data: missing values, the values filled in "
-                "for them, normalization and the p-values.",
+        "help": "Which proteins differ between your groups, and how each one varies across the samples.",
     },
     {
         "name": "pathways", "label": "Pathways",
-        "layout": [["group_comparison"], ["go_enrichment"]],
+        "layout": [["volcano", "group_comparison"], ["go_enrichment"]],
         "help": "What the differing proteins have in common (GO enrichment).",
+    },
+    {
+        "name": "identification", "label": "Identification",
+        "layout": [
+            ["dda_summary"],
+            ["protein_table", "protein_peptides"],
+            # The PSM's sequence view and spectrum need the full width
+            ["protein_psms"],
+            ["psm_spectrum"],
+            ["mass_shifts"],
+        ],
+        "help": "Which proteins and peptides were found, down to the annotated spectrum of each match.",
+    },
+    {
+        "name": "quality_control", "label": "Quality control",
+        "layout": [
+            # Both need the full width: the counts put their plot beside their tables, and
+            # the likely causes of a file falling short are sentences
+            ["sample_counts"],
+            ["id_diagnostics"],
+            ["qc_scores", "qc_mass_error"],
+            ["comparison_missing_values", "comparison_normalization"],
+            ["comparison_imputed_values", "comparison_pvalues"],
+        ],
+        "help": "Whether the identifications and the group comparison can be trusted.",
     },
 ]
 DEFAULT_LAYOUT = PRESETS[0]["layout"]
+
+# Ready-made views of one run (Single run): its spectra, then what was identified in them
+FILE_PRESETS = [
+    {
+        "name": "spectra", "label": "Spectra",
+        "layout": [["file_chromatogram"], ["file_scans", "file_spectrum"], ["file_peak_map"]],
+        "help": "The spectra of this run: pick one in the chromatogram, the scan table or the peak map.",
+    },
+    {
+        "name": "psms", "label": "PSMs",
+        "layout": [["file_psms"]],
+        "help": "The peptide-spectrum matches of this run after FDR, down to the annotated spectrum of each.",
+    },
+]
+FILE_DEFAULT_LAYOUT = FILE_PRESETS[0]["layout"]
+# Views of earlier releases: a saved file naming one opens on the default view
+REMOVED_PRESETS = ("overview", "differential", "comparison_checks")
+
+
+def default_view(available: set | None) -> str:
+    """Quantification for a run whose samples are in groups, else Identification."""
+    from src.viewer.analyses import GROUPS
+
+    return "quantification" if available and GROUPS in available else "identification"
+
+
+def migrate_views(path: Path) -> None:
+    """Move a views file saved with the earlier ready-made views to the current ones.
+
+    Entries of removed views are dropped (a current one of them is forgotten, so
+    the Viewer opens on its default view), and the ready-made views are put in
+    the current order, ahead of the user's own. Done once: a file already in
+    order is left alone.
+    """
+    import json
+
+    try:
+        saved = json.loads(Path(path).read_text())
+    except (OSError, ValueError):
+        return
+    views = saved.get("views")
+    if not isinstance(views, list):
+        return
+    names = [v.get("name") for v in views if isinstance(v, dict)]
+    preset_names = [p["name"] for p in PRESETS]
+    stale = [n for n in names if n in REMOVED_PRESETS]
+    in_bar = [n for n in names if n in preset_names]
+    if not stale and in_bar == [n for n in preset_names if n in in_bar]:
+        return
+    kept = [v for v in views if isinstance(v, dict) and v.get("name") not in REMOVED_PRESETS]
+    presets = sorted((v for v in kept if v.get("name") in preset_names), key=lambda v: preset_names.index(v["name"]))
+    saved["views"] = presets + [v for v in kept if v.get("name") not in preset_names]
+    if saved.get("current") in REMOVED_PRESETS:
+        saved.pop("current", None)
+        saved.pop("layout", None)
+    Path(path).write_text(json.dumps(saved, indent=2))
+
 
 # The steps of the group comparison, set in the Edit comparison dialog
 COMPARISON_STEPS = [
@@ -131,6 +222,12 @@ class ViewerContext:
     run_id: str
     index: int = 0
     params: dict = field(default_factory=dict)
+    # The run of the experiment shown on its own (Single run); None: the whole experiment
+    member: str | None = None
+    # Shown on its own: what compares samples covers this run's files only
+    single: bool = False
+    # Single run: the stem of the mzML file shown (run_id is the workflow run that processed it)
+    file: str | None = None
 
 
 def panel(module: str) -> Callable:
@@ -144,56 +241,51 @@ def draw(module: str, ctx: ViewerContext, name: str = "") -> None:
     A component that shows one run's files, in an experiment of several runs,
     shows the run picked above it (the first run unless picked).
     """
+    import streamlit as st
+
+    from src.viewer.scope import COMPONENT_KEY
+
+    # The component's main Insight view takes its title and help (scope.heading);
+    # a component that has none gets its title above it
+    slot = st.empty() if name in LABELS else None
+    if slot is not None:
+        st.session_state[COMPONENT_KEY] = name
     run_id = ctx.run_id
     if name and name not in EXPERIMENT_WIDE:
         run_id = experiment_member(ctx, name)
-    with experiment(run_id, ctx.index):
-        panel(module)(replace(ctx, run_id=run_id) if run_id != ctx.run_id else ctx)
+    try:
+        with experiment(run_id, ctx.index, single=ctx.single):
+            panel(module)(replace(ctx, run_id=run_id) if run_id != ctx.run_id else ctx)
+    finally:
+        if slot is not None and st.session_state.pop(COMPONENT_KEY, None) == name:
+            with slot.container():
+                _title(name)
 
 
-def _member_key(run_id: str, index: int) -> str:
-    return f"viewer-member-{run_id}-e{index}"
+def _title(name: str) -> None:
+    """The component's title, with a tooltip linking to its section on Understand your Results."""
+    import streamlit as st
+
+    from src.viewer.teaching import help_text
+
+    st.markdown(f"**{LABELS[name]}**", help=help_text(name))
 
 
 def experiment_member(ctx: ViewerContext, name: str = "") -> str:
     """The run of ``ctx.run_id``'s experiment whose files the components that
-    show one run's files show (picked with ``member_picker``, else the first)."""
-    import streamlit as st
-
+    show one run's files show: the one shown on its own (the Viewer's
+    ``ctx.member``), else the first."""
     from src.common.results_helpers import get_runs
 
     members = get_runs(ctx.workspace).experiment(ctx.run_id)
-    picked = st.session_state.get(_member_key(ctx.run_id, ctx.index))
-    return picked if picked in members else ctx.run_id
+    return ctx.member if ctx.member in members else ctx.run_id
 
 
-def member_picker(workspace, run_id: str, index: int) -> None:
-    """**Files of**: which run of an experiment of several runs the components
-    that show one run's files (PSMs, identified proteins, QC) show. Drawn once
-    per experiment, next to its run selector; nothing for a run alone."""
-    import streamlit as st
-
-    from src.common.results_helpers import get_runs
-
-    runs = get_runs(workspace)
-    members = runs.experiment(run_id)
-    if len(members) < 2:
-        return
-
-    def label(member: str) -> str:
-        files = runs.params(member).get("mzML-files") or []
-        count = 1 if isinstance(files, str) else len(files)
-        return f"{(runs.get(member) or {}).get('name') or member} ({count} {'file' if count == 1 else 'files'})"
-
-    key = _member_key(run_id, index)
-    if st.session_state.get(key) not in members:
-        st.session_state[key] = members[0]
-    st.segmented_control(
-        "Files of", members, key=key, format_func=label,
-        help="This experiment's files were processed in several runs (Process more files). "
-             "Abundances, the group comparison, PCA and the heatmaps cover all of them; "
-             "identifications and quality control show the files of the run picked here.",
-    )
+MEMBER_HELP = (
+    "Comparison: the experiment as a whole, its samples compared (abundances, group comparison, "
+    "PCA, heatmaps) and its identifications and quality control. Single run: one LC-MS run of it, "
+    "its chromatogram, spectra, peak map and PSMs."
+)
 
 
 def renderers(ctx: ViewerContext) -> Dict[str, Callable[[], None]]:

@@ -2,6 +2,7 @@ import streamlit as st
 from src.common.common import page_setup
 from src.common.guide import PAGES, latest_empty_run, next_steps, page_intro, show_empty_run
 from src.WorkflowTest import WorkflowTest
+from src.workflow.RunManager import RUN_NAME_KEY, RUNNING
 
 params = page_setup()
 
@@ -27,8 +28,12 @@ selected = wf_params.get("mzML-files") or []
 selected = [selected] if isinstance(selected, str) else selected
 mode = wf_params.get("analysis-mode", "LFQ")
 what = "Label-free analysis" if mode != "TMT" else "Isobaric (TMT/iTRAQ) analysis"
+# The experiment's name: given beside Run analysis, or the run going now
+running = wf.runs.list_runs(RUNNING)
+name = wf_params.get(RUN_NAME_KEY) or (running[0].get("name", "") if running else "")
 st.info(
-    f"**{what}** of {len(selected)} run{'s' if len(selected) != 1 else ''}. "
+    (f"**{name}**: " if name else "")
+    + f"**{what}** of {len(selected)} run{'s' if len(selected) != 1 else ''}. "
     "Change it on **Describe experiment**.",
     icon="🧭",
 )
@@ -37,5 +42,6 @@ wf.show_execution_section(results_page=PAGES["viewer"][0], results_label="Explor
 
 next_steps(
     ("viewer", "See whether the run went well and which proteins differ between your groups."),
+    ("export", "Keep the result files, the settings and the processing report of each run."),
 )
 
