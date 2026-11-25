@@ -585,6 +585,86 @@ def pg_rows(msstats, fractions: Optional[Mapping[str, dict]] = None) -> List[dic
     return rows
 
 
+ISOBARIC_PROTEIN_CSV = "openms_design_protein_openms.csv"
+_ABUNDANCE = re.compile(r"^abundance_sample(\d+)\[")
+
+
+def isobaric_label(tag: str, label: str) -> str:
+    """QPX's label of a reporter channel: ``TMT127N``, ``iTRAQ114``."""
+    return f"iTRAQ{tag}" if str(label).startswith("itraq") else f"TMT{tag}"
+
+
+def isobaric_channels(columns, label: str) -> List[tuple]:
+    """(column, channel number, QPX label) of each abundance column of
+    ProteinQuantifier's protein table, in channel order."""
+    from src.common.isobaric import ISOBARIC_CHANNELS
+
+    tags = ISOBARIC_CHANNELS.get(label, [])
+    out = []
+    for col in columns:
+        m = _ABUNDANCE.match(str(col))
+        if m:
+            n = int(m.group(1))
+            tag = tags[n - 1] if n <= len(tags) else str(col).rsplit("[", 1)[1].rstrip("]")
+            out.append((col, n, isobaric_label(tag, label)))
+    return sorted(out, key=lambda c: c[1])
+
+
+def isobaric_pg_rows(proteins, label: str, runs: List[str]) -> List[dict]:
+    """One QPX pg row per protein group and reporter channel of an isobaric run.
+
+    ``proteins`` is ProteinQuantifier's protein table (protein, n_proteins,
+    protein_score, n_peptides, ``abundance_sampleN[...]``); the accessions of a
+    group are separated by ``/``. Every channel's quantity covers all files of
+    the labelled set, so ``grouped_runs`` names them all and ``label`` tells the
+    channels apart.
+    """
+    import pandas as pd
+
+    from src.common.contaminants import is_contaminant
+    from src.common.protein_table import DECOY_PREFIXES
+
+    if proteins is None or proteins.empty or "protein" not in proteins:
+        return []
+    channels = isobaric_channels(proteins.columns, label)
+    runs = sorted(dict.fromkeys(runs))
+    rows = []
+    for _, protein in proteins.iterrows():
+        accessions = [a for a in dict.fromkeys(str(protein["protein"]).split("/")) if a and a != "nan"]
+        if not accessions:
+            continue
+        n_peptides = _int(protein.get("n_peptides")) or 0
+        for col, _n, channel in channels:
+            value = pd.to_numeric(protein[col], errors="coerce")
+            rows.append({
+                "pg_id": derive_id([sorted(accessions), runs, channel]),
+                "pg_accessions": accessions,
+                "pg_group_id": derive_id(sorted(accessions)),
+                "anchor_protein": accessions[0],
+                "grouped_runs": runs,
+                "label": channel,
+                "intensity": None if value != value else float(value),
+                "is_decoy": all(a.startswith(DECOY_PREFIXES) for a in accessions),
+                "contaminant": bool(is_contaminant(";".join(accessions))),
+                "peptides": [{"protein_name": a, "peptide_count": n_peptides} for a in accessions],
+                "peptide_counts": {"unique_sequences": n_peptides, "total_sequences": n_peptides},
+            })
+    return rows
+
+
+def read_isobaric_proteins(results_dir):
+    """ProteinQuantifier's protein table of an isobaric run (None without one)."""
+    import pandas as pd
+
+    path = Path(results_dir, "quant_results", ISOBARIC_PROTEIN_CSV)
+    if not path.is_file():
+        return None
+    try:
+        return pd.read_csv(path, sep="\t", comment="#")
+    except (OSError, ValueError):
+        return None
+
+
 def _search_enzyme(params: Mapping, provenance: Optional[List[dict]] = None) -> Optional[str]:
     """The enzyme the run searched with: the search step of its provenance (every
     effective parameter, defaults included), else its stored settings."""
@@ -605,8 +685,12 @@ def _search_enzyme(params: Mapping, provenance: Optional[List[dict]] = None) -> 
 
 
 def run_rows(params: Mapping, msstats=None, fractions: Optional[Mapping[str, dict]] = None,
-             provenance: Optional[List[dict]] = None) -> List[dict]:
-    """One QPX run row per input file, with its sample, replicate and fraction."""
+             provenance: Optional[List[dict]] = None, channels: Optional[List[tuple]] = None) -> List[dict]:
+    """One QPX run row per input file, with its sample, replicate and fraction.
+
+    ``channels`` (``isobaric_channels``) gives an isobaric run's files one
+    sample per reporter channel, as each file holds every channel.
+    """
     from src.common.fractions import sample_of
 
     files = [Path(str(f)).name for f in params.get("mzML-files", []) or []]
@@ -634,18 +718,29 @@ def run_rows(params: Mapping, msstats=None, fractions: Optional[Mapping[str, dic
         stem = _stem(f)
         mzml = f if f.lower().endswith(".mzml") else f"{stem}.mzML"
         sample = sample_of(mzml, fractions)
-        rows.append({
-            "run_accession": stem,
-            "run_file_name": stem,
-            "file_name": f,
-            "samples": [{
+        if channels:
+            samples = [{
+                "sample_accession": f"sample{n}",
+                "label": channel,
+                "biological_replicate": None,
+                "technical_replicate": None,
+                "channel_role": None,
+                "mixture": None,
+            } for _col, n, channel in channels]
+        else:
+            samples = [{
                 "sample_accession": sample,
                 "label": LFQ_LABEL if params.get("analysis-mode", "LFQ") == "LFQ" else None,
                 "biological_replicate": replicate.get(stem),
                 "technical_replicate": None,
                 "channel_role": None,
                 "mixture": None,
-            }],
+            }]
+        rows.append({
+            "run_accession": stem,
+            "run_file_name": stem,
+            "file_name": f,
+            "samples": samples,
             "fraction": fraction_of.get(stem, "1"),
             "enzymes": [enzyme] if enzyme else None,
             "acquisition_method": "DDA",
@@ -705,19 +800,39 @@ def export_views(results_dir, params: Mapping, name: str = "run", provenance: Op
     if provenance is None:
         stored = qpx_paths(results_dir, name)["provenance"]
         provenance = read_provenance(stored) if stored.is_file() else []
-    msstats = read_msstats(results_dir)
+    from src.common.isobaric import label_type
+
+    lfq = params.get("analysis-mode", "LFQ") == "LFQ"
+    msstats = read_msstats(results_dir) if lfq else None
+    proteins = None if lfq else read_isobaric_proteins(results_dir)
+    label = label_type(dict(params))
+    channels = isobaric_channels(proteins.columns, label) if proteins is not None else None
     fractions = fraction_samples(results_dir, params)
-    out = {"run": write_table(run_rows(params, msstats, fractions, provenance), RUN_SCHEMA, paths["run"],
+    run_table = run_rows(params, msstats, fractions, provenance, channels)
+    out = {"run": write_table(run_table, RUN_SCHEMA, paths["run"],
                               footer("run_file", {"primary_key": "run_file_name"}))}
-    groups = 0
-    if params.get("analysis-mode", "LFQ") == "LFQ" and msstats is not None:
+    rows = None
+    if msstats is not None:
         rows = pg_rows(msstats, fractions)
+    elif proteins is not None:
+        rows = isobaric_pg_rows(proteins, label, [r["run_file_name"] for r in run_table])
+    if rows is not None:
         out["pg"] = write_table(rows, PG_SCHEMA, paths["pg"], footer("pg_file", {
             "primary_key": "pg_id",
             "identity_composite": ",".join(PG_IDENTITY),
         }))
-        groups = len(rows)
-    return {**out, "protein_groups": groups}
+    return {**out, "protein_groups": len(rows or [])}
+
+
+def views_missing(results_dir, params: Mapping, name: str = "run") -> bool:
+    """Whether a run lacks a QPX view it has the results for: one written
+    before the run view, or an isobaric run written before its pg view."""
+    paths = view_paths(results_dir, name)
+    if not paths["run"].is_file():
+        return True
+    if params.get("analysis-mode", "LFQ") != "LFQ" and not paths["pg"].is_file():
+        return Path(results_dir, "quant_results", ISOBARIC_PROTEIN_CSV).is_file()
+    return False
 
 
 def app_version() -> str:
