@@ -27,7 +27,9 @@ class FakeExecutor:
         self.calls.append((tool, io, allow_failed))
         if tool == "PercolatorAdapter":
             self.failed = list(self.percolator_fails)
-            return allow_failed and len(self.failed) < len(io["in"])
+            if not allow_failed:
+                return not self.failed
+            return len(self.failed) < len(io["in"])
         self.failed = []
         return tool != "ProteomicsLFQ"  # stop the run there
 
@@ -98,3 +100,37 @@ def test_run_stops_when_percolator_fails_on_every_file(tmp_path, monkeypatch):
     wf, _ = _workflow(tmp_path, monkeypatch, percolator_fails=[0, 1, 2])
     assert wf.execution() is False
     assert not any(t == "IDFilter" for t, _, _ in wf.executor.calls)
+
+
+def test_rescoring_all_files_together_runs_one_command(tmp_path, monkeypatch):
+    """With 'Rescore all files together' one PercolatorAdapter call takes every
+    search result; its output is split back into one result per file."""
+    import src.common.pooled_fdr as pooled_fdr
+
+    wf, names = _workflow(tmp_path, monkeypatch, percolator_fails=[])
+    wf.params["rescore-pooled"] = True
+    split = []
+    monkeypatch.setattr(
+        pooled_fdr, "split_pooled",
+        lambda merged, ins, outs: split.append((merged, list(ins), list(outs))) or [1] * len(ins),
+    )
+    wf.execution()
+
+    percolator = [c for c in wf.executor.calls if c[0] == "PercolatorAdapter"]
+    assert len(percolator) == 1
+    io = percolator[0][1]
+    assert len(io["in"]) == 1 and len(io["in"][0]) == 3  # one command, three inputs
+    assert io["out"] == [str(tmp_path / "results" / "percolator_all_files" / "all_files_per.idXML")]
+
+    merged, ins, outs = split[0]
+    assert merged == io["out"][0] and ins == io["in"][0]
+    assert [Path(f).name for f in outs] == ["A_1_per.idXML", "Blank_per.idXML", "B_1_per.idXML"]
+    idfilter = _inputs(wf, "IDFilter")
+    assert [Path(f).name for f in idfilter["in"]] == [Path(f).name for f in outs]
+
+
+def test_one_file_is_rescored_on_its_own(tmp_path, monkeypatch):
+    wf, _ = _workflow(tmp_path, monkeypatch, percolator_fails=[])
+    wf.params["rescore-pooled"] = True
+    assert wf.rescores_pooled(["only.idXML"]) is False
+    assert wf.rescores_pooled(["a.idXML", "b.idXML"]) is True
