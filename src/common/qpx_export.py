@@ -1,4 +1,4 @@
-"""QPX (quantms Parquet) export of a run: its PSM, protein group, run and provenance views.
+"""QPX (quantms Parquet) export of a run: its PSM, protein group, run, sample and provenance views.
 
 QPX (https://github.com/bigbio/qpx, the successor of quantms.io) stores a
 proteomics result as Parquet views. This module writes these for a run:
@@ -8,12 +8,16 @@ proteomics result as Parquet views. This module writes these for a run:
 - ``qpx/<run>.provenance.parquet``: one row per processing step, with the
   tool, its version, the parameters the workflow set on its command line and
   the tool's full configuration (every parameter) as JSON.
+- ``qpx/<run>.sample.parquet``: one row per sample (an isobaric run's
+  channels are samples), with its condition and replicate and, from the SDRF
+  imported with the data, its organism and other characteristics. Without an
+  SDRF the organism is the one most entries of the protein database name.
 
 OpenMS 3.5 has no writer for this format (QuantmsIOConverter writes the older
 quantms.io 1.0 layout, without protein accessions and with the native ID in
 place of the run name), so the PSMs are read with pyOpenMS and written with
 pyarrow. The schemas below are transcribed field by field from QPX's
-``psm.yaml``, ``provenance.yaml`` and ``types.yaml``.
+``psm.yaml``, ``provenance.yaml``, ``sample.yaml`` and ``types.yaml``.
 
 The provenance is read back from what the run did: the commands it logged
 (every effective parameter is an explicit command-line argument) and each
@@ -22,6 +26,7 @@ makes no Streamlit calls, so it runs in a queue worker too.
 """
 from __future__ import annotations
 
+import csv
 import hashlib
 import json
 import re
@@ -134,6 +139,32 @@ RUN_SCHEMA = pa.schema([
     pa.field("acquisition_method", pa.string()),
 ])
 LFQ_LABEL = "LFQ"
+
+# sample.yaml: the required fields, the optional ones an SDRF can fill, and
+# the design's condition and replicate as extra columns (extra_columns: true)
+NOT_AVAILABLE = "not available"
+SDRF_SAMPLE_FIELDS = {
+    "organism": "characteristics[organism]",
+    "organism_part": "characteristics[organism part]",
+    "disease": "characteristics[disease]",
+    "cell_line": "characteristics[cell line]",
+    "cell_type": "characteristics[cell type]",
+    "sex": "characteristics[sex]",
+    "age": "characteristics[age]",
+    "developmental_stage": "characteristics[developmental stage]",
+    "ancestry": "characteristics[ancestry category]",
+    "individual": "characteristics[individual]",
+    "sample_description": "description",
+}
+SAMPLE_SCHEMA = pa.schema(
+    [pa.field("sample_accession", pa.string(), nullable=False),
+     pa.field("organism", pa.string(), nullable=False),
+     pa.field("organism_part", pa.string(), nullable=False)]
+    + [pa.field(name, pa.string()) for name in list(SDRF_SAMPLE_FIELDS)[2:]]
+    + [pa.field("condition", pa.string()),
+       pa.field("biological_replicate", pa.int32()),
+       pa.field("source_name", pa.string())]
+)
 
 # What each TOPP tool of the workflow does, as (step_category, step_name)
 STEPS = {
@@ -748,6 +779,125 @@ def run_rows(params: Mapping, msstats=None, fractions: Optional[Mapping[str, dic
     return rows
 
 
+_ORGANISM = re.compile(r"\bOS=(.+?)(?:\s+(?:OX|GN|PE|SV)=|$)")
+
+
+def fasta_organism(path) -> Optional[str]:
+    """The organism most entries of a UniProt-style FASTA name (``OS=``), else None."""
+    counts = {}
+    try:
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                if line.startswith(">"):
+                    m = _ORGANISM.search(line)
+                    if m:
+                        name = m.group(1).strip()
+                        counts[name] = counts.get(name, 0) + 1
+    except OSError:
+        return None
+    return max(counts, key=counts.get) if counts else None
+
+
+def sdrf_samples(paths: Iterable) -> List[dict]:
+    """Every row of the SDRF files as ``{column: first value}`` (lower-cased columns)."""
+    rows = []
+    for path in paths:
+        try:
+            with open(path, "r", encoding="utf-8-sig", newline="") as f:
+                lines = [r for r in csv.reader(f, delimiter="\t") if any(c.strip() for c in r)]
+        except OSError:
+            continue
+        if not lines:
+            continue
+        columns = [re.sub(r"\s+", " ", c.strip().lower()) for c in lines[0]]
+        for line in lines[1:]:
+            row = {}
+            for column, value in zip(columns, line):
+                if value.strip() and column not in row:
+                    row[column] = value.strip()
+            rows.append(row)
+    return rows
+
+
+def _sdrf_row(sdrf: List[dict], run_file_name: str, label: Optional[str]) -> Optional[dict]:
+    """The SDRF row of a run's file (and, for a labelled run, of its channel)."""
+    for row in sdrf:
+        if _stem(Path(row.get("comment[data file]", "")).name) != run_file_name:
+            continue
+        if label and label != LFQ_LABEL and row.get("comment[label]", "").replace(" ", "").upper() != label.upper():
+            continue
+        return row
+    return None
+
+
+def sample_rows(run_table: List[dict], params: Mapping, fractions: Optional[Mapping[str, dict]] = None,
+                sdrf: Optional[List[dict]] = None, organism: Optional[str] = None) -> List[dict]:
+    """One QPX sample row per sample of the run view.
+
+    The sample's condition is the group set for it (``mzML-group-<file>``, or
+    ``TMT-group-<channel>`` of an isobaric run), the SDRF row of its file and
+    channel fills the characteristics, and ``organism`` (the database's) stands
+    in where no SDRF names one. QPX requires an organism and organism part, so
+    those are "not available" when nothing names them.
+    """
+    sdrf = sdrf or []
+    out = {}
+    for run in run_table:
+        mzml = run.get("file_name") or f"{run['run_file_name']}.mzML"
+        if not str(mzml).lower().endswith(".mzml"):
+            mzml = f"{run['run_file_name']}.mzML"
+        for sample in run["samples"]:
+            accession = sample["sample_accession"]
+            label = sample.get("label")
+            row = _sdrf_row(sdrf, run["run_file_name"], label)
+            if accession in out:
+                # A sample's later fractions fill what its first file's SDRF row left open
+                if row and not out[accession]["source_name"]:
+                    out[accession].update(_characteristics(row, organism))
+                continue
+            if label and label != LFQ_LABEL:
+                condition = params.get(f"TMT-group-{accession}")
+            elif fractions and mzml in fractions:
+                condition = fractions[mzml].get("condition")
+            else:
+                condition = params.get(f"mzML-group-{mzml}")
+            out[accession] = {
+                "sample_accession": accession,
+                **_characteristics(row, organism),
+                "condition": str(condition).strip() or None if condition is not None else None,
+                "biological_replicate": sample.get("biological_replicate"),
+            }
+    return list(out.values())
+
+
+def _characteristics(row: Optional[dict], organism: Optional[str]) -> dict:
+    row = row or {}
+    values = {name: row.get(column) for name, column in SDRF_SAMPLE_FIELDS.items()}
+    for name, value in values.items():
+        if value and value.lower() in ("not applicable", "not available"):
+            values[name] = None
+    values["organism"] = values["organism"] or organism or NOT_AVAILABLE
+    values["organism_part"] = values["organism_part"] or NOT_AVAILABLE
+    values["source_name"] = row.get("source name")
+    return values
+
+
+def _sdrf_files(workflow_dir) -> List[Path]:
+    """The SDRF files imported with the workflow's data (PRIDE import)."""
+    if workflow_dir is None:
+        return []
+    folder = Path(workflow_dir, "pride-import", "sdrf")
+    return sorted(folder.glob("*")) if folder.is_dir() else []
+
+
+def _workflow_dir(results_dir) -> Optional[Path]:
+    """The workflow folder of a run's results (``<workflow>/runs/<id>/results``)."""
+    path = Path(results_dir).resolve()
+    if path.parent.parent.name == "runs":
+        return path.parent.parent.parent
+    return path.parent
+
+
 def read_msstats(results_dir):
     """ProteomicsLFQ's MSstats table of a run (None without one)."""
     import pandas as pd
@@ -771,7 +921,8 @@ def qpx_paths(results_dir, name: str = "run") -> dict:
 def view_paths(results_dir, name: str = "run") -> dict:
     """The protein group and run views, which a run written before them lacks."""
     folder = Path(results_dir, QPX_DIR)
-    return {"pg": folder / f"{name}.pg.parquet", "run": folder / f"{name}.run.parquet"}
+    return {"pg": folder / f"{name}.pg.parquet", "run": folder / f"{name}.run.parquet",
+            "sample": folder / f"{name}.sample.parquet"}
 
 
 def export_run(results_dir, workflow_dir, params: Mapping, log_text: str, app_version: str,
@@ -789,7 +940,7 @@ def export_run(results_dir, workflow_dir, params: Mapping, log_text: str, app_ve
 
 
 def export_views(results_dir, params: Mapping, name: str = "run", provenance: Optional[List[dict]] = None) -> dict:
-    """Write a run's QPX run view and, for a label-free run, its pg view.
+    """Write a run's QPX run and sample views and its pg view.
 
     ``provenance`` (the run's provenance rows, read from its provenance view
     when not given) names the search's enzyme.
@@ -811,6 +962,11 @@ def export_views(results_dir, params: Mapping, name: str = "run", provenance: Op
     run_table = run_rows(params, msstats, fractions, provenance, channels)
     out = {"run": write_table(run_table, RUN_SCHEMA, paths["run"],
                               footer("run_file", {"primary_key": "run_file_name"}))}
+    database = params.get("fasta-file")
+    organism = fasta_organism(database) if database and Path(str(database)).is_file() else None
+    samples = sample_rows(run_table, params, fractions, sdrf_samples(_sdrf_files(_workflow_dir(results_dir))), organism)
+    out["sample"] = write_table(samples, SAMPLE_SCHEMA, paths["sample"],
+                                footer("sample_file", {"primary_key": "sample_accession"}))
     rows = None
     if msstats is not None:
         rows = pg_rows(msstats, fractions)
@@ -826,9 +982,9 @@ def export_views(results_dir, params: Mapping, name: str = "run", provenance: Op
 
 def views_missing(results_dir, params: Mapping, name: str = "run") -> bool:
     """Whether a run lacks a QPX view it has the results for: one written
-    before the run view, or an isobaric run written before its pg view."""
+    before the run or sample view, or an isobaric run written before its pg view."""
     paths = view_paths(results_dir, name)
-    if not paths["run"].is_file():
+    if not paths["run"].is_file() or not paths["sample"].is_file():
         return True
     if params.get("analysis-mode", "LFQ") != "LFQ" and not paths["pg"].is_file():
         return Path(results_dir, "quant_results", ISOBARIC_PROTEIN_CSV).is_file()
