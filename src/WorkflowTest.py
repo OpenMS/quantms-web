@@ -203,6 +203,16 @@ def _instrument_recommendation(paths: tuple, converted_dir: str, mtimes: tuple):
 SEARCH_THREADS_PER_PROCESS = 16
 
 
+def supports_retry_singly(executor) -> bool:
+    """Whether ``executor.run_topp`` can run a failed batch again file by file."""
+    import inspect
+
+    try:
+        return "retry_singly" in inspect.signature(executor.run_topp).parameters
+    except (TypeError, ValueError):
+        return False
+
+
 def search_batches(n_files: int, max_threads: int) -> list[list[int]]:
     """Split the files of a search into the ProSE processes that run side by side.
 
@@ -685,7 +695,13 @@ class WorkflowTest(WorkflowManager):
         self.logger.log(
             f"Searching {len(in_mzml)} file(s) in {len(batches)} ProSE process(es)", 1
         )
-        return self.executor.run_topp(
+        # One file the search cannot read would fail its whole batch. With
+        # retry_singly, a failed batch runs again file by file and only that
+        # file is left out (``executor.failed`` then holds file indices, for
+        # ``keep_succeeded``). An executor from before that option keeps the
+        # old behaviour: the run stops.
+        retry = {"retry_singly": True} if supports_retry_singly(self.executor) else {}
+        ok = self.executor.run_topp(
             "ProSE",
             {
                 "in": [[in_mzml[i] for i in b] for b in batches],
@@ -693,7 +709,11 @@ class WorkflowTest(WorkflowManager):
             },
             {"database": str(database_fasta), "Search:decoys": "auto"},
             tool_instance_name=instance,
+            **retry,
         )
+        if not retry:
+            self.executor.failed = []
+        return ok
 
     def render_lfq_tabs(self):
         t = self.ui.step_tabs(self.steps())
@@ -1532,6 +1552,13 @@ class WorkflowTest(WorkflowManager):
                 if not self.run_search("ProSE", in_mzML, search_results, database_fasta):
                     self.logger.log("Workflow stopped due to error")
                     return False
+                if self.executor.failed:
+                    keep = self.executor.keep_succeeded
+                    selected_inputs = keep(selected_inputs)
+                    in_mzML = keep(in_mzML)
+                    search_results = keep(search_results)
+                    percolator_results = keep(percolator_results)
+                    filter_results = keep(filter_results)
 
             # Fragment tolerance of the search, for the spectrum views
             frag_tol, frag_tol_is_ppm = self.search_tolerance("ProSE")
@@ -1864,6 +1891,14 @@ class WorkflowTest(WorkflowManager):
                 if not self.run_search("ProSE-TMT", in_mzML, search_results, database_fasta):
                     self.logger.log("Workflow stopped due to error")
                     return False
+                if self.executor.failed:
+                    keep = self.executor.keep_succeeded
+                    in_mzML = keep(in_mzML)
+                    iso_consensus = keep(iso_consensus)
+                    search_results = keep(search_results)
+                    percolator_results = keep(percolator_results)
+                    psm_filtered = keep(psm_filtered)
+                    mapped_ids = keep(mapped_ids)
             self.logger.log("✅ ProSE search complete")
 
             # Fragment tolerance of the search, for the spectrum views
