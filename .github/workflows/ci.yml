@@ -36,7 +36,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt # test with requirements file so can easily bump with dependabot
         [ ! -f requirements-nodeps.txt ] || pip install --no-deps -r requirements-nodeps.txt
-        pip install pytest fakeredis
+        pip install pytest fakeredis polars
     - name: Test
       run: |
         python -m pytest test_gui.py tests/

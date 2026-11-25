@@ -93,6 +93,13 @@ jobs:
 
       - uses: actions/checkout@v4
 
+      - name: Set the version from the release tag
+        # An image built from a release tag says the tag's version, even when
+        # the release was made before settings.json was bumped
+        # (release-version.yml reports that and opens the bump PR).
+        if: github.ref_type == 'tag'
+        run: python3 .github/scripts/release_version.py set "$GITHUB_REF_NAME" settings.json
+
       - name: Compute lowercase image name (OCI refs must be lowercase)
         run: echo "IMAGE_NAME_LC=${IMAGE_NAME,,}" >> "$GITHUB_ENV"
 
@@ -114,14 +121,14 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           # No automatic `latest`: on a tag push metadata-action would add a
           # plain `latest` beside the tags below. `latest` is set only by the
-          # raw rule (main pushes of the full image).
+          # raw rule (pushes of the full image to the default branch).
           flavor: |
             latest=false
           tags: |
             type=ref,event=branch,suffix=-${{ inputs.variant }}-${{ inputs.arch }}
             type=ref,event=tag,suffix=-${{ inputs.variant }}-${{ inputs.arch }}
             type=sha,prefix=,suffix=-${{ inputs.variant }}-${{ inputs.arch }}
-            type=raw,value=latest-${{ inputs.arch }},enable=${{ inputs.variant == 'full' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+            type=raw,value=latest-${{ inputs.arch }},enable=${{ inputs.variant == 'full' && github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
 
       - name: Build and conditionally push
         uses: docker/build-push-action@v5
@@ -147,10 +154,13 @@ jobs:
           cache-to: ${{ github.event_name != 'pull_request' && inputs.openms_branch == '' && format('type=registry,ref={0}/{1}/cache:{2}-{3},mode=max', env.REGISTRY, env.IMAGE_NAME_LC, inputs.variant, inputs.arch) || '' }}
           # The token reaches the Dockerfile as a BuildKit secret, never as a
           # build argument, so it is not recorded in the image or the cache.
+          # A build of a release tag bundles that release's Windows installer
+          # (RELEASE_TAG), any other build the latest release's.
           secrets: |
             github_token=${{ secrets.GITHUB_TOKEN }}
           build-args: |
             INSTALLER_REFRESH=${{ github.run_id }}
+            ${{ github.ref_type == 'tag' && format('RELEASE_TAG={0}', github.ref_name) || '' }}
             ${{ inputs.openms_branch != '' && format('OPENMS_BRANCH={0}', inputs.openms_branch) || '' }}
 
       - name: Retag for kind (image name the kustomize overlay points at)
