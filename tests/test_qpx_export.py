@@ -202,3 +202,103 @@ def test_provenance_view_round_trip(tmp_path):
     back = pq.read_table(path)
     assert back.schema.equals(PROVENANCE_SCHEMA, check_metadata=False)
     assert back.num_rows == len(rows)
+
+
+# ----------------------------------------------------------------------------- pg and run views
+
+def _msstats():
+    import pandas as pd
+
+    return pd.DataFrame([
+        # ProteinName, PeptideSequence, Charge, ..., Reference, Intensity
+        ("P1;P2", "PEPTIDEK", 2, "A", 1, 1, "a_F1.mzML", 100.0),
+        ("P1;P2", "PEPM(Oxidation)TIDEK", 2, "A", 1, 1, "a_F1.mzML", 50.0),
+        ("P1;P2", "PEPMTIDEK", 3, "A", 1, 1, "a_F2.mzML", 25.0),
+        ("P1;P2", "PEPTIDEK", 2, "B", 2, 2, "b.mzML", 10.0),
+        ("DECOY_P3", "KEDITPEP", 2, "B", 2, 2, "b.mzML", 5.0),
+        ("CON__P4", "SAMPLER", 2, "B", 2, 2, "b.mzML", 7.0),
+    ], columns=["ProteinName", "PeptideSequence", "PrecursorCharge", "Condition", "BioReplicate", "Run",
+                "Reference", "Intensity"])
+
+
+FRACTIONS = {
+    "a_F1.mzML": {"sample": "A_1", "condition": "A"},
+    "a_F2.mzML": {"sample": "A_1", "condition": "A"},
+    "b.mzML": {"sample": "B_1", "condition": "B"},
+}
+
+
+def pa_table(rows, schema):
+    import pyarrow as pa
+
+    return pa.Table.from_pylist(rows, schema=schema)
+
+
+def test_pg_rows_sum_a_group_per_sample_and_group_fractions():
+    from src.common.qpx_export import PG_SCHEMA, pg_rows
+
+    rows = pg_rows(_msstats(), FRACTIONS)
+    by = {(tuple(r["pg_accessions"]), tuple(r["grouped_runs"])): r for r in rows}
+    a = by[(("P1", "P2"), ("a_F1", "a_F2"))]
+    assert a["intensity"] == pytest.approx(175.0)
+    assert a["anchor_protein"] == "P1" and a["label"] == "LFQ"
+    # PEPTIDEK, PEPMTIDEK and its oxidized form: three peptides, two sequences
+    assert a["peptide_counts"] == {"unique_sequences": 2, "total_sequences": 3}
+    assert a["pg_id"] == derive_id([["P1", "P2"], ["a_F1", "a_F2"], "LFQ"])
+    assert a["pg_group_id"] == by[(("P1", "P2"), ("b",))]["pg_group_id"]
+    assert a["pg_id"] != by[(("P1", "P2"), ("b",))]["pg_id"]
+    assert by[(("DECOY_P3",), ("b",))]["is_decoy"] is True
+    assert by[(("CON__P4",), ("b",))]["contaminant"] is True
+    assert not a["is_decoy"] and not a["contaminant"]
+    assert pa_table(rows, PG_SCHEMA).num_rows == len(rows)
+
+
+def test_pg_rows_without_fractions_use_one_file_per_sample():
+    from src.common.qpx_export import pg_rows
+
+    rows = pg_rows(_msstats(), None)
+    assert {tuple(r["grouped_runs"]) for r in rows if r["anchor_protein"] == "P1"} == {("a_F1",), ("a_F2",), ("b",)}
+
+
+def test_run_rows_carry_sample_replicate_fraction_and_enzyme():
+    from src.common.qpx_export import run_rows
+
+    params = {
+        "mzML-files": ["/ws/in/a_F1.mzML", "/ws/in/a_F2.mzML", "/ws/in/b.mzML"],
+        "_defaults": {"ProSE:1:Search:enzyme": "Trypsin/P"},
+    }
+    rows = {r["run_file_name"]: r for r in run_rows(params, _msstats(), FRACTIONS)}
+    assert set(rows) == {"a_F1", "a_F2", "b"}
+    assert rows["a_F2"]["samples"][0]["sample_accession"] == "A_1"
+    assert rows["a_F2"]["fraction"] == "2" and rows["b"]["fraction"] == "1"
+    assert rows["b"]["samples"][0]["biological_replicate"] == 2
+    assert rows["a_F1"]["file_name"] == "a_F1.mzML"
+    assert rows["a_F1"]["enzymes"] == ["Trypsin/P"] and rows["a_F1"]["acquisition_method"] == "DDA"
+
+
+def test_export_views_write_qpx_pg_and_run_files(tmp_path):
+    from src.common.qpx_export import PG_SCHEMA, RUN_SCHEMA, export_views
+
+    quant = tmp_path / "quant_results"
+    quant.mkdir()
+    _msstats().to_csv(quant / "openms_msstats.csv", index=False)
+    out = export_views(tmp_path, {"mzML-files": ["a_F1.mzML", "a_F2.mzML", "b.mzML"]})
+    assert out["protein_groups"] == 5  # P1;P2 in each of three files, the decoy, the contaminant
+    pg = pq.read_table(out["pg"])
+    assert pg.schema.equals(PG_SCHEMA, check_metadata=False)
+    meta = {k.decode(): v.decode() for k, v in pg.schema.metadata.items()}
+    assert meta["file_type"] == "pg_file" and meta["identity_composite"] == "pg_accessions,grouped_runs,label"
+    run = pq.read_table(out["run"])
+    assert run.schema.equals(RUN_SCHEMA, check_metadata=False) and run.num_rows == 3
+    # An isobaric run has no pg view from this table, only the run view
+    iso = export_views(tmp_path / "iso", {"analysis-mode": "TMT", "mzML-files": ["x.mzML"]})
+    assert "pg" not in iso and pq.read_table(iso["run"]).num_rows == 1
+
+
+def test_run_enzyme_comes_from_the_search_step_of_the_provenance():
+    from src.common.qpx_export import run_rows
+
+    steps = [{"step_name": "sequence_search", "parameters": [{"key": "database", "value": "db.fasta"}],
+              "config": json.dumps({"Search:enzyme": "Lys-C"})}]
+    rows = run_rows({"mzML-files": ["a.mzML"]}, None, None, steps)
+    assert rows[0]["enzymes"] == ["Lys-C"] and rows[0]["samples"][0]["sample_accession"] == "a"
