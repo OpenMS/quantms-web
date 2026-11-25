@@ -17,14 +17,11 @@ from src.common.insight_tables import show_insight_table
 from src.common.protein_table import build_tables, collect_psms, coverage_html, read_fasta
 from src.common.result_filters import add_protein_flags, file_conditions, max_replicates, protein_numeric_filters
 from src.common.results_helpers import get_run_dir, get_run_params
-from src.viewer.scope import scoped, shared_state
+from src.viewer.scope import heading, retitle, scoped, shared_state
 
-# Columns the linked tables filter on: already shown by the selection above them
-HIDDEN = {"visible": False}
-
-
-def decimals(n: int) -> dict:
-    return {"formatter": "money", "formatterParams": {"thousand": False, "precision": n}}
+from src.viz.identification import protein_peptides as protein_peptides_view
+from src.viz.identification import protein_psms as protein_psms_view
+from src.viz.identification import protein_table as protein_table_view
 
 
 @st.cache_data(show_spinner="Reading the identifications...")
@@ -36,6 +33,21 @@ def _load_psms(paths: tuple, fasta: str | None, mtimes: tuple, mzml_names: tuple
 
 @st.cache_data(show_spinner="Building protein tables...")
 def _load_tables(paths: tuple, fasta: str | None, mtimes: tuple, mzml_names: tuple, conditions: tuple, samples: tuple = ()):
+    from src.common.disk_cache import cache_root, remember
+
+    # Kept with the run, so the tables the workflow built at its end (precompute) are read, not built again
+    return remember(
+        cache_root(Path(paths[0])), "protein_tables", ("protein_tables", 1, _resolved(paths), fasta and str(Path(fasta).resolve()), mtimes, mzml_names, conditions, samples),
+        lambda: _build_tables(paths, fasta, mtimes, mzml_names, conditions, samples),
+    )
+
+
+def _resolved(paths: tuple) -> tuple:
+    """``paths`` as absolute paths, so the workflow and the Viewer key the same tables."""
+    return tuple(str(Path(p).resolve()) for p in paths)
+
+
+def _build_tables(paths: tuple, fasta: str | None, mtimes: tuple, mzml_names: tuple, conditions: tuple, samples: tuple):
     psms, fasta_entries = _load_psms(paths, fasta, mtimes, mzml_names)
     files = sorted(psms["file"].unique())
     proteins, peptides, psms_long, coverage = build_tables(psms, fasta_entries, files, dict(samples) or None)
@@ -137,32 +149,21 @@ def protein_table(data: ProteinData) -> None:
     if proteins.empty:
         st.info("No target proteins were identified.")
         return
+    shown = proteins.assign(not_contaminant=~proteins["contaminant"])
     show_insight_table(
-        proteins.assign(not_contaminant=~proteins["contaminant"]),
+        shown,
         name="proteins",
         cache_dir=data.cache_dir,
         source_files=data.source_files,
         extra_key=f"menu-v1|{'per-sample' if data.sample_of else ''}|{sorted(data.conditions.items())}",
-        title="proteins",
         height=420,
         state_manager=shared_state(),
-        interactivity={"protein": "accession"},
         display=LEVELS["proteins"],
-        column_overrides={
-            "coverage (%)": decimals(1),
-            "contaminant": {"formatter": "tickCross", "sorter": "boolean", "visible": False},
-            "not_contaminant": HIDDEN,
-            **(
-                {"replicates": {"headerTooltip": "Most files of one condition with a PSM of this protein"}}
-                if "replicates" in proteins.columns
-                else {}
+        **protein_table_view.settings(
+            list(shown.columns),
+            protein_numeric_filters(
+                max_replicates(data.conditions, data.sample_of) if "replicates" in proteins.columns else 0
             ),
-        },
-        toggle_filters=[{"label": "Hide contaminants", "column": "not_contaminant", "default": True}],
-        search=[c for c in ("accession", "gene", "description") if c in proteins.columns],
-        search_placeholder="Accession, gene or name",
-        numeric_filters=protein_numeric_filters(
-            max_replicates(data.conditions, data.sample_of) if "replicates" in proteins.columns else 0
         ),
     )
 
@@ -177,13 +178,10 @@ def protein_peptides(data: ProteinData) -> None:
         cache_dir=data.cache_dir,
         source_files=data.source_files,
         extra_key="per-sample" if data.sample_of else "",
-        title="peptides",
         height=420,
         state_manager=state_manager,
-        filters={"protein": "accession"},
-        interactivity={"peptide": "peptide"},
         display=LEVELS["peptides"],
-        column_overrides={"accession": HIDDEN},
+        **protein_peptides_view.settings(),
     )
     # The coverage below the table, so the table starts level with the protein table
     if selected in data.coverage and selected in data.fasta_entries:
@@ -198,20 +196,11 @@ def protein_psms(data: ProteinData) -> None:
         name="protein_psms",
         cache_dir=data.cache_dir,
         source_files=data.source_files,
-        title="psms",
         height=860,
         state_manager=shared_state(),
-        filters={"protein": "accession", "peptide": "peptide"},
-        interactivity={"psm": "psm"},
         display=LEVELS["psms"],
         extra_key="with-psm-id-v3",  # the cache follows the source files; name the newer psm column and layout
-        column_overrides={
-            "accession": HIDDEN,
-            "peptide": HIDDEN,
-            "psm": HIDDEN,
-            "RT (s)": decimals(1),
-            "m/z": decimals(4),
-        },
+        **protein_psms_view.settings(),
     )
 
 
@@ -244,7 +233,9 @@ def psm_spectrum(data: ProteinData) -> None:
     viewer_state.set_selection("identification", int(psm_id))
     viewer_state.set_selection("file", mzml_names.index(psm["file"]))
     viewer_state.set_selection("spectrum", int(psm["scan"]))
-    SequenceView(cache_id=f"seqview_{run}", cache_path=str(data.cache_dir))(
+    head = heading("Spectrum")
+    retitle(SequenceView(cache_id=f"seqview_{run}", cache_path=str(data.cache_dir)), head.get("title"))(
+        help=head.get("help"),
         key=scoped("proteins_seqview"), state_manager=viewer_state, height=420,
     )
     tolerance, ppm = fragment_tolerance(data.run_params)
