@@ -5,7 +5,6 @@ full-scale runs. An openms-insight ``Table`` caches the data on disk once and
 sends one page at a time; its download button exports every row and column.
 """
 import hashlib
-import inspect
 import shutil
 import tempfile
 from pathlib import Path
@@ -18,16 +17,6 @@ from openms_insight import Table
 ROW_FIELD = "row"
 # Rows sampled when fingerprinting a dataframe that has no source files.
 _FINGERPRINT_SAMPLE_ROWS = 2000
-
-
-def table_options(**options) -> dict:
-    """The display options the installed openms-insight's ``Table`` takes.
-
-    An option of a newer release is left out on an older one rather than
-    passed on as an extra setting, which would end up in the table's cache.
-    """
-    accepted = inspect.signature(Table.__init__).parameters
-    return {name: value for name, value in options.items() if name in accepted}
 
 
 def _fingerprint_dataframe(df: pd.DataFrame) -> str:
@@ -151,8 +140,8 @@ def show_insight_table(
             e.g. a ``formatter``. openms-insight stores floats as float32, so
             a column of rounded values needs one to display without noise.
         display: Display options that are no part of the cache, such as
-            ``level`` or ``narrowed_labels``; those the installed
-            openms-insight does not have yet are left out.
+            the ``display()`` of a table of the visualization library, which
+            already leaves out what the installed openms-insight lacks.
         note: Figures of the shown run, added to the info icon.
         **table_kwargs: Passed on to ``Table`` (e.g. ``initial_sort``).
     """
@@ -183,7 +172,7 @@ def show_insight_table(
 
     # Every column stays; a table narrower than its columns scrolls sideways
     table = retitle(
-        Table(cache_id=cache_id, cache_path=str(cache_dir), collapse_columns=False, **table_options(**(display or {}))),
+        Table(cache_id=cache_id, cache_path=str(cache_dir), collapse_columns=False, **(display or {})),
         head.get("title"),
     )
     from src.viewer.scope import scoped
