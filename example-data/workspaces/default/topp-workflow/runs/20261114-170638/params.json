@@ -1,0 +1,95 @@
+{
+    "mzML-files": [
+        "example-data/mzML/B000248_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA.mzML",
+        "example-data/mzML/B000264_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA.mzML",
+        "example-data/mzML/B000272_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_2.mzML",
+        "example-data/mzML/B000288_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_2.mzML",
+        "example-data/mzML/B000296_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_3.mzML",
+        "example-data/mzML/B000312_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_3.mzML"
+    ],
+    "fasta-file": "example-data/db/yeast_ups2.fasta",
+    "decoy-check": "yeast_ups2.fasta:",
+    "generate-decoys": true,
+    "analysis-mode": "LFQ",
+    "mzML-group-B000264_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA.mzML": "UPS2_ratio10",
+    "mzML-group-B000312_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_3.mzML": "UPS2_ratio10",
+    "mzML-group-B000248_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA.mzML": "UPS2_ratio01",
+    "mzML-group-B000296_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_3.mzML": "UPS2_ratio01",
+    "mzML-group-B000272_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_2.mzML": "UPS2_ratio01",
+    "mzML-group-B000288_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_2.mzML": "UPS2_ratio10",
+    "add-contaminants": true,
+    "_flag_params": {
+        "DecoyDatabase": [],
+        "ProSE": [],
+        "PercolatorAdapter": [
+            "post_processing_tdc"
+        ],
+        "IDFilter": [],
+        "ProteomicsLFQ": []
+    },
+    "rescore-predictions": false,
+    "psm-fdr-percent": 1.0,
+    "generate-library": false,
+    "match-between-runs": false,
+    "_defaults": {
+        "DecoyDatabase": {
+            "decoy_string": "rev_",
+            "decoy_string_position": "prefix",
+            "method": "reverse"
+        },
+        "ProSE": {
+            "Search:enzyme": "Trypsin/P",
+            "Search:decoys": "auto",
+            "Search:peptide:missed_cleavages": 2,
+            "Search:peptide:min_size": 6,
+            "Search:peptide:max_size": 40,
+            "Search:modifications:fixed": "Carbamidomethyl (C)",
+            "Search:modifications:variable": "Oxidation (M)\nAcetyl (Protein N-term)",
+            "Search:modifications:variable_max_per_peptide": 3,
+            "Search:precursor:mass_tolerance_lower": 20.0,
+            "Search:precursor:mass_tolerance_upper": 20.0,
+            "Search:precursor:mass_tolerance_unit": "ppm",
+            "Search:precursor:isotopes": "0\n1",
+            "Search:precursor:min_charge": 2,
+            "Search:precursor:max_charge": 4,
+            "Search:fragment:mass_tolerance": 20.0,
+            "Search:fragment:mass_tolerance_unit": "ppm",
+            "Search:report:top_hits": 1,
+            "Search:FDR:PSM": 0.0,
+            "Search:FDR:protein": 0.0
+        },
+        "PercolatorAdapter": {
+            "threads": 8,
+            "subset_max_train": 300000,
+            "decoy_pattern": "rev_",
+            "score_type": "pep",
+            "post_processing_tdc": true
+        },
+        "IDFilter": {
+            "threads": 2
+        },
+        "ProteomicsLFQ": {
+            "threads": 12,
+            "feature_with_id_min_score": 0.1,
+            "Seeding:intThreshold": 1000.0,
+            "psmFDR": 0.01,
+            "proteinFDR": 0.01,
+            "picked_proteinFDR": "true",
+            "alignment_order": "star",
+            "protein_quantification": "unique_peptides",
+            "quantification_method": "feature_intensity",
+            "protein_inference": "aggregation"
+        }
+    },
+    "DecoyDatabase": {},
+    "ProSE": {},
+    "PercolatorAdapter": {},
+    "IDFilter": {
+        "score:peptide": NaN,
+        "score:protein": NaN,
+        "blacklist:protein_accessions": "",
+        "score:proteingroup": NaN,
+        "whitelist:protein_accessions": ""
+    },
+    "ProteomicsLFQ": {}
+}

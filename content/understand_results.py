@@ -5,7 +5,7 @@ from src.common.common import page_setup
 from src.viewer.catalog import LABELS, PRESETS
 from src.viewer.teaching import COMPONENTS, VIEWS, anchor
 
-page_setup()
+page_setup(captcha=False)
 st.title("📖 Understand your Results")
 st.markdown(
     "What **Explore results** shows, view by view. Each component's title there links to its section here."

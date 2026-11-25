@@ -37,7 +37,8 @@ def test_components_comparing_samples_need_samples_or_groups():
         "comparison_imputed_values", "comparison_normalization", "comparison_pvalues",
     }
     assert {n for n, v in needs.items() if analyses.SAMPLES in v} == {"heatmap", "clustered_heatmap"}
-    assert set().union(*needs.values()) == set(analyses.ANALYSES)
+    # Every analysis but more runs (the Comparison of a run alone) is one a component needs
+    assert set().union(*needs.values()) == set(analyses.ANALYSES) - {analyses.MORE_RUNS}
 
 
 def test_every_component_needs_the_results_it_draws():
@@ -46,7 +47,7 @@ def test_every_component_needs_the_results_it_draws():
         "protein_abundance", "abundance_profile", "quant_summary", "pca", "heatmap", "clustered_heatmap", "group_comparison", "volcano", "go_enrichment",
         "comparison_missing_values", "comparison_imputed_values", "comparison_normalization", "comparison_pvalues"}
     assert needs["psms_rescored"] == {analyses.RESCORING}
-    assert needs["psms_search"] == needs["id_quality"] == needs["qc_scores"] == {analyses.SEARCH}
+    assert needs["psms_search"] == needs["qc_scores"] == {analyses.SEARCH}
     assert all(needs[n] for n in needs)
 
 
@@ -68,11 +69,7 @@ def test_results_lock_what_the_picked_files_lack(tmp_path):
     added = _added_run(tmp_path, first, "Added", {"mzML-files": ["/in/b.mzML"]})
     _results(tmp_path, added, "quant_results", "q.csv")
     assert analyses.QUANTIFICATION in analyses.available(tmp_path, first)
-    st.session_state["viewer-member-" + first + "-e0"] = added
-    try:
-        has = analyses.available(tmp_path, first, 0)
-    finally:
-        st.session_state.pop("viewer-member-" + first + "-e0")
+    has = analyses.available(tmp_path, first, member=added)
     assert analyses.IDENTIFICATION not in has and analyses.QUANTIFICATION in has
 
 

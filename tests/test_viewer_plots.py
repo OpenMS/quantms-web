@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 
 from src.common.differential import CHANGE_DEFAULTS, change_cutoffs
-from src.common.postprocessing_plots import (
+from src.viz.comparison_steps import (
     imputed_value_preview, missingness_vs_intensity, pvalue_histogram, sample_distributions,
 )
 from src.viewer import go_terms
@@ -16,7 +16,7 @@ def test_change_cutoffs_default_and_saved():
 
 
 def test_pvalue_histogram_bins_and_expected_count():
-    table, expected = pvalue_histogram(pd.DataFrame({"p-value": [0.01, 0.02, 0.5, 0.99, None]}))
+    table, expected = pvalue_histogram(pd.DataFrame({"p-value": [0.01, 0.02, 0.5, 0.99, None]}), noun="Proteins")
     assert len(table) == 20 and table["Proteins"].sum() == 4
     assert table["Proteins"].iloc[0] == 2 and table["Proteins"].iloc[-1] == 1
     assert expected == 4 / 20
