@@ -65,23 +65,3 @@ def test_isolation_windows_from_mzml(tmp_path):
     assert set(windows) == {7, 9}  # scan 8 records no isolation window
     assert windows[7] == pytest.approx((825.74609375, 0.75, 0.75))
     assert windows[9] == pytest.approx((612.3, 1.0, 0.5))
-
-
-class _WithMarkers:
-    def __init__(self, cache_id, x_markers=None, x_marker_tolerance=0.0, **kwargs):
-        pass
-
-
-def test_precursor_marker_labels_the_charge():
-    from src.common.precursor_window import precursor_marker
-
-    assert precursor_marker(825.746, 2, _WithMarkers) == {"x_markers": [{"x": pytest.approx(825.746), "label": "precursor 2+"}]}
-    assert precursor_marker("612.3", None, _WithMarkers) == {"x_markers": [{"x": pytest.approx(612.3), "label": "precursor"}]}
-
-
-def test_precursor_marker_needs_a_component_and_an_mz():
-    from src.common.precursor_window import precursor_marker
-
-    assert precursor_marker(825.746, 2, _WithoutWindow) == {}
-    for mz in (None, float("nan"), 0, -1, "n/a"):
-        assert precursor_marker(mz, 2, _WithMarkers) == {}

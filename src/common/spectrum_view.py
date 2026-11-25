@@ -17,7 +17,7 @@ from src.common.ms2_prediction import (
     spectral_angle,
 )
 from src.common.identified_spectra import spectra_sources
-from src.common.precursor_window import isolation_windows, precursor_marker, precursor_window
+from src.common.precursor_window import isolation_windows, precursor_window
 from src.common.psm_features import features_by_id, features_frame
 from src.common.results_helpers import parse_idxml, search_tolerances
 from src.common.plot_style import spectrum_styling
@@ -128,6 +128,19 @@ def measure_options(peptide: str, tolerance: float, ppm: bool) -> dict:
     return options
 
 
+def precursor_marker(component: type, mz, charge) -> dict:
+    """Arguments for ``component`` that mark the precursor m/z ("precursor 2+").
+
+    From the visualization library (``annotated_spectrum.precursor_marker``),
+    which leaves the marker out without a usable m/z or on an openms-insight
+    without ``x_markers``; a template older than it marks nothing.
+    """
+    from src.viz.identification import annotated_spectrum
+
+    marker = getattr(annotated_spectrum, "precursor_marker", None)
+    return marker(component, mz, charge) if marker else {}
+
+
 def show_spectrum(cache_dir: Path, run: str, state_manager, *, peptide: str, charge: int, file_index: int,
                   scan: int, seqview_key: str, key: str, tolerance: float, ppm: bool,
                   mzml_path: Path | None = None, height: int = 450, precursor_mz: float | None = None) -> None:
@@ -155,7 +168,7 @@ def show_spectrum(cache_dir: Path, run: str, state_manager, *, peptide: str, cha
     measure = measure_options(peptide, tolerance, ppm)
     if predicted is None:
         window = precursor_window(state_manager, isolation_window(mzml_path, scan), LinePlot)
-        marker = precursor_marker(precursor_mz, charge, LinePlot)
+        marker = precursor_marker(LinePlot, precursor_mz, charge)
         LinePlot(cache_id=f"lineplot_{run}", cache_path=str(cache_dir), **measure, **zoom(LinePlot, key), **window,
                  **marker)(
             key=f"{key}_lineplot", state_manager=state_manager, height=height, sequence_view_key=seqview_key,
@@ -205,7 +218,7 @@ def show_spectrum(cache_dir: Path, run: str, state_manager, *, peptide: str, cha
         **measure,
         **zoom(MirrorPlot, f"{key}_mirror"),
         **precursor_window(state_manager, isolation_window(mzml_path, scan), MirrorPlot),
-        **precursor_marker(precursor_mz, charge, MirrorPlot),
+        **precursor_marker(MirrorPlot, precursor_mz, charge),
     )(key=f"{key}_mirror", state_manager=state_manager, height=height, sequence_view_top_key=seqview_key)
 
 

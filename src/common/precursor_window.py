@@ -1,4 +1,4 @@
-"""Shade a PSM's precursor isolation window on its spectrum plot, and mark its precursor m/z.
+"""Shade a PSM's precursor isolation window on its spectrum plot.
 
 The isolation window is the m/z range the instrument selected for
 fragmentation, an absolute range around the precursor: ``isolation window
@@ -17,37 +17,12 @@ import math
 PRECURSOR_WINDOW = "precursor_window"
 
 
-def _takes(component: type, option: str) -> bool:
-    try:
-        return option in inspect.signature(component.__init__).parameters
-    except (TypeError, ValueError):
-        return False
-
-
 def supports_window(component: type) -> bool:
     """Whether this openms-insight component takes ``window_identifier``."""
-    return _takes(component, "window_identifier")
-
-
-def precursor_marker(mz, charge, component: type) -> dict:
-    """Arguments for ``component`` that mark the precursor m/z with "precursor 2+".
-
-    A dotted guide at the PSM's precursor m/z, labelled with its charge, drawn
-    whether or not a peak is there and kept in the image download. Gives ``{}``
-    without a usable m/z or when the installed openms-insight component has no
-    ``x_markers``.
-    """
     try:
-        mz = float(mz)
+        return "window_identifier" in inspect.signature(component.__init__).parameters
     except (TypeError, ValueError):
-        return {}
-    if not math.isfinite(mz) or mz <= 0 or not _takes(component, "x_markers"):
-        return {}
-    try:
-        label = f"precursor {int(charge)}+" if int(charge) > 0 else "precursor"
-    except (TypeError, ValueError):
-        label = "precursor"
-    return {"x_markers": [{"x": mz, "label": label}]}
+        return False
 
 
 def isolation_windows(mzml_path) -> dict[int, tuple[float, float, float]]:
