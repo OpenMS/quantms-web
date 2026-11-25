@@ -1,0 +1,42 @@
+STARTING WORKFLOW
+
+📂 Loaded 6 sample(s)
+
+🧫 Adding 70 common lab contaminants (cRAP: keratins, trypsin, ...; CON__ accessions, hidden from the results); 46 already in your database are kept as targets
+
+🧬 Generating decoy database...
+
+✅ Decoy database ready
+
+⚙️ Running LFQ workflow
+
+📁 Output directories created
+
+🔬 Starting per-sample processing...
+
+🔎 Running peptide search...
+
+✅ Peptide search complete
+
+📊 Running rescoring...
+
+✅ Rescoring complete
+
+🔧 Filtering identifications...
+
+✅ Filtering complete
+
+📈 Running cross-sample quantification...
+
+✅ Quantification complete
+
+📦 Writing the QPX export (PSMs and provenance)...
+
+✅ QPX export: 5714 PSMs in run.psm.parquet
+
+Looking up the GO terms of 514 proteins at MyGene.info
+
+🧾 Kept 5714 identified spectra in spectra/ for viewing without the mzML files
+
+WORKFLOW FINISHED
+

@@ -1,14 +1,17 @@
 """results_filtered as a Viewer component."""
 
+import pandas as pd
 import streamlit as st
 from src.common.results_helpers import get_run_dir, get_run_params
 from src.common.spectrum_view import ensure_psm_views, fragment_tolerance, psm_mzml_files, show_selected_psm_spectrum
-from src.common.fragment_plots import fragment_error_plot, ion_table, ion_table_html, load_psm_fragments
+from src.common.fragment_plots import ion_table, ion_table_html, load_psm_fragments
+from src.viz.identification import fragment_errors
+from src.viz.series import show_series
 from src.common.precursor_xic_view import show_precursor_xic
 from src.common.result_filters import q_suggestions
 from src.common.sequence_display import filtered_psm_table, sequence_mode_selector
 from openms_insight import Heatmap, SequenceView
-from src.viewer.scope import needs_results, scoped, show_fig, shared_state, PSM_PRIVATE
+from src.viewer.scope import needs_results, scoped, shared_state, PSM_PRIVATE, heading, retitle
 
 
 def render(ctx) -> None:
@@ -22,9 +25,16 @@ def render(ctx) -> None:
     if not filter_files:
         st.warning("No filtering output files found.")
         return
-    selected_file = st.selectbox(
-        "Select filtering result file", filter_files, format_func=lambda x: x.name, key=scoped("filtered_file")
-    )
+    stem = getattr(ctx, "file", None)
+    if stem:
+        # Single run: the PSMs of that run's file
+        selected_file = next((f for f in filter_files if f.stem in (f"{stem}_filter", f"{stem}_prose_perc_filter")), None)
+        if selected_file is None:
+            return needs_results("No PSMs of this run after filtering.")
+    else:
+        selected_file = st.selectbox(
+            "Select filtering result file", filter_files, format_func=lambda x: x.name, key=scoped("filtered_file")
+        )
     cache_id_prefix = selected_file.stem
     # Check if cache exists
     if not ensure_psm_views(run_dir / "results", selected_file, run_params):
@@ -36,9 +46,10 @@ def render(ctx) -> None:
     heatmap = Heatmap(cache_id=f"heatmap_{cache_id_prefix}", cache_path=str(cache_dir))
     seq_view = SequenceView(cache_id=f"seqview_{cache_id_prefix}", cache_path=str(cache_dir))
     # Render components
-    st.subheader("PSM Overview")
-    heatmap(state_manager=state_manager, height=350, key=scoped("filtered_map"))
-    st.subheader("PSM Table")
+    head = heading("PSM overview")
+    retitle(heatmap, head.get("title"))(
+        state_manager=state_manager, height=350, key=scoped("filtered_map"), help=head.get("help")
+    )
     run_fdr = min(float(run_params.get("psm-fdr-percent", 1.0)), 100.0)
     mode = sequence_mode_selector("filtered")
     filtered_psm_table(
@@ -49,9 +60,7 @@ def render(ctx) -> None:
         selected_file,
         q_suggestions=q_suggestions(run_fdr if run_fdr < 100.0 else None),
     )
-    st.subheader("Peptide Sequence")
-    seq_view(key=scoped(f"seqview_{cache_id_prefix}"), state_manager=state_manager, height=533)
-    st.subheader("MS2 spectrum")
+    retitle(seq_view, "Peptide sequence")(key=scoped(f"seqview_{cache_id_prefix}"), state_manager=state_manager, height=533)
     show_selected_psm_spectrum(
         cache_dir,
         selected_file,
@@ -67,7 +76,6 @@ def render(ctx) -> None:
         mzml_files=psm_mzml_files(run_params),
         key=scoped(f"psm_xic_{cache_id_prefix}"),
     )
-    st.subheader("Fragment ions")
     fragments_tsv = run_dir / "results" / "exports" / f"{cache_id_prefix}_fragment_ions.tsv"
     psm_id = state_manager.get_selection("identification")
     if not fragments_tsv.is_file():
@@ -82,13 +90,24 @@ def render(ctx) -> None:
             tolerance, tolerance_ppm = fragment_tolerance(run_params)
 
             first = fragments.iloc[0]
-            st.caption(
-                f"{first['sequence']}, charge {int(first['precursor_charge'])}. Matched with the search's fragment "
-                f"tolerance (±{tolerance:g} {'ppm' if tolerance_ppm else 'Da'}, shaded)."
-            )
-            show_fig(
-                fragment_error_plot(fragments, tolerance, tolerance_ppm), f"fragment-errors-{cache_id_prefix}-{psm_id}"
+            unit = "ppm" if tolerance_ppm else "Da"
+            error = "mass_error_ppm" if tolerance_ppm else "mass_error_da"
+            points = pd.DataFrame({
+                "observed_mz": fragments["observed_mz"], error: fragments[error], "ion_type": fragments["ion_type"],
+                "fragment": [f"{ion}{'+' * int(z)}" for ion, z in zip(fragments["ion"], fragments["charge"])],
+            })
+            low, high = float(points["observed_mz"].min()), float(points["observed_mz"].max())
+            points = pd.concat([points, pd.DataFrame(
+                fragment_errors.tolerance_rows(tolerance, low, high, x="observed_mz", y=error))], ignore_index=True)
+            show_series(
+                points, f"fragment-errors-{cache_id_prefix}", cache_path=cache_dir,
+                key=scoped(f"fragment_errors_{cache_id_prefix}"), height=360,
+                **fragment_errors.settings(
+                    prsm=None, residue=None, x=("observed_mz", "m/z"), y=(error, f"Mass error ({unit})"),
+                    title=f"Fragment ions of {first['sequence']} ({int(first['precursor_charge'])}+): "
+                    f"{len(fragments)} matched within ±{tolerance:g} {unit}",
+                    svg_filename=f"fragment-errors-{cache_id_prefix}-{psm_id}",
+                ),
             )
             values, matched = ion_table(first["sequence"], int(first["precursor_charge"]), fragments)
-            st.markdown("**b/y ions** (theoretical m/z; matched ions highlighted, neutral losses not counted)")
             st.html(ion_table_html(values, matched))

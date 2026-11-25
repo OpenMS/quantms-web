@@ -1,17 +1,22 @@
 """The workflow module is imported by every workflow page, so what it imports
 at module level is paid on the first load of each of them. scipy.stats (about
-0.6 s) is only needed by the group comparison and is imported there."""
+0.6 s) is only needed by the group comparison and is imported there; mygene
+(0.1 to 0.3 s on a cold disk) is used by nothing in the app; plotly.express
+is only needed by the results() figures."""
 
 import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 
-def test_import_leaves_scipy_stats_unloaded():
+
+@pytest.mark.parametrize("module", ["scipy.stats", "mygene", "plotly.express"])
+def test_import_leaves_module_unloaded(module):
     code = (
         "import sys\n"
         "import src.WorkflowTest\n"
-        "print('scipy.stats' in sys.modules)\n"
+        f"print({module!r} in sys.modules)\n"
     )
     out = subprocess.run(
         [sys.executable, "-c", code],

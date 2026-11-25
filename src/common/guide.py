@@ -13,11 +13,11 @@ from src.common.results_helpers import get_abundance_data, get_id_column, get_sa
 
 # Page paths, so links survive a page being renamed in one place only.
 PAGES = {
-    "home": ("content/quickstart.py", "Home", "🏠"),
+    "home": ("content/quickstart.py", "Quickstart", "👋"),
     "configure": ("content/workflow_configure.py", "Describe experiment", "⚙️"),
     "run": ("content/workflow_run.py", "Run analysis", "🚀"),
     # Every result is a component of the results page
-    "viewer": ("content/viewer.py", "Explore results", "👁️"),
+    "viewer": ("content/viewer.py", "Explore results", "👀"),
     "export": ("content/workflow_export.py", "Export results", "📤"),
 }
 
@@ -85,12 +85,13 @@ def ensure_group_comparison(params: dict, show_errors: bool = True):
     if st.session_state.get("statistics_df") is not None:
         return st.session_state["statistics_df"]
     settings = resolve_settings(params)
+    done = {k: st.session_state.get(k) for k in STEPS}
     try:
         with st.spinner("Comparing groups with the recommended settings..."):
-            out = run_differential(
-                pivot_df, sample_group_map, id_col, settings,
-                done={k: st.session_state.get(k) for k in STEPS},
-            )
+            if any(v is not None for v in done.values()):
+                out = run_differential(pivot_df, sample_group_map, id_col, settings, done=done)
+            else:
+                out = recommended_comparison(workspace, pivot_df, sample_group_map, id_col, settings)
     except ValueError as err:
         if show_errors:
             st.warning(str(err))
@@ -99,6 +100,24 @@ def ensure_group_comparison(params: dict, show_errors: bool = True):
         st.session_state[key] = out[key]
     st.session_state["comparison_settings"] = describe_settings({**settings, "postproc-stat-test": out["stat_test"]})
     return out["statistics_df"]
+
+
+def recommended_comparison(workspace, pivot_df, sample_group_map: dict, id_col: str, settings: dict) -> dict:
+    """run_differential with nothing done by hand, kept with the shown run
+    (the workflow computes it at the end of a run, src/viewer/precompute.py)."""
+    import pandas as pd
+
+    from src.common.disk_cache import remember
+    from src.common.results_helpers import get_run_dir
+
+    key = (
+        int(pd.util.hash_pandas_object(pivot_df, index=True).sum()), tuple(map(str, pivot_df.columns)),
+        sorted(sample_group_map.items()), id_col, sorted((k, repr(v)) for k, v in settings.items()),
+    )
+    return remember(
+        get_run_dir(workspace), "comparison", key,
+        lambda: run_differential(pivot_df, sample_group_map, id_col, settings),
+    )
 
 
 def show_comparison_settings() -> None:

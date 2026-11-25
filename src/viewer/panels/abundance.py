@@ -33,7 +33,7 @@ def render(ctx) -> None:
     # The tables differ with the toggle, so it is part of their cache key
     contaminant_key = f"contaminants={show_contaminants}"
 
-    def render_protein_table(pivot_df, is_lfq=True):
+    def render_protein_table(pivot_df, is_lfq=True, note=None):
         """Common function to render the protein-level abundance table"""
         pivot_df = pivot_df.copy()
         if is_lfq:
@@ -64,7 +64,7 @@ def render(ctx) -> None:
             source_files=table_sources,
             # The cache follows the source files, so name the columns shown as well
             extra_key=f"{contaminant_key};{available_cols}",
-            title="protein_abundance",
+            note=note,
             # Intensities as whole numbers (the table stores float32)
             column_overrides={
                 c: {"formatter": "money", "formatterParams": {"thousand": ",", "precision": 0}, "minWidth": 110}
@@ -81,12 +81,13 @@ def render(ctx) -> None:
             return
 
         result = get_abundance_data(ctx.workspace, include_contaminants=show_contaminants)
+        hidden_note = None
         if not show_contaminants:
             all_proteins = get_abundance_data(ctx.workspace, include_contaminants=True)
             if all_proteins is not None and result is not None:
                 hidden = len(all_proteins[0]) - len(result[0])
                 if hidden:
-                    st.caption(f"{hidden} contaminant protein(s) hidden.")
+                    hidden_note = f"{hidden} contaminant protein(s) hidden."
 
         if analysis_mode == "LFQ":
             protein_tab, psm_tab = st.tabs(["Proteins", "Peptides (per spectrum match)"])
@@ -97,7 +98,7 @@ def render(ctx) -> None:
                     return
 
                 pivot_df, expr_df, group_map = result
-                render_protein_table(pivot_df, is_lfq=True)
+                render_protein_table(pivot_df, is_lfq=True, note=hidden_note)
 
             with psm_tab:
                 psm_df = df.copy()
@@ -126,7 +127,7 @@ def render(ctx) -> None:
         else:
             if result is None:
                 return needs_results()
-            render_protein_table(result[0], is_lfq=False)
+            render_protein_table(result[0], is_lfq=False, note=hidden_note)
 
     except Exception as e:
         st.error(f"Failed to load {csv_file.name}: {e}")

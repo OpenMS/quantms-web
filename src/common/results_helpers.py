@@ -1,5 +1,4 @@
 """Helper functions for results pages."""
-import copy
 import json
 import re
 import pandas as pd
@@ -19,6 +18,7 @@ from src.common.fractions import fraction_samples, sample_of
 from src.common.contaminants import drop_contaminants, is_contaminant
 from src.common.peptide_format import to_proforma
 from src.common.isobaric import channel_column_names, label_type
+from src.viz.identification import psm_table
 
 UNASSIGNED = "Unassigned"
 # Columns the group comparison adds to a protein table
@@ -65,12 +65,17 @@ def experiment_runs(workspace, run_id: str | None = None) -> list[str]:
 
     A run that processed more files for an earlier run (Process more files)
     belongs to that run's experiment; what compares samples is computed over
-    every run of it. One run alone is an experiment of its own.
+    every run of it. One run alone is an experiment of its own, and so is the
+    run the Viewer shows on its own (Single run).
     """
+    from src.viewer.scope import shown_run, shown_single
+
     runs = get_runs(workspace)
     run_id = run_id or _shown_run(runs)
     if run_id is None:
         return []
+    if shown_single() and run_id == shown_run():
+        return [run_id]
     return runs.experiment(run_id) or [run_id]
 
 
@@ -321,27 +326,13 @@ ID_DF_SCHEMA = {
 
 # Columns of the PSM tables. The ones with "visible": False start hidden and can
 # be shown from the table's column menu; the CSV download has every column.
-PSM_TABLE_COLUMNS = [
-    {"field": "sequence", "title": "Sequence"},
-    {"field": "charge", "title": "Z", "sorter": "number"},
-    {"field": "mz", "title": "m/z", "sorter": "number"},
-    {"field": "rt", "title": "RT", "sorter": "number"},
-    {"field": "score", "title": "Score", "sorter": "number"},
-    # Only decoys get a mark (a tick, no cross on targets), so they stand out. Next to
-    # the score, so it stays in view when a narrow table folds the last columns away.
-    {"field": "decoy", "title": "Decoy", "formatter": "tickCross", "formatterParams": {"crossElement": False},
-     "sorter": "boolean", "hozAlign": "center"},
-    {"field": "protein_accession", "title": "Proteins"},
-    {"field": "contaminant", "title": "Contaminant", "formatter": "tickCross", "sorter": "boolean"},
-    {"field": "proforma", "title": "ProForma", "visible": False},
-    {"field": "filename", "title": "File", "visible": False},
-    {"field": "scan_id", "title": "Scan", "sorter": "number", "visible": False},
-]
+# The PSM table's columns live with the library component
+PSM_TABLE_COLUMNS = psm_table.COLUMNS
 
 
 def psm_table_columns() -> list[dict]:
     """A fresh copy of PSM_TABLE_COLUMNS for one Table."""
-    return copy.deepcopy(PSM_TABLE_COLUMNS)
+    return psm_table.columns()
 
 
 def is_decoy_hit(hit) -> bool:
@@ -590,6 +581,22 @@ def load_abundance_data(
     Returns:
         Tuple of (pivot_df, expr_df, group_map) or None if data unavailable
     """
+    from src.common.disk_cache import remember
+
+    run_id = run_id or get_run_id(workspace_path)
+    if run_id is None:
+        return _load_abundance_data(workspace_path, run_id, members, csv_mtime, params_mtime)
+    # Kept with the run, so the Viewer reads what the workflow computed (src/viewer/precompute.py)
+    return remember(
+        get_run_dir(workspace_path, run_id), "abundance",
+        (str(Path(workspace_path).resolve()), csv_mtime, params_mtime, run_id, tuple(members)),
+        lambda: _load_abundance_data(workspace_path, run_id, members, csv_mtime, params_mtime),
+    )
+
+
+def _load_abundance_data(workspace_path: str, run_id: str | None, members: tuple,
+                         csv_mtime: float = 0.0, params_mtime: float = 0.0) -> tuple | None:
+    """load_abundance_data, computed."""
     quant_dir = get_results_dir(workspace_path, run_id) / "quant_results"
     workflow_params = get_run_params(workspace_path, run_id)
     analysis_mode = workflow_params.get("analysis-mode", "LFQ")
