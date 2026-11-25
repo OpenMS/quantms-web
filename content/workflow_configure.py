@@ -1,6 +1,6 @@
 import streamlit as st
 from src.common.common import page_setup
-from src.common.guide import PAGES, page_intro
+from src.common.guide import page_intro
 from src.WorkflowTest import WorkflowTest
 
 
@@ -8,7 +8,7 @@ params = page_setup()
 
 wf = WorkflowTest()
 
-st.title("Describe your experiment")
+st.title("Describe experiment")
 page_intro(
     """
 Choose your runs and your analysis in the box below, then say which sample belongs to which
@@ -43,5 +43,6 @@ wf.analysis_section()
 wf.show_parameter_section()
 
 # A bar at the bottom of the window: opens Run analysis and starts the analysis there
-wf.show_run_button(PAGES["run"][0], label="Run analysis", summary=wf.run_bar_summary(),
+wf.show_run_button(label="Run analysis", summary=wf.run_bar_summary(),
+                   name_label="Experiment name",
                    help="Save these settings, open Run analysis and start the analysis of the selected runs.")
