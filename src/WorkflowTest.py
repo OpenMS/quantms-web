@@ -24,7 +24,6 @@ from src.common.lfq_design import groups_from_design, initial_groups, is_fractio
 from src.common.qpx_export import app_version, export_run
 from src.workflow.ExperimentalDesign import design_path, load_design, save_design, to_openms_design
 from src.common import instrument
-from src.pride_ui import pride_import_section
 
 # Accession prefixes that mark decoy entries in a FASTA database.
 DECOY_PREFIXES = ("DECOY_", "decoy_", "rev_", "REV_", "XXX_", "reversed_")
@@ -447,10 +446,6 @@ class WorkflowTest(WorkflowManager):
                 )
             self._recommend_instrument(current_instrument)
             self.ui.analysis_summary(self.describe())
-
-        # Not part of describing the experiment: an import that fills it in
-        with st.expander("🧬 Reanalyse a PRIDE dataset, set up from its sample metadata (SDRF)"):
-            pride_import_section(self, {"mzML-files": list(EXAMPLE_MZML), "fasta-file": EXAMPLE_FASTA})
 
     def describe(self) -> str:
         """What a start will do, from the choices of Your analysis."""
