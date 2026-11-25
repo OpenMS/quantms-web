@@ -234,6 +234,10 @@ class WorkflowTest(WorkflowManager):
     export_page = Path("content", "workflow_export.py")
     # The browser notification at the end of a run: "OpenDDA analysis finished."
     run_label = "OpenDDA analysis"
+    # Disk space a run writes per byte of its input files, for the warning
+    # beside Run analysis and on the Run page: vendor files converted to mzML,
+    # search, rescoring and quantification results, and the Viewer's caches.
+    disk_space_factor = 3.0
 
     def __init__(self) -> None:
         super().__init__("TOPP Workflow", st.session_state["workspace"])
