@@ -167,6 +167,7 @@ sync:
   - src/WorkflowTest.py
   - src/common/contaminants.py
   - src/common/differential.py
+  - src/common/final_results.py
   - src/common/fragment_plots.py
   - src/common/guide.py
   - src/common/insight_tables.py
