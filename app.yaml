@@ -175,6 +175,7 @@ sync:
   - src/common/ms2_prediction.py
   - src/common/overview.py
   - src/common/peptide_format.py
+  - src/common/pooled_fdr.py
   - src/common/postprocessing_plots.py
   - src/common/protein_table.py
   - src/common/qc_plots.py
