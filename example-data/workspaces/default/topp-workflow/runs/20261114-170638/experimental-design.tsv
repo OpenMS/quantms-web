@@ -1,0 +1,15 @@
+Fraction_Group	Fraction	Spectra_Filepath	Label	Sample
+1	1	example-data/mzML/B000248_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA.mzML	1	1
+2	1	example-data/mzML/B000264_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA.mzML	1	2
+3	1	example-data/mzML/B000272_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_2.mzML	1	3
+4	1	example-data/mzML/B000288_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_2.mzML	1	4
+5	1	example-data/mzML/B000296_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_3.mzML	1	5
+6	1	example-data/mzML/B000312_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_3.mzML	1	6
+
+Sample	MSstats_Condition	MSstats_BioReplicate
+1	UPS2_ratio01	1
+2	UPS2_ratio10	1
+3	UPS2_ratio01	2
+4	UPS2_ratio10	2
+5	UPS2_ratio01	3
+6	UPS2_ratio10	3
