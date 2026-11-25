@@ -17,7 +17,7 @@ from src.common.insight_tables import show_insight_table
 from src.common.protein_table import build_tables, collect_psms, coverage_html, read_fasta
 from src.common.result_filters import add_protein_flags, file_conditions, max_replicates, protein_numeric_filters
 from src.common.results_helpers import get_run_dir, get_run_params
-from src.viewer.narrowing import narrowed_to
+from src.viz.identification.narrowing import narrowed_to
 from src.viewer.scope import heading, retitle, scoped, shared_state
 
 from src.viz.identification import protein_peptides as protein_peptides_view
