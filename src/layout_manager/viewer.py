@@ -59,6 +59,7 @@ from src.layout_manager.layout import MAX_EXPERIMENTS, load_layout, resolve_layo
 from src.layout_manager.ui import (
     _picked,
     _selection_key,
+    consume_link,
     experiment_state,
     linked_datasets,
     render_layout,
@@ -87,7 +88,11 @@ class DatasetKind:
     migrate a views file, say). ``buttons(ctx)`` are drawn beside every
     experiment's selector while it shows this kind. ``states(ctx)`` returns the
     selection state of an experiment, so views keep its zoom and selection
-    (None: none kept). ``max_experiments`` 1 makes the kind fill the page alone.
+    (None: none kept). ``link`` (on by default) adds 🔗, a link that opens the
+    view with each experiment's dataset, selection and zoom; ``not_kept`` names
+    selections neither a link nor 📌 stores, such as those a component
+    publishes itself whenever it is drawn. ``max_experiments`` 1 makes the kind
+    fill the page alone.
     ``components``, ``presets`` and ``default_layout`` may also be functions of
     the context, for views that depend on the dataset shown (the views of a
     comparison of labelled samples, say); the first experiment's context
@@ -118,7 +123,8 @@ class DatasetKind:
     help_text: str = ""
     target: str = "the Viewer"
     view_key: Optional[str] = None
-    link: bool = False
+    link: bool = True
+    not_kept: Sequence[str] = ()
 
 
 @dataclass
@@ -472,9 +478,13 @@ def _show_viewer(spec: ViewerSpec) -> List[ViewerContext]:
         dataset_label=kind.dataset_label,
         states=experiment_states if kind.states is not None else None,
         datasets=lambda index: (context(index).dataset if context(index) else None),
-        link=kind.link, max_experiments=kind.max_experiments, target=kind.target,
+        link=kind.link, not_kept=kind.not_kept, max_experiments=kind.max_experiments, target=kind.target,
         experiment_label=kind.experiment_label,
     )
+    if linked and not kind.link:
+        # The link picked a dataset whose kind has no links: its bar did not use
+        # it up, so do it here, or every rerun would pick that dataset again
+        consume_link(linked_key)
     layout, side_by_side = resolve_layout(kind.views_path, components, default_layout)
     saved = load_layout(kind.views_path) is not None
     layout = layout[:max(1, kind.max_experiments)]

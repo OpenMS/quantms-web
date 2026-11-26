@@ -97,6 +97,8 @@ Both Traefik and nginx attach a per-host `stroute` sticky cookie to bind a user 
 ### `namespace.yaml`
 Creates the `openms` namespace. All resources deploy into it.
 
+Every container in `k8s/base` sets a `securityContext`: no privilege escalation, the runtime's default seccomp profile, and all Linux capabilities dropped except those it needs by name (`CHOWN`, `DAC_OVERRIDE` and `FOWNER` for the app containers, which work on workspace files of any owner on the shared volume; `CHOWN`, `SETGID` and `SETUID` for Redis, whose entrypoint switches to the redis user). A container added in an overlay or an app should do the same; `tests/test_k8s_security_context.py` checks the base.
+
 ### `configmap.yaml`
 `streamlit-config` ConfigMap holding `settings-overrides.json`, merged into the app's `settings.json` at pod startup. Currently sets `online_deployment: true`.
 
@@ -117,9 +119,9 @@ Demo workspaces live under a hidden `.demos/` subdirectory of this PVC (see [Dem
 ### Demo workspaces
 Demo workspaces are seeded onto the `workspaces-pvc` at `/workspaces-streamlit-template/.demos/` by the `seed-demos` initContainer on the Streamlit Deployment. The init runs `cp -rn /app/example-data/workspaces/. /workspaces-streamlit-template/.demos/` — new demos shipped in an image appear after redeploy, but existing entries on the PV (including admin-saved demos and edits) are preserved.
 
-The ConfigMap override points `demo_workspaces.source_dirs` at `/workspaces-streamlit-template/.demos`, so both Streamlit pods and RQ workers read demos from the PV. The "Save as Demo" admin flow writes to the same path.
+The ConfigMap override lists two `demo_workspaces.source_dirs`: the image's own `/app/example-data/workspaces` first, then `/workspaces-streamlit-template/.demos` on the PV, and sets `save_dir` to the latter, so the "Save as Demo" admin flow writes to the PV. A demo the image ships is therefore read from the container's local disk, and a new workspace links to its files there (every Streamlit and RQ worker pod runs the same image, so the links resolve in each of them); only its few small files are written to the PV. Reading the demo from the PV instead costs a network round trip for every file and folder it holds, which on S3-backed storage kept a new workspace waiting for minutes. Demos saved by an admin, or shipped only on the PV, are still found in `.demos/`; for a name in both places the image's copy wins, so delete or rename a saved demo that should replace one the image ships. A workspace keeps pointing at the image's example data, so a new image with changed example data changes it for open workspaces too.
 
-To force a re-seed of a specific demo, delete it on the PV and restart the Streamlit Deployment:
+To force a re-seed of a specific demo on the PV, delete it on the PV and restart the Streamlit Deployment:
 ```
 kubectl exec deploy/streamlit -- rm -rf /workspaces-streamlit-template/.demos/<name>
 kubectl rollout restart deploy/streamlit
