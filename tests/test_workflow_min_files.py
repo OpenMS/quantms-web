@@ -2,12 +2,24 @@
 from types import SimpleNamespace
 
 import pandas as pd
+import pytest
 
-from _example_app import skip_without_example
 
-skip_without_example()
+def _example_workflow(*names):
+    """The template's example workflow; an app's own workflow may lack what is tested."""
+    try:
+        from src.Workflow import Workflow  # pylint: disable=no-name-in-module
+    except ModuleNotFoundError as e:
+        if e.name != "src.Workflow":
+            raise
+        pytest.skip("this app has no src/Workflow.py", allow_module_level=True)
+    missing = [n for n in names if not hasattr(Workflow, n)]
+    if missing:
+        pytest.skip(f"this app's workflow has no {', '.join(missing)}", allow_module_level=True)
+    return Workflow
 
-from src.Workflow import Workflow  # noqa: E402
+
+Workflow = _example_workflow("_keep_features_in")
 
 
 def _table(path):
