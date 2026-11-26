@@ -86,5 +86,9 @@
         "max_download_gb_online": 50,
         "allowed_hosts": [],
         "parallel_downloads": 4
+    },
+    "loading_logo": {
+        "light": "assets/opendda-mark-transparent-dark.svg",
+        "dark": "assets/opendda-mark-transparent-light.svg"
     }
 }
