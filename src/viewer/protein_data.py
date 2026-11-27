@@ -17,6 +17,7 @@ from src.common.insight_tables import show_insight_table
 from src.common.protein_table import build_tables, collect_psms, coverage_html, read_fasta
 from src.common.result_filters import add_protein_flags, file_conditions, max_replicates, protein_numeric_filters
 from src.common.results_helpers import get_run_dir, get_run_params
+from src.viz.identification.narrowing import narrowed_to
 from src.viewer.scope import heading, retitle, scoped, shared_state
 
 from src.viz.identification import protein_peptides as protein_peptides_view
@@ -157,6 +158,7 @@ def protein_peptides(data: ProteinData) -> None:
     """Coverage and peptides of the picked protein; picking a peptide narrows the PSMs."""
     state_manager = shared_state()
     selected = state_manager.get_selection("protein")
+    narrowed_to(state_manager, data.proteins, data.peptides, scoped("narrow-peptides"), ("protein",))
     show_insight_table(
         data.peptides,
         name="protein_peptides",
@@ -175,13 +177,15 @@ def protein_peptides(data: ProteinData) -> None:
 
 def protein_psms(data: ProteinData) -> None:
     """PSMs of the picked protein and peptide; picking one shows its spectrum."""
+    state_manager = shared_state()
+    narrowed_to(state_manager, data.proteins, data.peptides, scoped("narrow-psms"), ("protein", "peptide"))
     show_insight_table(
         data.psms,
         name="protein_psms",
         cache_dir=data.cache_dir,
         source_files=data.source_files,
         height=860,
-        state_manager=shared_state(),
+        state_manager=state_manager,
         extra_key="with-psm-id-v3",  # the cache follows the source files; name the newer psm column and layout
         **protein_psms_view.settings(),
     )
