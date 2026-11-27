@@ -31,6 +31,7 @@ VIEWS = {
         "Whether the identifications and the group comparison can be trusted. The first rows check the "
         "files: how many spectra each identified, and which fall short. The next checks the search: "
         "target and decoy scores should separate, and precursor errors should centre near zero. The "
+        "third checks the sample preparation: precursor charge states and missed cleavages. The "
         "last rows check the steps of the group comparison: missing values, normalization, the values "
         "filled in for missing ones and the p-values."
     ),
@@ -71,6 +72,13 @@ COMPONENTS = {
         "removing picks of a 13C isotope peak. A peak away from zero means the instrument was "
         "miscalibrated; a flat spread up to the edges means the precursor tolerance is too wide or too "
         "narrow."
+    ),
+    "charge_cleavage": (
+        "Per file, the share of target PSMs with each precursor charge and the share of identified "
+        "peptides with 0, 1 or 2 or more missed cleavages (protease sites the enzyme did not cut), for "
+        "the enzyme each file was searched with. A tryptic digest gives mostly 2+ and 3+ precursors; "
+        "many 1+ ones point to contamination. Most peptides should have no missed cleavage; a large "
+        "share with one or more means the digestion was incomplete."
     ),
     "protein_table": (
         "Every identified protein with its peptides, PSMs, sequence coverage and the files it was found "

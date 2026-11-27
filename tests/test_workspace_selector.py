@@ -15,6 +15,8 @@ from pathlib import Path
 import pytest
 from streamlit.testing.v1 import AppTest
 
+ROOT = Path(__file__).resolve().parents[1]  # AppTest resolves relative paths against the caller from Streamlit 1.55 on
+
 
 def _workspace_selectbox(at):
     return next(
@@ -25,7 +27,7 @@ def _workspace_selectbox(at):
 @pytest.fixture
 def app(tmp_path):
     # Any page that runs page_setup() renders the sidebar selector.
-    at = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "content" / "workflow_run.py"))
+    at = AppTest.from_file(str(ROOT / "content" / "workflow_run.py"))
     with open("settings.json", "r") as f:
         at.session_state.settings = json.load(f)
     at.session_state.settings["test"] = True
@@ -49,4 +51,5 @@ def test_picking_another_workspace_switches_to_it(app, other_workspace):
     app.run(timeout=30)
     _workspace_selectbox(app).set_value(other_workspace).run(timeout=30)
     assert not app.exception
-    assert app.query_params["workspace"] == [other_workspace]
+    # AppTest returns a list before Streamlit 1.55 and the value itself from then on
+    assert app.query_params["workspace"] in (other_workspace, [other_workspace])
