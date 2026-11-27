@@ -122,3 +122,18 @@ def test_filtered_table_adds_q_values_and_a_filter_menu(tmp_path):
     q_filter = [{"field": Q_FIELD, "type": "<=", "value": 0.001}]
     rows = table._prepare_vue_data({page: {"page": 1, "column_filters": q_filter}})["tableData"]
     assert rows["id_idx"].tolist() == [1]
+
+
+def test_psm_tables_show_proforma_without_a_switch():
+    """The Viewer's PSM tables write modifications in ProForma only, with no
+    radio to pick another form."""
+    from pathlib import Path
+
+    import src.common.sequence_display as sequence_display
+
+    assert sequence_display.PSM_SEQUENCE_MODE == "ProForma"
+    assert not hasattr(sequence_display, "sequence_mode_selector")
+    for panel in ("filtered", "database_search", "rescoring"):
+        source = Path("src/viewer/panels", f"{panel}.py").read_text()
+        assert "PSM_SEQUENCE_MODE" in source
+        assert "sequence_mode_selector" not in source
