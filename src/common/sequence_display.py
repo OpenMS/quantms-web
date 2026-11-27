@@ -1,7 +1,7 @@
-"""PSM table with a switch for how modified peptides are written.
+"""PSM tables with modified peptides written in ProForma.
 
-The workflow caches each run's PSM table with OpenMS sequence strings. When the
-user picks another form (see src/common/peptide_format.py), the cached table's
+The workflow caches each run's PSM table with OpenMS sequence strings. The
+Viewer shows ProForma (see src/common/peptide_format.py): the cached table's
 data is reused for a second table cache with that form in the Sequence column.
 It is built once per run and form, keeps the same row ids and links, so the
 spectrum and sequence views follow it as they follow the original.
@@ -11,43 +11,15 @@ import shutil
 from pathlib import Path
 
 import polars as pl
-import streamlit as st
 from openms_insight import Table
 
-from src.common.peptide_format import DISPLAY_MODES, format_sequence
+from src.common.peptide_format import format_sequence
 from src.viz.identification import psm_table as psm_table_view
 
-# The choice lives under MODE_KEY and is shared by every PSM table. Each table
-# has its own radio (several can be on one page), seeded from MODE_KEY on each
-# render, so changing one changes them all.
-MODE_KEY = "sequence-display-mode"
+# PSM tables write modified peptides in ProForma (HUPO-PSI), e.g. M[Oxidation],
+# the same form PSM downloads use; there is no per-table switch.
+PSM_SEQUENCE_MODE = "ProForma"
 DISPLAY_FIELD = "sequence_display"
-
-
-def sequence_mode_selector(name: str) -> str:
-    """Radio for the modification display of the PSM table ``name``."""
-    from src.viewer.scope import scoped
-
-    widget_key = scoped(f"_{MODE_KEY}-{name}")
-    st.session_state[widget_key] = st.session_state.get(MODE_KEY, DISPLAY_MODES[0])
-
-    def _changed() -> None:
-        st.session_state[MODE_KEY] = st.session_state[widget_key]
-
-    mode = st.radio(
-        "Modifications",
-        DISPLAY_MODES,
-        key=widget_key,
-        on_change=_changed,
-        horizontal=True,
-        help=(
-            "Labels: modified residues carry a short label, e.g. M(ox), S(ph), C(cam). "
-            "ProForma: the HUPO-PSI standard, e.g. M[Oxidation]; PSM downloads always include it. "
-            "OpenMS: the string as OpenMS writes it."
-        ),
-    )
-    st.session_state[MODE_KEY] = mode
-    return mode
 
 
 def display_table_id(cache_dir: Path, table_id: str, mode: str) -> str:

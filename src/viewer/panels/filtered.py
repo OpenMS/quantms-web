@@ -9,7 +9,7 @@ from src.viz.identification import fragment_errors
 from src.viz.series import show_series
 from src.common.precursor_xic_view import show_precursor_xic
 from src.common.result_filters import q_suggestions
-from src.common.sequence_display import filtered_psm_table, sequence_mode_selector
+from src.common.sequence_display import filtered_psm_table, PSM_SEQUENCE_MODE
 from openms_insight import Heatmap, SequenceView
 from src.viewer.scope import needs_results, scoped, shared_state, PSM_PRIVATE, heading, retitle
 
@@ -51,11 +51,10 @@ def render(ctx) -> None:
         state_manager=state_manager, height=350, key=scoped("filtered_map"), help=head.get("help")
     )
     run_fdr = min(float(run_params.get("psm-fdr-percent", 1.0)), 100.0)
-    mode = sequence_mode_selector("filtered")
     filtered_psm_table(
         cache_dir,
         f"table_{cache_id_prefix}",
-        mode,
+        PSM_SEQUENCE_MODE,
         state_manager,
         selected_file,
         q_suggestions=q_suggestions(run_fdr if run_fdr < 100.0 else None),
