@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from src.common.sample_correlation import (
+from src.viewer.sample_correlation import (
     least_similar,
     median_correlation,
     median_shared_proteins,

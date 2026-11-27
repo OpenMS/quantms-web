@@ -22,6 +22,7 @@ from src.common.psm_features import features_by_id, features_frame
 from src.common.results_helpers import parse_idxml, search_tolerances
 from src.common.plot_style import spectrum_styling
 from src.viewer.scope import zoom
+from src.viz.identification import predicted_spectrum
 
 
 def fragment_tolerance(workflow_params: dict) -> tuple[float, bool]:
@@ -196,20 +197,7 @@ def show_spectrum(cache_dir: Path, run: str, state_manager, *, peptide: str, cha
         cache_id=f"mirror_{digest}",
         data=data.lazy(),
         cache_path=str(cache_dir / "predicted_spectra"),
-        filters_top={"mirror_measured": "side"},
-        filter_defaults_top={"mirror_measured": 0},
-        filters_bottom={"mirror_predicted": "side"},
-        filter_defaults_bottom={"mirror_predicted": 1},
-        interactivity={"peak": "peak_id"},
-        x_column="mass",
-        y_column="intensity",
-        highlight_column="highlight",
-        annotation_column="ion",
-        title_top="Measured",
-        title_bottom=f"Predicted by AlphaPeptDeep ({instrument})",
-        x_label="m/z",
-        y_label="Relative intensity (%)",
-        styling=spectrum_styling(),
+        **predicted_spectrum.settings(f"Predicted by AlphaPeptDeep ({instrument})", spectrum_styling()),
         svg_filename=svg_name(peptide, charge, scan),
         **measure,
         **zoom(MirrorPlot, f"{key}_mirror"),

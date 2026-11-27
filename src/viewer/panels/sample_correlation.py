@@ -1,27 +1,33 @@
-"""Sample correlation: how alike the samples' protein abundances are, as a clustered heatmap."""
+"""Sample correlation: how alike the samples' protein abundances are, as the
+library's clustered sample by sample heatmap."""
 
 import polars as pl
 import streamlit as st
-
 from openms_insight import ClusteredHeatmap
-from src.common.insight_tables import plot_cache
+
+from src.common.insight_tables import _default_cache_dir
 from src.common.results_helpers import (
     get_abundance_data,
     get_id_column,
     get_sample_group_map,
     log2_matrix,
 )
-from src.common.sample_correlation import (
+from src.viewer.sample_correlation import (
     least_similar,
     median_correlation,
     median_shared_proteins,
     sample_correlation,
     shared_proteins,
 )
-from src.viewer.panels.heatmap_clustered import group_colors
-from src.viewer.scope import needs_results, scoped, shared_state
+from src.viewer.scope import heading, needs_results, scoped, shared_state
+from src.viz.plumbing import cache_name, component, group_colors, only_accepted
+from src.viz.quantification import sample_correlation as library
+from src.viz.quantification.pca import sample_metadata
 
-SAMPLE_COL = "sample"
+
+def correlation_source(corr) -> pl.DataFrame:
+    """The library's contract: the sample in ``Sample``, one column per sample."""
+    return pl.from_pandas(corr.rename_axis("Sample").reset_index())
 
 
 def render(ctx) -> None:
@@ -42,34 +48,23 @@ def render(ctx) -> None:
     if corr.isna().all().all():
         st.info("No two samples share enough measured proteins to compare them.")
         return
+    source = correlation_source(corr)
+    groups = {s: sample_group_map[s] for s in corr.columns if s in sample_group_map}
     shared = shared_proteins(mat)
-    st.caption(
-        "Pearson correlation of the log2 protein abundances of every two samples, over the proteins "
-        f"measured in both (median {median_shared_proteins(shared):,} proteins per pair). "
-        "Replicates of one group should be the most alike; samples are ordered by similarity."
+    head = heading(note=f"Each pair of samples is compared over the proteins measured in both: "
+                        f"{median_shared_proteins(shared):,} for the median pair.")
+    settings = library.settings(
+        "proteins", sample_noun="Sample", metadata=sample_metadata(groups, list(corr.columns)),
+        group_colors=group_colors(groups.values()),
+        **({"title": head["title"]} if head.get("title") else {}),
     )
-    corr_df = corr.rename_axis(SAMPLE_COL).reset_index()
-    metadata = pl.DataFrame(
-        [{"sample_id": s, "group": sample_group_map[s]} for s in corr.columns if s in sample_group_map],
-        schema={"sample_id": pl.String, "group": pl.String},
-    )
-    component = ClusteredHeatmap(
-        **plot_cache("quantms_sample_correlation", corr_df),
-        id_col=SAMPLE_COL,
-        data=pl.from_pandas(corr_df).lazy(),
-        metadata=metadata,
-        row_cluster=True,
-        col_cluster=True,
-        title="Sample correlation (Pearson, log2 abundances)",
-        x_label="Samples",
-        y_label="Samples",
-        intensity_label="Pearson r",
-        colorscale="Viridis",
-        reversescale=False,
-        group_colors=group_colors(sample_group_map),
+    heatmap = component(
+        ClusteredHeatmap, _default_cache_dir(), cache_name("quantms_sample_correlation", source),
+        lambda: {"data": source.lazy()},
+        **only_accepted(ClusteredHeatmap, row_cluster=True, col_cluster=True, **settings),
     )
     height = max(500, min(1200, 250 + 28 * len(corr)))
-    component(state_manager=shared_state(), height=height, key=scoped("sample_correlation"))
+    heatmap(state_manager=shared_state(), height=height, key=scoped("sample_correlation"), help=head.get("help"))
     medians = median_correlation(corr).dropna()
     outliers = least_similar(corr)
     if outliers:
@@ -79,5 +74,5 @@ def render(ctx) -> None:
             + f", against a median of {medians.median():.2f}. Check whether these runs worked and belong to their group."
         )
     elif len(medians):
-        st.caption(f"Median correlation between samples: {medians.median():.2f}, lowest {medians.iloc[0]:.2f} ({medians.index[0]}).")
-
+        st.caption(f"Median correlation between samples: {medians.median():.2f}, "
+                   f"lowest {medians.iloc[0]:.2f} ({medians.index[0]}).")
