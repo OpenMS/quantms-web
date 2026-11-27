@@ -133,6 +133,13 @@ deploy:
   docker_compose: true
   desktop:
   - windows
+  # The desktop app's values, read by the template's build-desktop-app.yaml.
+  desktop_app:
+    name: OpenDDA
+    topp_tools: [DecoyDatabase, ProSE, PercolatorAdapter, IDFilter, ProteomicsLFQ, IsobaricAnalyzer,
+      IDMapper, FileMerger, ProteinInference, IDConflictResolver, ProteinQuantifier, FileConverter]
+    openms: "3.6.0"
+    e2e_scenarios: [tests/e2e/electron-workflows.js, tests/e2e/electron-rescoring.js]
   online_deployment: false
 
 # Optional CI checks, all on by default. An app with few CI minutes turns off
@@ -156,9 +163,6 @@ sync:
   - example-data/*
   - assets/*
   - k8s/overlays/*
-  - .github/workflows/build-and-test.yml
-  - .github/kind-config.yaml
-  - .github/workflows/build-desktop-app.yaml
   - docker-compose.yml
   - docs/kubernetes-deployment.md
   - CLAUDE.app.md

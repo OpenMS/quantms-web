@@ -1,7 +1,7 @@
 {
     "app-name": "OpenDDA",
     "github-user": "OpenMS",
-    "version": "2.0.0-alpha.1",
+    "version": "2.0.0-alpha.2",
     "repository-name": "quantms-web",
     "branding": {
         "page_icon": "assets/opendda-icon-small-light.svg",
@@ -132,5 +132,9 @@
                 "text": "Proteins were quantified from their peptides with ProteinQuantifier"
             }
         }
+    },
+    "loading_logo": {
+        "light": "assets/opendda-mark-transparent-dark.svg",
+        "dark": "assets/opendda-mark-transparent-light.svg"
     }
 }
