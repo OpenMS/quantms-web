@@ -1,0 +1,180 @@
+STARTING WORKFLOW
+
+📂 Loaded 6 sample(s)
+
+🧫 Adding 70 common lab contaminants (cRAP: keratins, trypsin, ...; CON__ accessions, hidden from the results); 46 already in your database are kept as targets
+
+🧬 Generating decoy database...
+
+Running command:
+DecoyDatabase -in example-data/db/yeast_ups2.fasta ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/database/contaminants.fasta -out ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/database/yeast_ups2.con.decoy.fasta -decoy_string rev_ -decoy_string_position prefix -method reverse -threads 3
+Waiting for command to finish...
+
+Process finished:
+DecoyDatabase -in example-data/db/yeast_ups2.fasta ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/database/contaminants.fasta -out ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/database/yeast_ups2.con.decoy.fasta -decoy_string rev_ -decoy_string_position prefix -method reverse -threads 3
+Total time to run command: 0.42 seconds
+
+✅ Decoy database ready
+
+⚙️ Running LFQ workflow
+
+📁 Output directories created
+
+🔬 Starting per-sample processing...
+
+🔎 Running peptide search...
+
+Searching 6 file(s) in 1 ProSE process(es)
+
+Running command:
+ProSE -in example-data/mzML/B000248_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA.mzML example-data/mzML/B000264_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA.mzML example-data/mzML/B000272_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_2.mzML example-data/mzML/B000288_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_2.mzML example-data/mzML/B000296_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_3.mzML example-data/mzML/B000312_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_3.mzML -out_idxml ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/search_results/B000248_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_prose.idXML ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/search_results/B000264_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_prose.idXML ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/search_results/B000272_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_2_prose.idXML ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/search_results/B000288_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_2_prose.idXML ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/search_results/B000296_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_3_prose.idXML ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/search_results/B000312_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_3_prose.idXML -Search:enzyme Trypsin/P -Search:peptide:missed_cleavages 2 -Search:peptide:min_size 6 -Search:peptide:max_size 40 -Search:modifications:fixed Carbamidomethyl (C) -Search:modifications:variable Oxidation (M) Acetyl (Protein N-term) -Search:modifications:variable_max_per_peptide 3 -Search:precursor:mass_tolerance_lower 20.0 -Search:precursor:mass_tolerance_upper 20.0 -Search:precursor:mass_tolerance_unit ppm -Search:precursor:isotopes 0 1 -Search:precursor:min_charge 2 -Search:precursor:max_charge 4 -Search:fragment:mass_tolerance 20.0 -Search:fragment:mass_tolerance_unit ppm -Search:report:top_hits 1 -Search:FDR:PSM 0.0 -Search:FDR:protein 0.0 -database ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/database/yeast_ups2.con.decoy.fasta -Search:decoys auto -threads 3
+Waiting for command to finish...
+
+Process finished:
+ProSE -in example-data/mzML/B000248_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA.mzML example-data/mzML/B000264_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA.mzML example-data/mzML/B000272_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_2.mzML example-data/mzML/B000288_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_2.mzML example-data/mzML/B000296_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_3.mzML example-data/mzML/B000312_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_3.mzML -out_idxml ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/search_results/B000248_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_prose.idXML ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/search_results/B000264_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_prose.idXML ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/search_results/B000272_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_2_prose.idXML ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/search_results/B000288_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_2_prose.idXML ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/search_results/B000296_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_3_prose.idXML ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/search_results/B000312_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_3_prose.idXML -Search:enzyme Trypsin/P -Search:peptide:missed_cleavages 2 -Search:peptide:min_size 6 -Search:peptide:max_size 40 -Search:modifications:fixed Carbamidomethyl (C) -Search:modifications:variable Oxidation (M) Acetyl (Protein N-term) -Search:modifications:variable_max_per_peptide 3 -Search:precursor:mass_tolerance_lower 20.0 -Search:precursor:mass_tolerance_upper 20.0 -Search:precursor:mass_tolerance_unit ppm -Search:precursor:isotopes 0 1 -Search:precursor:min_charge 2 -Search:precursor:max_charge 4 -Search:fragment:mass_tolerance 20.0 -Search:fragment:mass_tolerance_unit ppm -Search:report:top_hits 1 -Search:FDR:PSM 0.0 -Search:FDR:protein 0.0 -database ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/database/yeast_ups2.con.decoy.fasta -Search:decoys auto -threads 3
+Total time to run command: 7.45 seconds
+
+✅ Peptide search complete
+
+📊 Running rescoring...
+
+Running 6 commands (max 3 parallel, 3 total threads)...
+
+Running command:
+PercolatorAdapter -in ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/search_results/B000248_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_prose.idXML -out ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/percolator_results/B000248_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_per.idXML -threads 8 -subset_max_train 300000 -score_type pep -post_processing_tdc -decoy_pattern rev_ -threads 1
+Waiting for command to finish...
+
+Running command:
+PercolatorAdapter -in ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/search_results/B000264_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_prose.idXML -out ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/percolator_results/B000264_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_per.idXML -threads 8 -subset_max_train 300000 -score_type pep -post_processing_tdc -decoy_pattern rev_ -threads 1
+Waiting for command to finish...
+
+Running command:
+PercolatorAdapter -in ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/search_results/B000272_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_2_prose.idXML -out ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/percolator_results/B000272_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_2_per.idXML -threads 8 -subset_max_train 300000 -score_type pep -post_processing_tdc -decoy_pattern rev_ -threads 1
+Waiting for command to finish...
+
+Process finished:
+PercolatorAdapter -in ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/search_results/B000264_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_prose.idXML -out ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/percolator_results/B000264_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_per.idXML -threads 8 -subset_max_train 300000 -score_type pep -post_processing_tdc -decoy_pattern rev_ -threads 1
+Total time to run command: 0.67 seconds
+
+Running command:
+PercolatorAdapter -in ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/search_results/B000288_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_2_prose.idXML -out ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/percolator_results/B000288_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_2_per.idXML -threads 8 -subset_max_train 300000 -score_type pep -post_processing_tdc -decoy_pattern rev_ -threads 1
+Waiting for command to finish...
+
+Process finished:
+PercolatorAdapter -in ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/search_results/B000288_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_2_prose.idXML -out ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/percolator_results/B000288_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_2_per.idXML -threads 8 -subset_max_train 300000 -score_type pep -post_processing_tdc -decoy_pattern rev_ -threads 1
+Total time to run command: 0.77 seconds
+
+Running command:
+PercolatorAdapter -in ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/search_results/B000296_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_3_prose.idXML -out ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/percolator_results/B000296_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_3_per.idXML -threads 8 -subset_max_train 300000 -score_type pep -post_processing_tdc -decoy_pattern rev_ -threads 1
+Waiting for command to finish...
+
+Process finished:
+PercolatorAdapter -in ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/search_results/B000248_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_prose.idXML -out ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/percolator_results/B000248_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_per.idXML -threads 8 -subset_max_train 300000 -score_type pep -post_processing_tdc -decoy_pattern rev_ -threads 1
+Total time to run command: 1.61 seconds
+
+Running command:
+PercolatorAdapter -in ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/search_results/B000312_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_3_prose.idXML -out ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/percolator_results/B000312_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_3_per.idXML -threads 8 -subset_max_train 300000 -score_type pep -post_processing_tdc -decoy_pattern rev_ -threads 1
+Waiting for command to finish...
+
+Process finished:
+PercolatorAdapter -in ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/search_results/B000272_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_2_prose.idXML -out ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/percolator_results/B000272_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_2_per.idXML -threads 8 -subset_max_train 300000 -score_type pep -post_processing_tdc -decoy_pattern rev_ -threads 1
+Total time to run command: 1.90 seconds
+
+Process finished:
+PercolatorAdapter -in ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/search_results/B000296_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_3_prose.idXML -out ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/percolator_results/B000296_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_3_per.idXML -threads 8 -subset_max_train 300000 -score_type pep -post_processing_tdc -decoy_pattern rev_ -threads 1
+Total time to run command: 1.30 seconds
+
+Process finished:
+PercolatorAdapter -in ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/search_results/B000312_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_3_prose.idXML -out ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/percolator_results/B000312_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_3_per.idXML -threads 8 -subset_max_train 300000 -score_type pep -post_processing_tdc -decoy_pattern rev_ -threads 1
+Total time to run command: 3.05 seconds
+
+Total time to run 6 commands: 4.66 seconds
+
+✅ Rescoring complete
+
+🔧 Filtering identifications...
+
+Running 6 commands (max 3 parallel, 3 total threads)...
+
+Running command:
+IDFilter -in ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/percolator_results/B000248_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_per.idXML -out ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/psm_filter/B000248_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_filter.idXML -threads 2 -score:peptide nan -score:protein nan -score:proteingroup nan -score:type_peptide q-value -score:psm 0.01 -threads 1
+Waiting for command to finish...
+
+Running command:
+IDFilter -in ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/percolator_results/B000264_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_per.idXML -out ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/psm_filter/B000264_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_filter.idXML -threads 2 -score:peptide nan -score:protein nan -score:proteingroup nan -score:type_peptide q-value -score:psm 0.01 -threads 1
+Waiting for command to finish...
+
+Running command:
+IDFilter -in ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/percolator_results/B000272_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_2_per.idXML -out ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/psm_filter/B000272_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_2_filter.idXML -threads 2 -score:peptide nan -score:protein nan -score:proteingroup nan -score:type_peptide q-value -score:psm 0.01 -threads 1
+Waiting for command to finish...
+
+Process finished:
+IDFilter -in ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/percolator_results/B000272_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_2_per.idXML -out ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/psm_filter/B000272_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_2_filter.idXML -threads 2 -score:peptide nan -score:protein nan -score:proteingroup nan -score:type_peptide q-value -score:psm 0.01 -threads 1
+Total time to run command: 0.18 seconds
+
+Running command:
+IDFilter -in ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/percolator_results/B000288_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_2_per.idXML -out ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/psm_filter/B000288_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_2_filter.idXML -threads 2 -score:peptide nan -score:protein nan -score:proteingroup nan -score:type_peptide q-value -score:psm 0.01 -threads 1
+Waiting for command to finish...
+
+Process finished:
+IDFilter -in ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/percolator_results/B000248_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_per.idXML -out ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/psm_filter/B000248_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_filter.idXML -threads 2 -score:peptide nan -score:protein nan -score:proteingroup nan -score:type_peptide q-value -score:psm 0.01 -threads 1
+Total time to run command: 0.22 seconds
+
+Running command:
+IDFilter -in ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/percolator_results/B000296_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_3_per.idXML -out ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/psm_filter/B000296_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_3_filter.idXML -threads 2 -score:peptide nan -score:protein nan -score:proteingroup nan -score:type_peptide q-value -score:psm 0.01 -threads 1
+Waiting for command to finish...
+
+Process finished:
+IDFilter -in ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/percolator_results/B000264_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_per.idXML -out ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/psm_filter/B000264_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_filter.idXML -threads 2 -score:peptide nan -score:protein nan -score:proteingroup nan -score:type_peptide q-value -score:psm 0.01 -threads 1
+Total time to run command: 0.26 seconds
+
+Running command:
+IDFilter -in ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/percolator_results/B000312_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_3_per.idXML -out ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/psm_filter/B000312_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_3_filter.idXML -threads 2 -score:peptide nan -score:protein nan -score:proteingroup nan -score:type_peptide q-value -score:psm 0.01 -threads 1
+Waiting for command to finish...
+
+Process finished:
+IDFilter -in ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/percolator_results/B000288_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_2_per.idXML -out ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/psm_filter/B000288_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_2_filter.idXML -threads 2 -score:peptide nan -score:protein nan -score:proteingroup nan -score:type_peptide q-value -score:psm 0.01 -threads 1
+Total time to run command: 0.18 seconds
+
+Process finished:
+IDFilter -in ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/percolator_results/B000296_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_3_per.idXML -out ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/psm_filter/B000296_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_3_filter.idXML -threads 2 -score:peptide nan -score:protein nan -score:proteingroup nan -score:type_peptide q-value -score:psm 0.01 -threads 1
+Total time to run command: 0.16 seconds
+
+Process finished:
+IDFilter -in ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/percolator_results/B000312_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_3_per.idXML -out ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/psm_filter/B000312_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_3_filter.idXML -threads 2 -score:peptide nan -score:protein nan -score:proteingroup nan -score:type_peptide q-value -score:psm 0.01 -threads 1
+Total time to run command: 0.24 seconds
+
+Total time to run 6 commands: 0.51 seconds
+
+✅ Filtering complete
+
+📈 Running cross-sample quantification...
+
+COMBINED_IN example-data/mzML/B000248_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA.mzML example-data/mzML/B000264_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA.mzML example-data/mzML/B000272_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_2.mzML example-data/mzML/B000288_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_2.mzML example-data/mzML/B000296_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_3.mzML example-data/mzML/B000312_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_3.mzML
+
+COMBINED_IN_TYPE str
+
+FILTER_RESULTS = ['../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/psm_filter/B000248_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_filter.idXML', '../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/psm_filter/B000264_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_filter.idXML', '../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/psm_filter/B000272_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_2_filter.idXML', '../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/psm_filter/B000288_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_2_filter.idXML', '../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/psm_filter/B000296_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_3_filter.idXML', '../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/psm_filter/B000312_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_3_filter.idXML']
+
+FILTER_RESULTS_LEN = 6
+
+Running command:
+ProteomicsLFQ -in example-data/mzML/B000248_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA.mzML example-data/mzML/B000264_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA.mzML example-data/mzML/B000272_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_2.mzML example-data/mzML/B000288_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_2.mzML example-data/mzML/B000296_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_3.mzML example-data/mzML/B000312_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_3.mzML -ids ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/psm_filter/B000248_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_filter.idXML ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/psm_filter/B000264_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_filter.idXML ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/psm_filter/B000272_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_2_filter.idXML ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/psm_filter/B000288_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_2_filter.idXML ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/psm_filter/B000296_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_3_filter.idXML ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/psm_filter/B000312_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_3_filter.idXML -out ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/quant_results/openms_quant.mzTab -out_cxml ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/quant_results/openms.consensusXML -out_msstats ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/quant_results/openms_msstats.csv -feature_with_id_min_score 0.1 -Seeding:intThreshold 1000.0 -psmFDR 0.01 -proteinFDR 0.01 -picked_proteinFDR true -alignment_order star -protein_quantification unique_peptides -quantification_method feature_intensity -protein_inference aggregation -fasta ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/database/yeast_ups2.con.decoy.fasta -targeted_only true -threads 12 -PeptideQuantification:extract:IM_window 0.0 -PeptideQuantification:faims:merge_features false -threads 3
+Waiting for command to finish...
+
+Process finished:
+ProteomicsLFQ -in example-data/mzML/B000248_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA.mzML example-data/mzML/B000264_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA.mzML example-data/mzML/B000272_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_2.mzML example-data/mzML/B000288_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_2.mzML example-data/mzML/B000296_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_3.mzML example-data/mzML/B000312_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_3.mzML -ids ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/psm_filter/B000248_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_filter.idXML ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/psm_filter/B000264_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_filter.idXML ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/psm_filter/B000272_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_2_filter.idXML ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/psm_filter/B000288_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_2_filter.idXML ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/psm_filter/B000296_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio01_DDA_3_filter.idXML ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/psm_filter/B000312_Ap_6883_EXT-765_DIA_Yeast_UPS2_ratio10_DDA_3_filter.idXML -out ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/quant_results/openms_quant.mzTab -out_cxml ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/quant_results/openms.consensusXML -out_msstats ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/quant_results/openms_msstats.csv -feature_with_id_min_score 0.1 -Seeding:intThreshold 1000.0 -psmFDR 0.01 -proteinFDR 0.01 -picked_proteinFDR true -alignment_order star -protein_quantification unique_peptides -quantification_method feature_intensity -protein_inference aggregation -fasta ../workspaces-quantms-web/default/topp-workflow/runs/20261114-170638/results/database/yeast_ups2.con.decoy.fasta -targeted_only true -threads 12 -PeptideQuantification:extract:IM_window 0.0 -PeptideQuantification:faims:merge_features false -threads 3
+Total time to run command: 14.53 seconds
+
+✅ Quantification complete
+
+📦 Writing the QPX export (PSMs and provenance)...
+
+✅ QPX export: 5714 PSMs in run.psm.parquet
+
+Looking up the GO terms of 514 proteins at MyGene.info
+
+🧾 Kept 5714 identified spectra in spectra/ for viewing without the mzML files
+
+WORKFLOW FINISHED
+

@@ -123,7 +123,7 @@ tenacity==9.0.0
     #   streamlit
 toml==0.10.2
     # via streamlit
-tornado==6.6
+tornado==6.6.1
     # via streamlit
 typing-extensions==4.16.0
     # via
@@ -140,7 +140,7 @@ xlsxwriter
 streamlit_plotly_events
 scipy
 scikit-learn
-openms-insight>=0.7.1
+openms-insight==0.7.8
 polars>=1.0.0
 # Forces polars to prefer its most CPU-compatible native runtime.
 # Without this, polars can select an AVX-optimized runtime (e.g. runtime-32)

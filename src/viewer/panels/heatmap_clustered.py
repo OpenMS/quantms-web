@@ -2,9 +2,7 @@
 
 import streamlit as st
 
-import numpy as np
-import polars as pl
-from src.common.insight_tables import plot_cache
+from src.common.insight_tables import _default_cache_dir
 from src.common.guide import ensure_group_comparison
 from src.common.results_helpers import (
     get_abundance_data,
@@ -13,29 +11,9 @@ from src.common.results_helpers import (
     get_sample_group_map,
     log2_matrix,
 )
-from openms_insight import ClusteredHeatmap
-from src.viewer.scope import needs_results, scoped, shared_state
-
-# Group annotation-bar colors, assigned in sorted-group order (the order
-# ClusteredHeatmap._preprocess() gives the unique groups).
-GROUP_PALETTE = [
-    "#00BFC4",  # teal
-    "#F8766D",  # salmon
-    "#7CAE00",  # yellow-green
-    "#C77CFF",  # lavender purple
-    "#E7B800",  # gold/amber
-    "#619CFF",  # blue
-    "#FF61C3",  # pink/magenta
-    "#00BA38",  # green
-    "#FF8C42",  # orange
-    "#00B0F6",  # sky blue
-]
-
-
-def group_colors(sample_group_map: dict) -> dict:
-    """Group name -> annotation bar colour, the same in every clustered heatmap."""
-    groups = sorted(set(sample_group_map.values()))
-    return {g: GROUP_PALETTE[i % len(GROUP_PALETTE)] for i, g in enumerate(groups)}
+from openms_insight.core.settings import setting_value
+from src.viz.heatmap import clustered_height, show_clustered_heatmap, zscores
+from src.viewer.scope import heading, needs_results, scoped, shared_state
 
 
 def render(ctx) -> None:
@@ -57,38 +35,21 @@ def render(ctx) -> None:
     if expr_df.empty:
         st.info("No data available for heatmap.")
         return
-    top_n = st.slider("Number of proteins (Highest Variance)", 10, 200, 30, key=scoped("clustered_heatmap_top_n"))
-    var_series = expr_df.var(axis=1)
-    top_proteins = var_series.sort_values(ascending=False).head(top_n).index
-    heatmap_df = expr_df.loc[top_proteins]
-    heatmap_z = heatmap_df.sub(heatmap_df.mean(axis=1), axis=0).div(heatmap_df.std(axis=1), axis=0)
-    heatmap_z = heatmap_z.replace([np.inf, -np.inf], np.nan).dropna()
+    state_manager = shared_state()
+    top_setting = {
+        "identifier": "clustered_heatmap_top_n", "label": "Proteins shown (most variable first)", "kind": "range",
+        "min": 10, "max": 200, "step": 10, "default": 30,
+    }
+    top_n = int(setting_value(state_manager, top_setting))
+    heatmap_z = zscores(expr_df, top=top_n)
     if heatmap_z.empty:
         st.warning("Insufficient data to generate the heatmap.")
         return
-    heatmap_z_reset = heatmap_z.reset_index()
-    heatmap_lazy = pl.from_pandas(heatmap_z_reset).lazy()
-    sample_cols = expr_df.columns.tolist()
-    metadata_pl = pl.DataFrame(
-        [{"sample_id": s, "group": sample_group_map[s]} for s in sample_cols if s in sample_group_map],
-        schema={"sample_id": pl.String, "group": pl.String},
+    head = heading("Protein Abundance Heatmap (Z-score, clustered)")
+    # Height grows with the number of proteins so row labels stay readable
+    show_clustered_heatmap(
+        heatmap_z.reset_index(), sample_group_map, id_col, "quantms_clustered_heatmap",
+        cache_path=_default_cache_dir(), key=scoped("clustered_heatmap"), state_manager=state_manager,
+        height=clustered_height(top_n), help=head.get("help"), toolbar_settings=[top_setting],
+        samples=expr_df.columns.tolist(), title=head.get("title"), y_label="Proteins",
     )
-    heatmap_component = ClusteredHeatmap(
-        **plot_cache("quantms_clustered_heatmap", heatmap_z),
-        id_col=id_col,
-        data=heatmap_lazy,
-        metadata=metadata_pl,
-        row_cluster=True,
-        col_cluster=True,
-        title="Protein Abundance Heatmap (Z-score, clustered)",
-        x_label="Samples",
-        y_label="Proteins",
-        intensity_label="Z-score",
-        group_colors=group_colors(sample_group_map),
-    )
-    state_manager = shared_state()
-    # Scale height with the number of proteins so row labels stay readable -
-    # BaseComponent otherwise defaults to a flat 400px, too short for a
-    # dendrogram+heatmap composite with more than a handful of rows.
-    heatmap_height = max(600, min(1400, 300 + top_n * 20))
-    heatmap_component(state_manager=state_manager, height=heatmap_height, key=scoped("clustered_heatmap"))

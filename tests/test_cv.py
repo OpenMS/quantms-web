@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.common.cv import cv_distribution, cv_summary, cv_upper, group_cvs
+from src.viewer.cv import cv_summary, group_cvs, plot_table
 
 GROUPS = {"a1": "A", "a2": "A", "a3": "A", "b1": "B", "b2": "B", "c1": "C"}
 
@@ -40,22 +40,12 @@ def test_no_group_with_two_samples_gives_nothing():
     assert group_cvs(_matrix(), {"a1": "A", "b1": "B"}).empty
 
 
-def test_distribution_sums_to_100_percent_per_group():
-    cvs = pd.DataFrame({"protein": list("pqrstu"), "group": ["A"] * 3 + ["B"] * 3,
-                        "cv": [1.0, 15.0, 500.0, 3.0, 3.0, 41.0]})
-    curves = cv_distribution(cvs, bin_width=2, upper=50)
-    for _, sub in curves.groupby("group"):
-        assert sub["proteins"].sum() == pytest.approx(100)
-    # 500 % goes in the last bin
-    a = curves[curves["group"] == "A"].set_index("cv")["proteins"]
-    assert a.iloc[-1] == pytest.approx(100 / 3)
-    assert curves["cv"].max() < 50
-
-
-def test_upper_end_of_the_axis():
-    assert cv_upper(pd.DataFrame({"cv": [5.0] * 100})) == 50
-    assert cv_upper(pd.DataFrame({"cv": np.linspace(0, 123, 1000)})) == 130
-    assert cv_upper(pd.DataFrame({"cv": [1000.0] * 10})) == 200
+def test_plot_table_names_the_lead_accession():
+    cvs = pd.DataFrame({"protein": ["P1;P2", "Q1"], "group": ["A", "B"], "cv": [12.5, 30.0]})
+    table = plot_table(cvs, lambda p: p.split(";")[0])
+    assert list(table.columns) == ["condition", "cv", "accession"]
+    assert table["accession"].tolist() == ["P1", "Q1"]
+    assert table["condition"].tolist() == ["A", "B"]
 
 
 def test_summary_per_group():

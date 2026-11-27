@@ -10,6 +10,7 @@ import pandas as pd
 
 from src.common.fractions import fraction_samples
 from src.common.results_helpers import extract_filename_from_idxml, load_idxml
+from src.common.disk_cache import per_file
 
 UNASSIGNED = "Unassigned"
 
@@ -46,6 +47,7 @@ def identification_counts(idxml_path) -> dict:
     return {"Target PSMs": psms, "Peptides": len(sequences), "Proteins": len(proteins)}
 
 
+@per_file
 def identification_sets(idxml_path) -> tuple:
     """(target PSM count, distinct peptide sequences, distinct protein accessions) of one idXML."""
     _, peptides = load_idxml(idxml_path)
