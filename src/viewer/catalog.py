@@ -35,6 +35,7 @@ _COMPONENTS = [
     ("pca", "Sample similarity (PCA)", QUANTIFICATION, "pca"),
     ("heatmap", "Heatmap", QUANTIFICATION, "heatmap"),
     ("clustered_heatmap", "Clustered heatmap", QUANTIFICATION, "heatmap_clustered"),
+    ("sample_correlation", "Sample correlation", QUANTIFICATION, "sample_correlation"),
     ("go_enrichment", "GO enrichment", QUANTIFICATION, "enrichment"),
     ("comparison_missing_values", "Missing values", QUANTIFICATION, "comparison_missing_values"),
     ("comparison_imputed_values", "Imputed values", QUANTIFICATION, "comparison_imputed_values"),
@@ -72,6 +73,7 @@ NEEDS = {
     "pca": "quantification",
     "heatmap": ["quantification", "samples"],
     "clustered_heatmap": ["quantification", "samples"],
+    "sample_correlation": ["quantification", "samples"],
     "group_comparison": ["quantification", "groups"],
     "volcano": ["quantification", "groups"],
     "go_enrichment": ["quantification", "groups"],
@@ -88,7 +90,7 @@ NEEDS = {
 EXPERIMENT_WIDE = {
     "quant_summary", "protein_abundance", "abundance_profile", "group_comparison", "volcano", "pca", "heatmap",
     "clustered_heatmap", "go_enrichment", "comparison_missing_values", "comparison_imputed_values",
-    "comparison_normalization", "comparison_pvalues",
+    "comparison_normalization", "comparison_pvalues", "sample_correlation",
 }
 
 _ALL = sorted((
@@ -140,6 +142,7 @@ PRESETS = [
             ["sample_counts"],
             ["id_diagnostics"],
             ["qc_scores", "qc_mass_error"],
+            ["sample_correlation"],
             ["comparison_missing_values", "comparison_normalization"],
             ["comparison_imputed_values", "comparison_pvalues"],
         ],
