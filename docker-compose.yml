@@ -3,11 +3,17 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      args:
-        GITHUB_TOKEN: $GITHUB_TOKEN
+      # Optional: GITHUB_TOKEN in the environment lets the build bundle the
+      # latest release's Windows installer. It is passed as a build secret,
+      # so it is not stored in the image.
+      secrets:
+        - github_token
     image: openms_streamlit_template
     container_name: openms-streamlit-template
     restart: always
+    depends_on:
+      own-workspaces:
+        condition: service_completed_successfully
     ports:
       - 8501:8501
     volumes:
@@ -21,5 +27,33 @@ services:
       # Number of Streamlit server instances (default: 1 = no load balancer).
       # Set to >1 to enable nginx load balancing across multiple Streamlit instances.
       - STREAMLIT_SERVER_COUNT=1
+      # With the data mount above, name its host folder so the upload page
+      # can show users where to put their files:
+      # - LOCAL_DATA_HOST_DIR=/path/on/host
+  # The image runs as an unprivileged user, uid 1000. A volume made by an
+  # earlier image, which ran as root, holds files owned by root; this one-off
+  # container hands them to uid 1000 before the app starts, and once the top
+  # folder is uid 1000's, every later start only checks it. The only container
+  # that runs as root, with no rights but changing owners.
+  own-workspaces:
+    image: openms_streamlit_template
+    user: "0:0"
+    restart: "no"
+    cap_drop: ["ALL"]
+    cap_add: ["CHOWN", "DAC_OVERRIDE", "FOWNER"]
+    security_opt: ["no-new-privileges:true"]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        root=/workspaces-streamlit-template
+        [ "$$(stat -c %u "$$root")" = 1000 ] && exit 0
+        find "$$root" -mindepth 1 ! -uid 1000 -exec chown -h 1000:1000 {} + || exit 1
+        chown 1000:1000 "$$root"
+    volumes:
+      - workspaces-streamlit-template:/workspaces-streamlit-template
+secrets:
+  github_token:
+    environment: GITHUB_TOKEN
+
 volumes:
   workspaces-streamlit-template:
