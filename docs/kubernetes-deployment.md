@@ -97,6 +97,10 @@ Both Traefik and nginx attach a per-host `stroute` sticky cookie to bind a user 
 ### `namespace.yaml`
 Creates the `openms` namespace. All resources deploy into it.
 
+Every container in `k8s/base` sets a `securityContext`: no privilege escalation, the runtime's default seccomp profile, and all Linux capabilities dropped except those it needs by name. The app containers (Streamlit, the RQ workers, the sync service, `seed-demos`) run as uid and gid 1000 (`runAsNonRoot`) with no capabilities; the image's TOPP tools and conda environment are readable by any user, and `HOME` is `/tmp`. The image itself runs as uid 1000, so the two containers that need root name it (`runAsUser: 0`) and keep only `CHOWN`, `DAC_OVERRIDE` and `FOWNER`, because they change file owners on the shared volume: the `own-workspaces` init container of each Deployment, which hands the workspace volume to uid 1000 once (everything not owned by it, the top folder last, so its owner marks the hand-over as done and later starts only stat it), and the nightly cleanup, which also hands over files a pod of an earlier release wrote as root during an update. Redis keeps `CHOWN`, `SETGID` and `SETUID`, whose entrypoint switches to the redis user. A container added in an overlay or an app should do the same; `tests/test_k8s_security_context.py` checks the base.
+
+The deployment's settings (`settings-overrides.json` from the ConfigMap) are merged into the image's `settings.json` by the `settings` init container, which writes the result to an `emptyDir` that the app container mounts over `/app/settings.json`, so the app's user needs no write access to `/app`. The first start after this change walks the whole workspace volume once while `own-workspaces` runs; on a large volume that holds the new pods in `Init` for a while, and the old pods keep serving until it is done.
+
 ### `configmap.yaml`
 `streamlit-config` ConfigMap holding `settings-overrides.json`, merged into the app's `settings.json` at pod startup. Currently sets `online_deployment: true`.
 
@@ -117,9 +121,9 @@ Demo workspaces live under a hidden `.demos/` subdirectory of this PVC (see [Dem
 ### Demo workspaces
 Demo workspaces are seeded onto the `workspaces-pvc` at `/workspaces-streamlit-template/.demos/` by the `seed-demos` initContainer on the Streamlit Deployment. The init runs `cp -rn /app/example-data/workspaces/. /workspaces-streamlit-template/.demos/` — new demos shipped in an image appear after redeploy, but existing entries on the PV (including admin-saved demos and edits) are preserved.
 
-The ConfigMap override points `demo_workspaces.source_dirs` at `/workspaces-streamlit-template/.demos`, so both Streamlit pods and RQ workers read demos from the PV. The "Save as Demo" admin flow writes to the same path.
+The ConfigMap override lists two `demo_workspaces.source_dirs`: the image's own `/app/example-data/workspaces` first, then `/workspaces-streamlit-template/.demos` on the PV, and sets `save_dir` to the latter, so the "Save as Demo" admin flow writes to the PV. A demo the image ships is therefore read from the container's local disk, and a new workspace links to its files there (every Streamlit and RQ worker pod runs the same image, so the links resolve in each of them); only its few small files are written to the PV. Reading the demo from the PV instead costs a network round trip for every file and folder it holds, which on S3-backed storage kept a new workspace waiting for minutes. Demos saved by an admin, or shipped only on the PV, are still found in `.demos/`; for a name in both places the image's copy wins, so delete or rename a saved demo that should replace one the image ships. A workspace keeps pointing at the image's example data, so a new image with changed example data changes it for open workspaces too.
 
-To force a re-seed of a specific demo, delete it on the PV and restart the Streamlit Deployment:
+To force a re-seed of a specific demo on the PV, delete it on the PV and restart the Streamlit Deployment:
 ```
 kubectl exec deploy/streamlit -- rm -rf /workspaces-streamlit-template/.demos/<name>
 kubectl rollout restart deploy/streamlit

@@ -10,12 +10,16 @@ import sys
 import types
 
 import pytest
+from pathlib import Path
+
 from streamlit.testing.v1 import AppTest
+
+ROOT = Path(__file__).resolve().parents[1]  # AppTest resolves relative paths against the caller from Streamlit 1.55 on
 
 pytest.importorskip("openms_insight")
 from openms_insight.core import image_format  # noqa: E402
 
-PAGE = "content/workflow_run.py"
+PAGE = str(ROOT / "content" / "workflow_run.py")
 
 
 def _app() -> AppTest:
