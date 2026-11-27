@@ -118,3 +118,46 @@ def test_psm_ids_match_the_spectrum_viewer_numbering(tmp_path):
     for _, row in psms.iterrows():
         assert viewer.loc[row["psm_id"], "sequence"] == row["peptide"]
         assert viewer.loc[row["psm_id"], "scan_id"] == row["scan"]
+
+
+def _long_psms(files, peptides, accessions):
+    return pd.DataFrame({"accession": accessions, "peptide": peptides, "file": files})
+
+
+def test_coverage_rows_one_bar_per_peptide_and_condition():
+    from src.common.protein_table import COVERAGE_COLUMNS, coverage_rows
+
+    fasta = {"P1": ("", "MPEPTIDEKSAMPLERAAAA"), "P2": ("", "GGGG")}
+    psms = _long_psms(
+        ["a.mzML", "a.mzML", "b.mzML", "c.mzML", "a.mzML"],
+        ["PEPTIDEK", "PEPTIDEK", "PEPTIDEK", "SAMPLER", "NOTTHERE"],
+        ["P1", "P1", "P1", "P1", "P1"],
+    )
+    rows = coverage_rows(psms, fasta, {"a.mzML": "ctrl", "b.mzML": "drug"})
+    assert tuple(rows.columns) == COVERAGE_COLUMNS
+    got = {(r["match_id"], r["track"]): (r["start"], r["end"], r["count"]) for r in rows.iter_rows(named=True)}
+    # 1-based, inclusive; a file without a condition goes to the shared track; a peptide not in the protein is left out
+    assert got == {
+        ("PEPTIDEK", "ctrl"): (2, 9, 2),
+        ("PEPTIDEK", "drug"): (2, 9, 1),
+        ("SAMPLER", "All files"): (10, 16, 1),
+    }
+    assert set(rows["reference"]) == {"P1"}
+
+
+def test_coverage_rows_marks_modified_residues():
+    from src.common.protein_table import coverage_rows
+
+    fasta = {"P1": ("", "AAPEPM" + "TIDEK")}
+    rows = coverage_rows(_long_psms(["a.mzML"], [".(Acetyl)PEPM(Oxidation)TIDEK"], ["P1"]), fasta)
+    row = rows.row(0, named=True)
+    assert (row["start"], row["end"], row["sequence"]) == (3, 11, "PEPMTIDEK")
+    assert row["mod_positions"] == [3, 6]
+    assert row["mod_labels"] == ["Acetyl", "Oxidation"]
+    assert row["match_id"] == ".(Acetyl)PEPM(Oxidation)TIDEK"
+
+
+def test_coverage_rows_empty():
+    from src.common.protein_table import coverage_rows
+
+    assert coverage_rows(pd.DataFrame(columns=["accession", "peptide", "file"]), {}).height == 0
