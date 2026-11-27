@@ -201,3 +201,81 @@ def coverage_html(sequence: str, mask: np.ndarray, block: int = 10, per_row: int
         '<div class="covmap">' + "\n".join(lines) + "</div>"
     )
 
+
+
+def _peptide_modifications(peptide: str, offset: int) -> list[dict]:
+    """Modified residues of ``peptide`` (an OpenMS string), as positions in the
+    protein (``offset``: the 1-based start of the peptide in it) and names."""
+    try:
+        from pyopenms import AASequence
+
+        seq = AASequence.fromString(peptide)
+    except Exception:  # pylint: disable=broad-except
+        return []
+    mods = []
+    if seq.hasNTerminalModification():
+        mods.append({"position": offset, "token": seq.getNTerminalModificationName()})
+    for i in range(seq.size()):
+        residue = seq.getResidue(i)
+        if residue.isModified():
+            mods.append({"position": offset + i, "token": residue.getModificationName()})
+    if seq.hasCTerminalModification():
+        mods.append({"position": offset + seq.size() - 1, "token": seq.getCTerminalModificationName()})
+    return mods
+
+
+COVERAGE_COLUMNS = ("match_id", "reference", "track", "start", "end", "sequence", "count",
+                    "mod_positions", "mod_labels")
+
+
+def coverage_rows(psms_long: pd.DataFrame, fasta: dict, track_of_file: dict | None = None,
+                  default_track: str = "All files"):
+    """Where each peptide lies on its protein, one row per protein, peptide and
+    track (the condition of the PSM's file, else ``default_track``), counted
+    in PSMs: the column contract of the sequence coverage panel
+    (``src/viz/identification/sequence_coverage.py``).
+
+    ``match_id`` is the peptide (as the peptide table names it), so picking a
+    bar picks the peptide; ``reference`` is the protein accession. A peptide
+    found more than once in its protein is drawn at its first place; one not
+    found in the FASTA sequence (or a protein without one) is left out.
+    """
+    import polars as pl
+
+    schema = {"match_id": pl.Utf8, "reference": pl.Utf8, "track": pl.Utf8, "start": pl.Int64,
+              "end": pl.Int64, "sequence": pl.Utf8, "count": pl.Int64,
+              "mod_positions": pl.List(pl.Int64), "mod_labels": pl.List(pl.Utf8)}
+    if psms_long.empty:
+        return pl.DataFrame(schema=schema)
+    tracks = psms_long["file"].map(lambda f: (track_of_file or {}).get(f) or default_track)
+    counts = psms_long.assign(track=tracks).groupby(["accession", "peptide", "track"], sort=False).size()
+    records, places = [], {}
+    for (accession, peptide, track), count in counts.items():
+        key = (accession, peptide)
+        if key not in places:
+            places[key] = None
+            sequence = fasta.get(accession, ("", ""))[1]
+            plain = _unmodified(peptide)
+            at = sequence.find(plain) if sequence and plain else -1
+            if at >= 0:
+                places[key] = (at + 1, at + len(plain), plain, _peptide_modifications(peptide, at + 1))
+        place = places[key]
+        if place is None:
+            continue
+        start, end, plain, mods = place
+        records.append({
+            "match_id": peptide, "reference": accession, "track": track, "start": start, "end": end,
+            "sequence": plain, "count": int(count),
+            "mod_positions": [m["position"] for m in mods], "mod_labels": [m["token"] for m in mods],
+        })
+    return pl.DataFrame(records, schema=schema)
+
+
+def _unmodified(peptide: str) -> str:
+    """``peptide`` without its modifications (``.(Acetyl)PEPM(Oxidation)K`` -> ``PEPMK``)."""
+    try:
+        from pyopenms import AASequence
+
+        return AASequence.fromString(peptide).toUnmodifiedString()
+    except Exception:  # pylint: disable=broad-except
+        return re.sub(r"\([^)]*\)|\[[^\]]*\]|\.", "", peptide)

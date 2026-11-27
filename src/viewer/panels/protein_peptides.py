@@ -1,4 +1,4 @@
-"""Coverage and peptides of the picked protein."""
+"""Peptides of the picked protein."""
 from src.viewer import protein_data
 from src.viewer.scope import needs_results
 

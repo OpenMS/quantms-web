@@ -23,6 +23,7 @@ _COMPONENTS = [
     ("charge_cleavage", "Charge states and missed cleavages", IDENTIFICATION, "charge_cleavage"),
     ("protein_table", "Proteins", IDENTIFICATION, "protein_table"),
     ("protein_peptides", "Peptides of the picked protein", IDENTIFICATION, "protein_peptides"),
+    ("protein_coverage", "Sequence coverage of the picked protein", IDENTIFICATION, "protein_coverage"),
     ("protein_psms", "PSMs of the picked peptide", IDENTIFICATION, "protein_psms"),
     ("psm_spectrum", "Annotated spectrum of the picked PSM", IDENTIFICATION, "psm_spectrum"),
     ("psms", "PSM explorer (after FDR)", IDENTIFICATION, "filtered"),
@@ -63,6 +64,7 @@ NEEDS = {
     "id_diagnostics": "identification",
     "protein_table": "identification",
     "protein_peptides": "identification",
+    "protein_coverage": "identification",
     "protein_psms": "identification",
     "psm_spectrum": "identification",
     "psms": "identification",
@@ -127,6 +129,7 @@ PRESETS = [
         "layout": [
             ["dda_summary"],
             ["protein_table", "protein_peptides"],
+            ["protein_coverage"],
             # The PSM's sequence view and spectrum need the full width
             ["protein_psms"],
             ["psm_spectrum"],

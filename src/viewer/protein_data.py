@@ -14,13 +14,14 @@ import streamlit as st
 from src.common.contaminants import is_contaminant
 from src.common.fractions import fraction_samples
 from src.common.insight_tables import show_insight_table
-from src.common.protein_table import build_tables, collect_psms, coverage_html, read_fasta
+from src.common.protein_table import build_tables, collect_psms, coverage_rows, read_fasta
 from src.common.result_filters import add_protein_flags, file_conditions, max_replicates, protein_numeric_filters
 from src.common.results_helpers import get_run_dir, get_run_params
 from src.viewer.scope import heading, retitle, scoped, shared_state
 
 from src.viz.identification import protein_peptides as protein_peptides_view
 from src.viz.identification import protein_psms as protein_psms_view
+from src.viz.identification import sequence_coverage
 from src.viz.identification import protein_table as protein_table_view
 
 
@@ -151,9 +152,8 @@ def protein_table(data: ProteinData) -> None:
 
 
 def protein_peptides(data: ProteinData) -> None:
-    """Coverage and peptides of the picked protein; picking a peptide narrows the PSMs."""
+    """Peptides of the picked protein; picking a peptide narrows the PSMs."""
     state_manager = shared_state()
-    selected = state_manager.get_selection("protein")
     show_insight_table(
         data.peptides,
         name="protein_peptides",
@@ -164,10 +164,54 @@ def protein_peptides(data: ProteinData) -> None:
         state_manager=state_manager,
         **protein_peptides_view.settings(),
     )
-    # The coverage below the table, so the table starts level with the protein table
-    if selected in data.coverage and selected in data.fasta_entries:
-        _, sequence = data.fasta_entries[selected]
-        st.html(coverage_html(sequence, data.coverage[selected]))
+
+
+def coverage_tracks(data: ProteinData) -> list[str]:
+    """The tracks of the coverage map: the conditions in the order of the files, or one for all files."""
+    conditions = [data.conditions[f] for f in data.mzml_names if f in data.conditions]
+    tracks = list(dict.fromkeys(conditions))
+    if len(conditions) < len(data.mzml_names) or not tracks:
+        tracks.append(COVERAGE_ALL)
+    return tracks
+
+
+COVERAGE_ALL = "All files"
+
+
+def protein_coverage(data: ProteinData) -> None:
+    """The peptides of the picked protein where they lie on its sequence, one
+    track per condition; a click picks the peptide (and so narrows the PSMs)."""
+    import openms_insight
+
+    from src.common.insight_tables import _cache_key
+    from src.viz.plumbing import component
+
+    cls = getattr(openms_insight, "SequenceCoverage", None)
+    if cls is None:
+        st.info("The coverage map needs a newer openms-insight.")
+        return
+    if not data.fasta_found:
+        st.warning("The FASTA database of this run was not found, so the coverage cannot be drawn.")
+        return
+    state_manager = shared_state()
+    tracks = coverage_tracks(data)
+    head = heading("Sequence coverage")
+    coverage = component(
+        cls, data.cache_dir,
+        "protein_coverage_" + _cache_key(data.source_files, f"v1|{sorted(data.conditions.items())}"),
+        lambda: {"data": coverage_rows(data.psms, data.fasta_entries, data.conditions, COVERAGE_ALL).lazy()},
+        **sequence_coverage.settings(
+            "", count_label="PSMs", match="peptide", reference_filter="protein",
+            title=head.get("title", "Sequence coverage"), track_order=tracks,
+        ),
+    )
+    selected = state_manager.get_selection("protein")
+    if selected in data.fasta_entries:
+        description, sequence = data.fasta_entries[selected]
+        coverage.set_reference(sequence, str(selected))
+    else:
+        coverage.set_reference("", "Pick a protein in the protein table")
+    coverage(key=scoped("protein_coverage"), state_manager=state_manager, help=head.get("help"))
 
 
 def protein_psms(data: ProteinData) -> None:
@@ -230,6 +274,6 @@ def psm_spectrum(data: ProteinData) -> None:
 
 
 __all__ = [
-    "ProteinData", "is_contaminant", "load", "protein_count", "protein_peptides", "protein_psms",
+    "ProteinData", "is_contaminant", "load", "protein_count", "protein_coverage", "protein_peptides", "protein_psms",
     "protein_table", "psm_spectrum",
 ]

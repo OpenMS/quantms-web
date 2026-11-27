@@ -86,8 +86,14 @@ COMPONENTS = {
         "filter to show them. Picking a protein picks it in every component."
     ),
     "protein_peptides": (
-        "The sequence coverage of the picked protein (identified residues highlighted) and its "
-        "peptides. Picking a peptide narrows the PSMs to it."
+        "The peptides of the picked protein, with their PSM counts. Picking a peptide narrows "
+        "the PSMs to it."
+    ),
+    "protein_coverage": (
+        "The sequence of the picked protein with each identified peptide drawn as a bar under the "
+        "residues it covers, one track per condition, coloured by its PSMs; modified residues are "
+        "marked. Each track says how much of the sequence it covers. Clicking a bar picks the "
+        "peptide, which narrows the PSMs."
     ),
     "protein_psms": (
         "The peptide-spectrum matches of the picked protein and peptide: file, scan, charge, retention "
