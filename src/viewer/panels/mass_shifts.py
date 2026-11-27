@@ -22,10 +22,11 @@ SHIFT_COLUMNS = {
 @st.cache_data(show_spinner="Computing mass shifts...")
 def summary(paths: tuple, names: tuple, mtimes: tuple):
     """mass_shift_summary of the filtered PSMs, kept with the run (the workflow computes it at its end)."""
-    from src.common.disk_cache import cache_root, remember
+    from src.common.disk_cache import cache_root, file_id, remember
 
+    root = cache_root(Path(paths[0]))
     return remember(
-        cache_root(Path(paths[0])), "mass_shifts", ("mass_shifts", 1, tuple(str(Path(p).resolve()) for p in paths), names, mtimes),
+        root, "mass_shifts", ("mass_shifts", 2, tuple(file_id(p, root) for p in paths), names),
         lambda: mass_shift_summary(psm_mass_shifts(list(paths), list(names))),
     )
 

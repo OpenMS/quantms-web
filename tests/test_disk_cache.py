@@ -57,3 +57,37 @@ def test_missing_file_is_not_cached(tmp_path):
 
     assert name(tmp_path / "missing") == str(tmp_path / "missing")
     assert not (tmp_path / disk_cache.FOLDER).exists()
+
+
+def test_file_id_names_the_file_within_its_run(tmp_path):
+    (tmp_path / "results").mkdir()
+    source = tmp_path / "results" / "a.txt"
+    source.write_text("one")
+    name, size, _ = disk_cache.file_id(source, tmp_path)
+    assert (name, size) == ("results/a.txt", 3)
+    assert disk_cache.file_id(source)[0] == "a.txt"
+
+
+def test_a_copied_run_with_new_file_times_reads_the_cache(tmp_path):
+    """A demo's run, copied or linked into a new workspace, keeps its viewer cache."""
+    import shutil
+
+    demo = tmp_path / "demo"
+    (demo / "results").mkdir(parents=True)
+    (demo / "run.json").write_text("{}")
+    (demo / "results" / "a.txt").write_text("one")
+    calls = []
+
+    @disk_cache.per_file
+    def length(path):
+        calls.append(path)
+        return len(open(path).read())
+
+    assert length(demo / "results" / "a.txt") == 3
+    copy = tmp_path / "workspace" / "run"
+    shutil.copytree(demo, copy)
+    later = time.time() + 3600
+    for file in copy.rglob("*"):
+        os.utime(file, (later, later))
+    assert length(copy / "results" / "a.txt") == 3
+    assert len(calls) == 1
