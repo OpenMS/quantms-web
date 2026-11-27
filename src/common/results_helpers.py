@@ -581,15 +581,23 @@ def load_abundance_data(
     Returns:
         Tuple of (pivot_df, expr_df, group_map) or None if data unavailable
     """
-    from src.common.disk_cache import remember
+    from src.common.disk_cache import file_id, remember
 
     run_id = run_id or get_run_id(workspace_path)
     if run_id is None:
         return _load_abundance_data(workspace_path, run_id, members, csv_mtime, params_mtime)
-    # Kept with the run, so the Viewer reads what the workflow computed (src/viewer/precompute.py)
+    # Kept with the run, so the Viewer reads what the workflow computed (src/viewer/precompute.py).
+    # Keyed on the quantification files and the settings of each run, never on where the
+    # workspace is, so a workspace set up from a demo reads the demo's table.
+    workflow_dir = get_workflow_dir(workspace_path)
+    inputs = []
+    for member in tuple(members) or (run_id,):
+        quant_dir = get_results_dir(workspace_path, member) / "quant_results"
+        files = sorted(p for p in quant_dir.iterdir() if p.is_file()) if quant_dir.is_dir() else []
+        settings = json.dumps(get_run_params(workspace_path, member), sort_keys=True, default=str)
+        inputs.append((member, tuple(file_id(p, workflow_dir) for p in files), settings))
     return remember(
-        get_run_dir(workspace_path, run_id), "abundance",
-        (str(Path(workspace_path).resolve()), csv_mtime, params_mtime, run_id, tuple(members)),
+        get_run_dir(workspace_path, run_id), "abundance", ("abundance", 2, run_id, tuple(members), tuple(inputs)),
         lambda: _load_abundance_data(workspace_path, run_id, members, csv_mtime, params_mtime),
     )
 
