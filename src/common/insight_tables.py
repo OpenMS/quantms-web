@@ -108,6 +108,7 @@ def show_insight_table(
     page_size: int = 100,
     state_manager=None,
     column_overrides: dict | None = None,
+    display: dict | None = None,
     note: str | None = None,
     **table_kwargs,
 ) -> Table:
@@ -138,6 +139,9 @@ def show_insight_table(
         column_overrides: Extra Tabulator column settings per column name,
             e.g. a ``formatter``. openms-insight stores floats as float32, so
             a column of rounded values needs one to display without noise.
+        display: Display options that are no part of the cache, such as
+            the ``display()`` of a table of the visualization library, which
+            already leaves out what the installed openms-insight lacks.
         note: Figures of the shown run, added to the info icon.
         **table_kwargs: Passed on to ``Table`` (e.g. ``initial_sort``).
     """
@@ -167,7 +171,10 @@ def show_insight_table(
         )
 
     # Every column stays; a table narrower than its columns scrolls sideways
-    table = retitle(Table(cache_id=cache_id, cache_path=str(cache_dir), collapse_columns=False), head.get("title"))
+    table = retitle(
+        Table(cache_id=cache_id, cache_path=str(cache_dir), collapse_columns=False, **(display or {})),
+        head.get("title"),
+    )
     from src.viewer.scope import scoped
 
     table(key=scoped(f"insight_table_{name}"), height=height, state_manager=state_manager, help=head.get("help"))

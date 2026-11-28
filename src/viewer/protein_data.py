@@ -124,6 +124,20 @@ def protein_count(data: ProteinData) -> int:
     return int((~data.proteins["contaminant"].astype(bool)).sum())
 
 
+def _place(view, *args) -> dict:
+    """Where a table sits among proteins, peptides and PSMs, from the library.
+
+    Enter (or a double click) goes one table down, Backspace one up, and each
+    table says where its picked row is ("3 of 132") and what the tables above
+    narrow it to. The library's ``display()`` leaves out what the installed
+    openms-insight lacks; a template older than it gives no options at all.
+    """
+    from openms_insight import Table
+
+    display = getattr(view, "display", None)
+    return display(Table, *args) if display else {}
+
+
 def protein_table(data: ProteinData) -> None:
     """The identified proteins; picking one narrows the components below it."""
     proteins = data.proteins
@@ -141,6 +155,7 @@ def protein_table(data: ProteinData) -> None:
         extra_key=f"menu-v1|{'per-sample' if data.sample_of else ''}|{sorted(data.conditions.items())}",
         height=420,
         state_manager=shared_state(),
+        display=_place(protein_table_view),
         **protein_table_view.settings(
             list(shown.columns),
             protein_numeric_filters(
@@ -162,6 +177,7 @@ def protein_peptides(data: ProteinData) -> None:
         extra_key="per-sample" if data.sample_of else "",
         height=420,
         state_manager=state_manager,
+        display=_place(protein_peptides_view),
         **protein_peptides_view.settings(),
     )
     # The coverage below the table, so the table starts level with the protein table
@@ -179,6 +195,7 @@ def protein_psms(data: ProteinData) -> None:
         source_files=data.source_files,
         height=860,
         state_manager=shared_state(),
+        display=_place(protein_psms_view),
         extra_key="with-psm-id-v3",  # the cache follows the source files; name the newer psm column and layout
         **protein_psms_view.settings(),
     )
