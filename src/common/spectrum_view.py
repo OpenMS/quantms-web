@@ -128,13 +128,27 @@ def measure_options(peptide: str, tolerance: float, ppm: bool) -> dict:
     return options
 
 
+def precursor_marker(component: type, mz, charge) -> dict:
+    """Arguments for ``component`` that mark the precursor m/z ("precursor 2+").
+
+    From the visualization library (``annotated_spectrum.precursor_marker``),
+    which leaves the marker out without a usable m/z or on an openms-insight
+    without ``x_markers``; a template older than it marks nothing.
+    """
+    from src.viz.identification import annotated_spectrum
+
+    marker = getattr(annotated_spectrum, "precursor_marker", None)
+    return marker(component, mz, charge) if marker else {}
+
+
 def show_spectrum(cache_dir: Path, run: str, state_manager, *, peptide: str, charge: int, file_index: int,
                   scan: int, seqview_key: str, key: str, tolerance: float, ppm: bool,
-                  mzml_path: Path | None = None, height: int = 450) -> None:
+                  mzml_path: Path | None = None, height: int = 450, precursor_mz: float | None = None) -> None:
     """The measured spectrum of a PSM, annotated by the SequenceView ``seqview_key``.
 
     Mirrored against the spectrum AlphaPeptDeep predicts for the peptide; the
-    plain annotated spectrum when the prediction is unavailable.
+    plain annotated spectrum when the prediction is unavailable. With
+    ``precursor_mz`` a dotted guide marks the precursor ("precursor 2+").
     """
     parquet = cache_dir / f"lineplot_{run}" / "preprocessed" / "data.parquet"
     predicted, reason = None, None
@@ -154,7 +168,9 @@ def show_spectrum(cache_dir: Path, run: str, state_manager, *, peptide: str, cha
     measure = measure_options(peptide, tolerance, ppm)
     if predicted is None:
         window = precursor_window(state_manager, isolation_window(mzml_path, scan), LinePlot)
-        LinePlot(cache_id=f"lineplot_{run}", cache_path=str(cache_dir), **measure, **zoom(LinePlot, key), **window)(
+        marker = precursor_marker(LinePlot, precursor_mz, charge)
+        LinePlot(cache_id=f"lineplot_{run}", cache_path=str(cache_dir), **measure, **zoom(LinePlot, key), **window,
+                 **marker)(
             key=f"{key}_lineplot", state_manager=state_manager, height=height, sequence_view_key=seqview_key,
         )
         return
@@ -202,6 +218,7 @@ def show_spectrum(cache_dir: Path, run: str, state_manager, *, peptide: str, cha
         **measure,
         **zoom(MirrorPlot, f"{key}_mirror"),
         **precursor_window(state_manager, isolation_window(mzml_path, scan), MirrorPlot),
+        **precursor_marker(MirrorPlot, precursor_mz, charge),
     )(key=f"{key}_mirror", state_manager=state_manager, height=height, sequence_view_top_key=seqview_key)
 
 
@@ -221,7 +238,7 @@ def show_selected_psm_spectrum(cache_dir: Path, idxml: Path, state_manager, *, s
     show_spectrum(
         cache_dir, idxml.stem, state_manager, peptide=hit["sequence"], charge=int(hit["charge"]),
         file_index=int(file_index), scan=int(scan), seqview_key=seqview_key, key=seqview_key,
-        tolerance=tolerance, ppm=ppm, mzml_path=mzml,
+        tolerance=tolerance, ppm=ppm, mzml_path=mzml, precursor_mz=hit["mz"],
     )
     show_psm_features(idxml, int(psm_id))
 

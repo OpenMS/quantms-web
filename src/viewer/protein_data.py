@@ -225,7 +225,7 @@ def psm_spectrum(data: ProteinData) -> None:
         data.cache_dir, run, viewer_state,
         peptide=psm["peptide"], charge=int(psm["charge"]), file_index=mzml_names.index(psm["file"]),
         scan=int(psm["scan"]), seqview_key=scoped("proteins_seqview"), key=scoped("proteins"),
-        tolerance=tolerance, ppm=ppm, mzml_path=mzml_path, height=420,
+        tolerance=tolerance, ppm=ppm, mzml_path=mzml_path, height=420, precursor_mz=psm["m/z"],
     )
 
 
