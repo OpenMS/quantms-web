@@ -14,6 +14,7 @@ def _online(page, monkeypatch, tmp_path):
     app = AppTest.from_file(page)
     settings = json.loads(Path("settings.json").read_text())
     settings["online_deployment"] = True
+    settings.setdefault("workspace_sync", {})["enabled"] = False  # page has no navigation
     for tracker in settings["analytics"].values():
         tracker["enabled"] = False
     app.session_state.settings = settings

@@ -31,6 +31,9 @@ def app(tmp_path):
     with open("settings.json", "r") as f:
         at.session_state.settings = json.load(f)
     at.session_state.settings["test"] = True
+    # No navigation on a page loaded on its own: the sidebar's link to the
+    # Workspace Sync page cannot resolve, so the panel stays off here.
+    at.session_state.settings.setdefault("workspace_sync", {})["enabled"] = False
     # Keep the workspaces this test creates out of the real workspaces folder.
     at.session_state.settings["workspaces_dir"] = str(tmp_path)
     at.secrets["workspace"] = "test"

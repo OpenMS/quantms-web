@@ -27,6 +27,9 @@ def _app() -> AppTest:
     with open("settings.json", "r", encoding="utf-8") as f:
         app.session_state.settings = json.load(f)
     app.session_state.settings["test"] = True
+    # A page loaded on its own has no navigation, so the sidebar's link to
+    # the Workspace Sync page (registered in app.py) cannot resolve here.
+    app.session_state.settings.setdefault("workspace_sync", {})["enabled"] = False
     app.secrets["workspace"] = "test"
     return app
 

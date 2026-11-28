@@ -68,8 +68,8 @@
         "password_hash": "scrypt$32768$8$1$CwnCVY6ank4Z/A/DPYwE0w==$+dGcNOheTng6nFMqkp9qBGk0oChkVmdOyn/b5Mer7Uc="
     },
     "workspace_sync": {
-        "enabled": false,
-        "developer_only": true,
+        "enabled": true,
+        "developer_only": false,
         "public_url": "",
         "token_ttl_hours": 24,
         "max_file_gb": 50,
