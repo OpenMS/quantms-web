@@ -53,9 +53,20 @@ def _init(apptest):
     return apptest
 
 
+def _init_isolated(apptest):
+    """A page loaded on its own: no navigation, so no Workspace Sync panel.
+
+    The panel's st.page_link needs the pages app.py registers; test_app_loads
+    covers it with app.py itself.
+    """
+    _init(apptest)
+    apptest.session_state.settings.setdefault("workspace_sync", {})["enabled"] = False
+    return apptest
+
+
 @pytest.fixture
 def launch(request):
-    return _init(AppTest.from_file(request.param))
+    return _init_isolated(AppTest.from_file(request.param))
 
 
 def test_registered_pages_exist():

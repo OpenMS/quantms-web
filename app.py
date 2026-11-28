@@ -38,6 +38,19 @@ if __name__ == '__main__':
         ],
     }
 
+    # Workspace Sync: the desktop app sends large studies (raw files, Bruker
+    # .d folders) into an online workspace. It is opened from its sidebar
+    # panel, so its menu entry is hidden; Streamlit cannot register a page
+    # without listing it.
+    sync = st.session_state.settings.get("workspace_sync", {}).get("enabled")
+    if sync:
+        pages["📖 Help"].append(
+            st.Page(Path("content", "workspace_sync.py"), title="Workspace Sync", icon="🔄")
+        )
+
     pg = st.navigation(pages)
+    if sync:
+        st.html('<style>[data-testid="stSidebarNav"] li:has(a[href$="/workspace_sync"])'
+                '{display: none;}</style>')
     pg.run()
 
